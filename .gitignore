@@ -215,7 +215,9 @@ __marimo__/
 refs/
 .vscode/
 notebooks/**/*.png
+notebooks/local-only/
+tests/data/not-cleared/
 tmp/
-.tmp/
+[.]tmp/
 outputs/
 *.prt
