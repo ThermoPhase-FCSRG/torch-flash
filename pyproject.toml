@@ -12,6 +12,8 @@ license = "LGPL-2.1-only"
 license-files = ["LICENSE", "COPYRIGHT", "THIRD_PARTY_NOTICES.md", "docs/licensing.md"]
 authors = [
   { name = "Diego Volpatto", email = "volpatto@lncc.br" },
+  {name = "Antonio Marinho", email = "marinhoengenharias@gmail.com"},
+  {name = "Gustavo Ribeiro", email = "ggrbill@gmail.com"},
 ]
 keywords = [
   "autodiff",

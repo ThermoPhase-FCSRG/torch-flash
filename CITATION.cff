@@ -1,0 +1,15 @@
+cff-version: 1.2.0
+message: "If you use torch-flash in scientific work, please cite this software."
+title: "torch-flash: differentiable phase-equilibrium calculations with PyTorch"
+type: software
+authors:
+  - family-names: Volpatto
+    given-names: Diego
+  - family-names: Ribeiro
+    given-names: Gustavo
+  - family-names: Marinho
+    given-names: Antonio
+repository-code: "https://github.com/volpatto/torch-flash"
+url: "https://volpatto.github.io/torch-flash"
+license: LGPL-2.1-only
+version: 0.1.0
