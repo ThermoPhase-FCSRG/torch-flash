@@ -91,10 +91,10 @@ gpu = [
 ]
 
 [project.urls]
-Homepage = "https://github.com/volpatto/torch-flash"
-Documentation = "https://volpatto.github.io/torch-flash"
-Repository = "https://github.com/volpatto/torch-flash"
-Issues = "https://github.com/volpatto/torch-flash/issues"
+Homepage = "https://github.com/ThermoPhase-FCSRG/torch-flash"
+Documentation = "https://thermophase-fcsrg.github.io/torch-flash"
+Repository = "https://github.com/ThermoPhase-FCSRG/torch-flash"
+Issues = "https://github.com/ThermoPhase-FCSRG/torch-flash/issues"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/torch_flash"]

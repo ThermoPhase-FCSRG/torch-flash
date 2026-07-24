@@ -1,7 +1,7 @@
 # Contributing
 
 The repository contribution guide is available in
-[CONTRIBUTING.md](https://github.com/volpatto/torch-flash/blob/main/CONTRIBUTING.md).
+[CONTRIBUTING.md](https://github.com/ThermoPhase-FCSRG/torch-flash/blob/main/CONTRIBUTING.md).
 
 Scientific additions need primary-source provenance, explicit SI conversion,
 model/parameter identity, independent numerical validation, and stated

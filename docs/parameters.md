@@ -13,13 +13,13 @@ silently replaced by the general critical temperature used by PR78.
 ## Bundled data
 
 The component inventory is
-[`src/torch_flash/data/components/default.yaml`](https://github.com/volpatto/torch-flash/blob/main/src/torch_flash/data/components/default.yaml).
+[`src/torch_flash/data/components/default.yaml`](https://github.com/ThermoPhase-FCSRG/torch-flash/blob/main/src/torch_flash/data/components/default.yaml).
 Its canonical names are used by every public named constructor. Aliases such
 as `CO2`, `H2`, `CH4`, and `NH3` resolve to those canonical names. All values
 declare SI units; `null` means that a property is unavailable.
 
 Published model sets are separate YAML documents under
-[`src/torch_flash/data/models`](https://github.com/volpatto/torch-flash/tree/main/src/torch_flash/data/models):
+[`src/torch_flash/data/models`](https://github.com/ThermoPhase-FCSRG/torch-flash/tree/main/src/torch_flash/data/models):
 
 | Identifier | Contents |
 |---|---|
@@ -57,7 +57,7 @@ The primary sources include
 Every YAML file carries its own source metadata.
 
 Machine-readable JSON Schema 2020-12 documents are packaged in
-[`src/torch_flash/data/schemas`](https://github.com/volpatto/torch-flash/tree/main/src/torch_flash/data/schemas).
+[`src/torch_flash/data/schemas`](https://github.com/ThermoPhase-FCSRG/torch-flash/tree/main/src/torch_flash/data/schemas).
 Runtime
 validation does not require the optional `jsonschema` package; the loaders
 enforce the same common envelope and each constructor validates its

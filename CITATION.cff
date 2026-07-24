@@ -9,7 +9,7 @@ authors:
     given-names: Gustavo
   - family-names: Marinho
     given-names: Antonio
-repository-code: "https://github.com/volpatto/torch-flash"
-url: "https://volpatto.github.io/torch-flash"
+repository-code: "https://github.com/ThermoPhase-FCSRG/torch-flash"
+url: "https://thermophase-fcsrg.github.io/torch-flash"
 license: LGPL-2.1-only
 version: 0.1.0

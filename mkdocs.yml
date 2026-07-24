@@ -1,8 +1,8 @@
 site_name: torch-flash
 site_description: Differentiable thermodynamic properties and phase-equilibrium calculations on PyTorch
-site_url: https://volpatto.github.io/torch-flash/
-repo_url: https://github.com/volpatto/torch-flash
-repo_name: volpatto/torch-flash
+site_url: https://thermophase-fcsrg.github.io/torch-flash/
+repo_url: https://github.com/ThermoPhase-FCSRG/torch-flash
+repo_name: ThermoPhase-FCSRG/torch-flash
 edit_uri: edit/main/docs/
 strict: true
 
@@ -81,7 +81,7 @@ extra_javascript:
 extra:
   social:
     - icon: fontawesome/brands/github
-      link: https://github.com/volpatto/torch-flash
+      link: https://github.com/ThermoPhase-FCSRG/torch-flash
       name: torch-flash on GitHub
     - icon: fontawesome/brands/python
       link: https://pypi.org/project/torch-flash/

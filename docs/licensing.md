@@ -25,9 +25,9 @@ research artifacts cannot enter a Python distribution accidentally.
 ## Current data-rights audit
 
 The detailed per-file scientific provenance is in the repository's
-[`tests/data/README.md`](https://github.com/volpatto/torch-flash/blob/main/tests/data/README.md).
+[`tests/data/README.md`](https://github.com/ThermoPhase-FCSRG/torch-flash/blob/main/tests/data/README.md).
 The machine-readable
-[`tests/data/rights.yaml`](https://github.com/volpatto/torch-flash/blob/main/tests/data/rights.yaml)
+[`tests/data/rights.yaml`](https://github.com/ThermoPhase-FCSRG/torch-flash/blob/main/tests/data/rights.yaml)
 ledger covers all 33 declared CSV artifacts: 5 have a verified open basis, 12
 are project-generated, and 16 are marked `not-cleared`. CI rejects an
 unclassified CSV and enforces that locally present `not-cleared` inputs are
