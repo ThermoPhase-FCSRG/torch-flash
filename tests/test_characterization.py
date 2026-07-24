@@ -20,6 +20,23 @@ from torch_flash.exceptions import ConvergenceError, ParameterDatabaseError
 DTYPE = torch.float64
 
 
+def test_pedersen_split_float32_mass_balance_respects_dtype_precision():
+    target_mass = torch.tensor(0.2, dtype=torch.float32)
+    split = pedersen_logarithmic_split(
+        0.1,
+        target_mass,
+        max_carbon_number=30,
+        dtype=torch.float32,
+    )
+
+    torch.testing.assert_close(
+        split.average_molar_mass,
+        target_mass,
+        rtol=8.0 * torch.finfo(torch.float32).eps,
+        atol=0.0,
+    )
+
+
 def test_pedersen_split_density_cubic_adapters_and_lumping():
     target_mass = torch.tensor(0.377, dtype=DTYPE, requires_grad=True)
     split = pedersen_logarithmic_split(

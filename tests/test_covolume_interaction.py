@@ -3,6 +3,7 @@ from __future__ import annotations
 import csv
 from pathlib import Path
 
+import numpy as np
 import pytest
 import torch
 from torch import Tensor, nn
@@ -203,9 +204,12 @@ def test_covolume_supported_by_all_cubic_factories(factory, binary_components):
     assert mixed_b < torch.dot(composition, pure_b)
 
 
-def test_pr78_covolume_matches_frozen_thermopack_223_baseline(data_regression):
+def test_pr78_covolume_matches_frozen_thermopack_223_baseline(num_regression):
     maximum_volume_error = 0.0
     maximum_logphi_error = 0.0
+    calculated_volumes = []
+    calculated_logphi_1 = []
+    calculated_logphi_2 = []
     with (DATA / "thermopack_pr78_covolume.csv").open() as stream:
         rows = list(csv.DictReader(stream))
     for row in rows:
@@ -232,6 +236,9 @@ def test_pr78_covolume_matches_frozen_thermopack_223_baseline(data_regression):
             composition,
             phase,
         )
+        calculated_volumes.append(float(volume))
+        calculated_logphi_1.append(float(log_phi[0]))
+        calculated_logphi_2.append(float(log_phi[1]))
         maximum_volume_error = max(
             maximum_volume_error,
             abs(float(volume) - float(row["molar_volume_m3_mol"])),
@@ -243,14 +250,14 @@ def test_pr78_covolume_matches_frozen_thermopack_223_baseline(data_regression):
         )
     assert maximum_volume_error < 3.0e-19
     assert maximum_logphi_error < 3.0e-14
-    data_regression.check(
+    num_regression.check(
         {
-            "baseline": "ThermoPack-2.2.3-PR78",
-            "cases": len(rows),
-            "maximum_logphi_error": maximum_logphi_error,
-            "maximum_volume_error_m3_mol": maximum_volume_error,
+            "molar_volume_m3_mol": np.asarray(calculated_volumes),
+            "lnphi_1": np.asarray(calculated_logphi_1),
+            "lnphi_2": np.asarray(calculated_logphi_2),
         },
-        basename="thermopack_pr78_covolume_summary",
+        basename="thermopack_pr78_covolume_outputs",
+        default_tolerance={"rtol": 1.0e-8, "atol": 0.0},
     )
 
 

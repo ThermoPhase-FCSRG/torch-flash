@@ -3,6 +3,7 @@ from __future__ import annotations
 import csv
 from pathlib import Path
 
+import numpy as np
 import pytest
 import torch
 
@@ -43,10 +44,13 @@ def test_cubic_real_roots_one_and_three():
     torch.testing.assert_close(repeated, torch.full((3,), -1.0, dtype=dtype))
 
 
-def test_pr_matches_frozen_teqp_baseline(data_regression):
+def test_pr_matches_frozen_teqp_baseline(num_regression):
     model = peng_robinson_1978(component_set(("methane", "n_butane")))
     maximum_z_error = 0.0
     maximum_logphi_error = 0.0
+    calculated_z = []
+    calculated_logphi_methane = []
+    calculated_logphi_n_butane = []
     with (DATA / "teqp_pr_binary.csv").open() as stream:
         for row in csv.DictReader(stream):
             temperature = torch.tensor(float(row["temperature_K"]), dtype=torch.float64)
@@ -63,6 +67,9 @@ def test_pr_matches_frozen_teqp_baseline(data_regression):
                 composition,
                 phase,
             )
+            calculated_z.append(float(z_factor))
+            calculated_logphi_methane.append(float(log_phi[0]))
+            calculated_logphi_n_butane.append(float(log_phi[1]))
             maximum_z_error = max(maximum_z_error, abs(float(z_factor) - float(row["z"])))
             maximum_logphi_error = max(
                 maximum_logphi_error,
@@ -71,14 +78,14 @@ def test_pr_matches_frozen_teqp_baseline(data_regression):
             )
     assert maximum_z_error < 2.0e-14
     assert maximum_logphi_error < 2.0e-13
-    data_regression.check(
+    num_regression.check(
         {
-            "baseline": "teqp-0.23.2-canonical-PR",
-            "cases": 4,
-            "maximum_logphi_error": maximum_logphi_error,
-            "maximum_z_error": maximum_z_error,
+            "z": np.asarray(calculated_z),
+            "lnphi_methane": np.asarray(calculated_logphi_methane),
+            "lnphi_n_butane": np.asarray(calculated_logphi_n_butane),
         },
-        basename="teqp_pr_summary",
+        basename="teqp_pr_outputs",
+        default_tolerance={"rtol": 1.0e-8, "atol": 0.0},
     )
 
 

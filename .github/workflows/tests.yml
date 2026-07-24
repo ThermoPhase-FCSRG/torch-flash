@@ -28,13 +28,12 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          # Intel dependencies are available on Linux and Windows, but not macOS.
           - os: ubuntu-latest
-            environment: intel
+            environment: test
           - os: macos-latest
             environment: test
           - os: windows-latest
-            environment: intel
+            environment: test
 
     steps:
       - name: Check out repository

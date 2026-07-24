@@ -37,7 +37,7 @@ def audit_data_rights(data_directory: Path, ledger_path: Path) -> tuple[str, ...
     for name, paths in sorted(csv_paths_by_name.items()):
         if len(paths) > 1:
             relative_paths = ", ".join(
-                str(path.relative_to(data_directory)) for path in sorted(paths)
+                path.relative_to(data_directory).as_posix() for path in sorted(paths)
             )
             violations.append(f"{data_directory}: duplicate CSV basename {name}: {relative_paths}")
     for name in sorted(csv_names - ledger_names):
@@ -62,11 +62,12 @@ def audit_data_rights(data_directory: Path, ledger_path: Path) -> tuple[str, ...
             violations.append(f"{ledger_path}: {name} has invalid status {status!r}")
         for path in csv_paths_by_name.get(name, ()):
             relative_path = path.relative_to(data_directory)
+            relative_label = relative_path.as_posix()
             if status == "not-cleared" and path.parent != data_directory / "not-cleared":
-                violations.append(f"{relative_path}: not-cleared CSV must be under not-cleared/")
+                violations.append(f"{relative_label}: not-cleared CSV must be under not-cleared/")
             if status in PUBLIC_FIGURE_STATUSES and path.parent != data_directory:
                 violations.append(
-                    f"{relative_path}: {status} CSV must be directly under {data_directory}"
+                    f"{relative_label}: {status} CSV must be directly under {data_directory}"
                 )
         source = record.get("source")
         if isinstance(source, str) and not source.startswith(("http://", "https://")):

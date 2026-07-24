@@ -154,11 +154,12 @@ def test_teqp_adapter_ideal_fake_and_constructors(monkeypatch):
     assert calls["gerg"]["model"]["names"] == ["methane", "carbondioxide"]
     assert gerg.capabilities.exact_model == "GERG-2008 residual (teqp)"
     eoscg = TeqpBackend.eoscg_2015(("carbon_dioxide", "water"))
+    coefficient_data = Path("/coefficient-data")
     assert calls["eoscg"] == (
         ["CarbonDioxide", "Water"],
-        "/coefficient-data",
-        str(Path("/coefficient-data/dev/mixtures/mixture_binary_pairs.json")),
-        str(Path("/coefficient-data/dev/mixtures/mixture_departure_functions.json")),
+        str(coefficient_data),
+        str(coefficient_data / "dev" / "mixtures" / "mixture_binary_pairs.json"),
+        str(coefficient_data / "dev" / "mixtures" / "mixture_departure_functions.json"),
     )
     assert eoscg.capabilities.exact_model == "EOS-CG-2015 multifluid (teqp)"
     with pytest.raises(ValueError, match="component must be"):

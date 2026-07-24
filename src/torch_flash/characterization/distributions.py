@@ -108,7 +108,14 @@ def pedersen_logarithmic_split(
         log_slope = torch.clamp(log_slope - step, -50.0, 50.0)
     weights = torch.softmax(log_slope * centered_carbon, dim=0)
     mole_fractions = fraction * weights
-    if float(torch.abs(torch.sum(weights * molar_masses) - target_mass).detach()) > 1.0e-9:
+    mean_mass = torch.sum(weights * molar_masses)
+    mass_residual = torch.abs(mean_mass - target_mass)
+    mass_scale = torch.maximum(torch.abs(mean_mass), torch.abs(target_mass))
+    # The final moment is accumulated in the requested dtype. Permit several
+    # ulps of reduction-order variation while retaining the historical
+    # float64 absolute gate.
+    precision_limit = 8.0 * torch.finfo(target_mass.dtype).eps * float(mass_scale.detach())
+    if float(mass_residual.detach()) > max(1.0e-9, precision_limit):
         raise ConvergenceError("Pedersen logarithmic split did not satisfy its mass balance")
     return SCNDistribution(
         carbon_numbers.to(torch.int64),
