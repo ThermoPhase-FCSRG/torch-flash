@@ -1,0 +1,43 @@
+format: torch-flash-model-parameters
+schema_version: 1
+id: activity.hv-nrtl-jaubert-2020-n-butane-water
+model_kind: activity
+model: HV-NRTL
+version: "torch-flash-fit-v2"
+description: >-
+  SRK/HV-NRTL parameters fitted by torch-flash with an inverse-temperature
+  anchored parameterization and bounded symmetric NRTL nonrandomness.
+  Positive-composition n-butane-water VLE rows in the Jaubert et al.
+  benchmark subset were used, while complete isotherms at 410.93 K and
+  510.93 K were excluded as validation holdouts.
+units:
+  energy_over_r: K
+  temperature_coefficient: dimensionless
+  nonrandomness: dimensionless
+  covolumes: m^3 mol^-1
+references:
+  - citation: Jaubert et al., Industrial & Engineering Chemistry Research 59 (2020) 14981-15027
+    doi: 10.1021/acs.iecr.0c01734
+  - citation: Reamer, Sage, and Lacey, Industrial & Engineering Chemistry 44 (1952) 609-615
+    doi: 10.1021/ie50507a049
+  - citation: Huron and Vidal, Fluid Phase Equilibria 3 (1979) 255-271
+    doi: 10.1016/0378-3812(79)80001-1
+parameters:
+  components: [n_butane, water]
+  energy_over_r:
+    - [0.0, 4032.109951499353]
+    - [2534.2961164360677, 0.0]
+  temperature_coefficient:
+    - [0.0, -3.8583578360824635]
+    - [-1.6880231324265988, 0.0]
+  nonrandomness:
+    - [0.0, 0.20696072192846332]
+    - [0.20696072192846332, 0.0]
+  covolume_cubic_parameter_set: cubic.srk-1972
+  fit_metadata:
+    objective: measured-phase log-fugacity residual
+    source_csv: tests/data/not-cleared/jaubert_2020_hv_bac5_vle.csv
+    holdout_temperatures_K: [410.93, 510.93]
+    excluded_zero_compositions: 10
+    tau_anchor_temperatures_K: [300.0, 650.0]
+    fitted_nonrandomness_bounds: [0.05, 0.60]

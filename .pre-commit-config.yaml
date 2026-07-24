@@ -42,7 +42,15 @@ repos:
       args: [--quiet]
       files: ^notebooks/.*\.ipynb$
     - id: nbqa-ruff
-      args: [--fix]
+      # Markdown title cells replace module docstrings, helper functions are not
+      # public APIs, bare expressions render rich output, and cell-local imports
+      # intentionally follow setup cells.
+      args:
+        - --fix
+        - --ignore=D100
+        - --ignore=D103
+        - --ignore=B018
+        - --ignore=E402
       files: ^notebooks/.*\.ipynb$
 
 - repo: local

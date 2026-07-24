@@ -1,0 +1,57 @@
+name: Scientific Notebooks
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "20 4 1 * *"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: notebooks-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  execute:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: Install Pixi
+        uses: prefix-dev/setup-pixi@v0
+        with:
+          environments: benchmarks
+
+      - name: Fetch pinned Whitson contest corpus
+        shell: bash
+        run: |
+          contest="${RUNNER_TEMP}/Rachford-Rice-Contest"
+          git init "$contest"
+          git -C "$contest" remote add origin https://github.com/WhitsonAS/Rachford-Rice-Contest.git
+          git -C "$contest" fetch --depth 1 origin 503b92f1b2847c4459326841f538739bcb9d629f
+          git -C "$contest" checkout --detach FETCH_HEAD
+          echo "TORCH_FLASH_WHITSON_DATA=${contest}" >> "$GITHUB_ENV"
+
+      - name: Check notebook synchronization
+        shell: bash
+        run: |
+          pixi run -e benchmarks notebooks-sync
+          git diff --exit-code -- notebooks
+
+      - name: Exact external EOS-CG verification
+        run: pixi run -e benchmarks pytest -q -m external tests/test_eoscg_external.py
+
+      - name: Execute notebooks
+        run: pixi run -e benchmarks notebooks-run
+
+      - name: Upload executed notebooks
+        uses: actions/upload-artifact@v7
+        with:
+          name: executed-notebooks
+          path: notebooks/**/*.ipynb

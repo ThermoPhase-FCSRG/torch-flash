@@ -1,0 +1,69 @@
+format: torch-flash-model-parameters
+schema_version: 1
+id: volume-translation.whitson-2000
+model_kind: volume_translation
+model: Whitson-Peneloux
+version: "2000-tables-4.2-4.3"
+description: >-
+  Whitson and Brulé pure-component shift factors and the
+  Jhaveri-Youngren C7+ family correlations. Published s=c/b and c are converted
+  to the additive torch-flash volume-shift convention.
+units:
+  shift_factor: dimensionless
+  covolume_factor: dimensionless
+  molar_mass: g mol^-1
+references:
+  - citation: >-
+      Whitson and Brulé, Phase Behavior, SPE Monograph 20 (2000),
+      Section 4.2.6 and Tables 4.2-4.3
+  - citation: >-
+      Jhaveri and Youngren, SPE Reservoir Engineering 3 (1988) 1033-1040
+    doi: 10.2118/13118-PA
+parameters:
+  eos:
+    pr:
+      covolume_factor: 0.07779607390388846
+      pure_shift_factors:
+        nitrogen: -0.1927
+        carbon_dioxide: -0.0817
+        hydrogen_sulfide: -0.1288
+        methane: -0.1595
+        ethane: -0.1134
+        propane: -0.0863
+        isobutane: -0.0844
+        n_butane: -0.0675
+        isopentane: -0.0608
+        n_pentane: -0.0390
+        n_hexane: -0.0080
+        n_heptane: 0.0033
+        n_octane: 0.0314
+        n_nonane: 0.0408
+        n_decane: 0.0655
+    srk:
+      covolume_factor: 0.08664034996495773
+      pure_shift_factors:
+        nitrogen: -0.0079
+        carbon_dioxide: 0.0833
+        hydrogen_sulfide: 0.0466
+        methane: 0.0234
+        ethane: 0.0605
+        propane: 0.0825
+        isobutane: 0.0830
+        n_butane: 0.0975
+        isopentane: 0.1022
+        n_pentane: 0.1209
+        n_hexane: 0.1467
+        n_heptane: 0.1554
+        n_octane: 0.1794
+        n_nonane: 0.1868
+        n_decane: 0.2080
+  heavy_families:
+    paraffin:
+      A0: 2.258
+      A1: 0.1823
+    naphthene:
+      A0: 3.004
+      A1: 0.2324
+    aromatic:
+      A0: 2.516
+      A1: 0.2008

@@ -1,0 +1,2 @@
+temperature_K,pressure_Pa,z_methane,z_n_butane,beta_vapor,x_methane,x_n_butane,y_methane,y_n_butane
+270.0,3000000.0,0.5,0.5,0.40788796047942133,0.19070253,0.80929747,0.94899280,0.05100720

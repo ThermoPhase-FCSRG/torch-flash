@@ -1,0 +1,27 @@
+$schema: https://json-schema.org/draft/2020-12/schema
+$id: https://volpatto.github.io/torch-flash/schemas/parameter-index-v1
+title: torch-flash bundled parameter index
+type: object
+additionalProperties: false
+required: [format, schema_version, parameter_sets]
+properties:
+  format:
+    const: torch-flash-parameter-index
+  schema_version:
+    const: 1
+  parameter_sets:
+    type: object
+    minProperties: 1
+    additionalProperties:
+      type: object
+      additionalProperties: false
+      required: [path, aliases]
+      properties:
+        path:
+          type: string
+          pattern: "\\.ya?ml$"
+        aliases:
+          type: array
+          uniqueItems: true
+          items:
+            type: string

@@ -1,0 +1,462 @@
+format: torch-flash-component-database
+schema_version: 1
+id: components.default
+revision: '2026.1'
+description: Canonical component names and shared SI properties for petroleum, CCS,
+  and UHS models.
+unit_system: SI
+units:
+  critical_temperature: K
+  critical_pressure: Pa
+  acentric_factor: dimensionless
+  molar_mass: kg mol^-1
+  critical_volume: m^3 mol^-1
+  critical_density: mol m^-3
+references:
+- citation: Whitson and Brule, Phase Behavior, SPE Monograph 20 (2000), Appendix A
+- citation: Kunz and Wagner, Journal of Chemical and Engineering Data 57 (2012)
+  doi: 10.1021/je300655b
+- citation: Neumann et al., International Journal of Thermophysics 44 (2023)
+  doi: 10.1007/s10765-023-03263-6
+- citation: Chemicals 1.5.2 database, Caleb Bell et al. (accessed 2026-07-23)
+  url: https://chemicals.readthedocs.io/
+components:
+  nitrogen:
+    aliases:
+    - n2
+    critical_temperature: 126.192
+    critical_pressure: 3395800.0
+    acentric_factor: 0.0372
+    molar_mass: 0.0280134
+    critical_volume: 9.01e-05
+    critical_density: null
+  oxygen:
+    aliases:
+    - o2
+    critical_temperature: 154.581
+    critical_pressure: 5043000.0
+    acentric_factor: 0.0222
+    molar_mass: 0.0319988
+    critical_volume: 7.33e-05
+    critical_density: null
+  argon:
+    aliases:
+    - ar
+    critical_temperature: 150.687
+    critical_pressure: 4863000.0
+    acentric_factor: -0.00219
+    molar_mass: 0.039948
+    critical_volume: null
+    critical_density: null
+  helium:
+    aliases:
+    - he
+    critical_temperature: 5.1953
+    critical_pressure: 227460.0
+    acentric_factor: -0.3836
+    molar_mass: 0.004002602
+    critical_volume: null
+    critical_density: null
+  carbon_monoxide:
+    aliases:
+    - co
+    critical_temperature: 132.86
+    critical_pressure: 3494000.0
+    acentric_factor: 0.0497
+    molar_mass: 0.0280101
+    critical_volume: null
+    critical_density: null
+  carbon_dioxide:
+    aliases:
+    - co2
+    critical_temperature: 304.1282
+    critical_pressure: 7377300.0
+    acentric_factor: 0.22394
+    molar_mass: 0.0440095
+    critical_volume: 9.4e-05
+    critical_density: null
+  hydrogen:
+    aliases:
+    - h2
+    critical_temperature: 33.145
+    critical_pressure: 1296400.0
+    acentric_factor: -0.219
+    molar_mass: 0.00201588
+    critical_volume: null
+    critical_density: null
+  hydrogen_sulfide:
+    aliases:
+    - h2s
+    critical_temperature: 373.1
+    critical_pressure: 8999000.0
+    acentric_factor: 0.1005
+    molar_mass: 0.03408088
+    critical_volume: 9.76e-05
+    critical_density: null
+  water:
+    aliases:
+    - h2o
+    critical_temperature: 647.096
+    critical_pressure: 22064000.0
+    acentric_factor: 0.3443
+    molar_mass: 0.01801528
+    critical_volume: 5.72e-05
+    critical_density: null
+  methane:
+    aliases:
+    - c1
+    - ch4
+    critical_temperature: 190.564
+    critical_pressure: 4599200.0
+    acentric_factor: 0.01142
+    molar_mass: 0.01604246
+    critical_volume: 9.93e-05
+    critical_density: null
+  ethane:
+    aliases:
+    - c2
+    critical_temperature: 305.322
+    critical_pressure: 4872200.0
+    acentric_factor: 0.0995
+    molar_mass: 0.03006904
+    critical_volume: 0.0001479
+    critical_density: null
+  propane:
+    aliases:
+    - c3
+    critical_temperature: 369.89
+    critical_pressure: 4251200.0
+    acentric_factor: 0.1521
+    molar_mass: 0.04409562
+    critical_volume: 0.0002029
+    critical_density: null
+  isobutane:
+    aliases:
+    - ic4
+    critical_temperature: 407.81
+    critical_pressure: 3629000.0
+    acentric_factor: 0.184
+    molar_mass: 0.0581222
+    critical_volume: 0.0002627
+    critical_density: null
+  n_butane:
+    aliases:
+    - nc4
+    - butane
+    critical_temperature: 425.125
+    critical_pressure: 3796000.0
+    acentric_factor: 0.2002
+    molar_mass: 0.0581222
+    critical_volume: 0.0002547
+    critical_density: null
+  isopentane:
+    aliases:
+    - ic5
+    critical_temperature: 460.35
+    critical_pressure: 3378000.0
+    acentric_factor: 0.2274
+    molar_mass: 0.07214878
+    critical_volume: 0.0003058
+    critical_density: null
+  n_pentane:
+    aliases:
+    - nc5
+    - pentane
+    critical_temperature: 469.7
+    critical_pressure: 3370000.0
+    acentric_factor: 0.251
+    molar_mass: 0.07214878
+    critical_volume: 0.000304
+    critical_density: null
+  n_hexane:
+    aliases:
+    - nc6
+    - hexane
+    critical_temperature: 507.82
+    critical_pressure: 3044100.0
+    acentric_factor: 0.3
+    molar_mass: 0.08617536
+    critical_volume: 0.0003701
+    critical_density: null
+  n_heptane:
+    aliases:
+    - nc7
+    - heptane
+    critical_temperature: 540.13
+    critical_pressure: 2736000.0
+    acentric_factor: 0.349
+    molar_mass: 0.10020194
+    critical_volume: 0.0004322
+    critical_density: null
+  n_octane:
+    aliases:
+    - nc8
+    - octane
+    critical_temperature: 568.74
+    critical_pressure: 2486000.0
+    acentric_factor: 0.399
+    molar_mass: 0.11422852
+    critical_volume: 0.000492
+    critical_density: null
+  n_nonane:
+    aliases:
+    - nc9
+    - nonane
+    critical_temperature: 594.55
+    critical_pressure: 2281000.0
+    acentric_factor: 0.4433
+    molar_mass: 0.1282551
+    critical_volume: 0.0005477
+    critical_density: null
+  n_decane:
+    aliases:
+    - nc10
+    - decane
+    critical_temperature: 617.7
+    critical_pressure: 2103000.0
+    acentric_factor: 0.4884
+    molar_mass: 0.14228168
+    critical_volume: 0.0006031
+    critical_density: null
+  benzene:
+    aliases:
+    - c6h6
+    critical_temperature: 562.02
+    critical_pressure: 4907277.0
+    acentric_factor: 0.211
+    molar_mass: 0.07811184
+    critical_volume: 0.0002563445
+    critical_density: null
+  toluene:
+    aliases:
+    - methylbenzene
+    critical_temperature: 591.75
+    critical_pressure: 4126300.0
+    acentric_factor: 0.2657
+    molar_mass: 0.09213842
+    critical_volume: 0.000315557
+    critical_density: null
+  o_xylene:
+    aliases:
+    - ortho_xylene
+    - 1_2_dimethylbenzene
+    critical_temperature: 630.259
+    critical_pressure: 3737500.0
+    acentric_factor: 0.312
+    molar_mass: 0.106165
+    critical_volume: 0.000372509
+    critical_density: null
+  m_xylene:
+    aliases:
+    - meta_xylene
+    - 1_3_dimethylbenzene
+    critical_temperature: 616.89
+    critical_pressure: 3534600.0
+    acentric_factor: 0.326
+    molar_mass: 0.106165
+    critical_volume: 0.000375235
+    critical_density: null
+  p_xylene:
+    aliases:
+    - para_xylene
+    - 1_4_dimethylbenzene
+    critical_temperature: 616.168
+    critical_pressure: 3531500.0
+    acentric_factor: 0.324
+    molar_mass: 0.106165
+    critical_volume: 0.000371206
+    critical_density: null
+  1_3_5_trimethylbenzene:
+    aliases:
+    - mesitylene
+    critical_temperature: 637.3
+    critical_pressure: 3127000.0
+    acentric_factor: 0.3796
+    molar_mass: 0.12019158
+    critical_volume: 0.000435
+    critical_density: null
+  ethylbenzene:
+    aliases: []
+    critical_temperature: 617.12
+    critical_pressure: 3622400.0
+    acentric_factor: 0.305
+    molar_mass: 0.106165
+    critical_volume: 0.000364828
+    critical_density: null
+  propylbenzene:
+    aliases:
+    - n_propylbenzene
+    critical_temperature: 638.35
+    critical_pressure: 3200000.0
+    acentric_factor: 0.344
+    molar_mass: 0.12019158
+    critical_volume: 0.00044
+    critical_density: null
+  butylbenzene:
+    aliases:
+    - n_butylbenzene
+    critical_temperature: 660.5
+    critical_pressure: 2890000.0
+    acentric_factor: 0.392
+    molar_mass: 0.13421816
+    critical_volume: 0.000497
+    critical_density: null
+  pentylbenzene:
+    aliases:
+    - n_pentylbenzene
+    critical_temperature: 675.0
+    critical_pressure: 2600000.0
+    acentric_factor: 0.4274
+    molar_mass: 0.14824474
+    critical_volume: 0.000559
+    critical_density: null
+  cumene:
+    aliases:
+    - isopropylbenzene
+    critical_temperature: 631.0
+    critical_pressure: 3209000.0
+    acentric_factor: 0.3261
+    molar_mass: 0.12019158
+    critical_volume: 0.000423
+    critical_density: null
+  styrene:
+    aliases:
+    - vinylbenzene
+    critical_temperature: 635.0
+    critical_pressure: 3900000.0
+    acentric_factor: 0.3007
+    molar_mass: 0.10414912
+    critical_volume: 0.000357
+    critical_density: null
+  methanol:
+    aliases:
+    - meoh
+    critical_temperature: 512.6
+    critical_pressure: 8104000.0
+    acentric_factor: 0.565
+    molar_mass: 0.03204186
+    critical_volume: null
+    critical_density: null
+  ethanol:
+    aliases:
+    - etoh
+    critical_temperature: 514.71
+    critical_pressure: 6268000.0
+    acentric_factor: 0.646
+    molar_mass: 0.04606844
+    critical_volume: null
+    critical_density: null
+  1_propanol:
+    aliases:
+    - propanol
+    critical_temperature: 536.8
+    critical_pressure: 5169000.0
+    acentric_factor: 0.624
+    molar_mass: 0.06009502
+    critical_volume: null
+    critical_density: null
+  2_propanol:
+    aliases:
+    - isopropanol
+    critical_temperature: 508.3
+    critical_pressure: 4764000.0
+    acentric_factor: 0.665
+    molar_mass: 0.06009502
+    critical_volume: null
+    critical_density: null
+  1_butanol:
+    aliases:
+    - butanol
+    critical_temperature: 563.0
+    critical_pressure: 4414000.0
+    acentric_factor: 0.59
+    molar_mass: 0.0741216
+    critical_volume: null
+    critical_density: null
+  1_pentanol:
+    aliases:
+    - pentanol
+    critical_temperature: 588.1
+    critical_pressure: 3897000.0
+    acentric_factor: 0.58
+    molar_mass: 0.08814818
+    critical_volume: null
+    critical_density: null
+  1_octanol:
+    aliases:
+    - octanol
+    critical_temperature: 652.5
+    critical_pressure: 2777000.0
+    acentric_factor: 0.5963
+    molar_mass: 0.13022792
+    critical_volume: null
+    critical_density: null
+  ethylene_glycol:
+    aliases:
+    - meg
+    critical_temperature: 719.0
+    critical_pressure: 10508700.0
+    acentric_factor: 0.619
+    molar_mass: 0.06206784
+    critical_volume: null
+    critical_density: null
+  ammonia:
+    aliases:
+    - nh3
+    critical_temperature: 405.56
+    critical_pressure: 11363400.0
+    acentric_factor: null
+    molar_mass: 0.01703052
+    critical_volume: null
+    critical_density: 13696.0
+  chlorine:
+    aliases:
+    - cl2
+    critical_temperature: 416.8654
+    critical_pressure: 7642400.0
+    acentric_factor: null
+    molar_mass: 0.07090600000000001
+    critical_volume: null
+    critical_density: 8060.000000000001
+  dea:
+    aliases: []
+    critical_temperature: 736.5
+    critical_pressure: 4950750.0
+    acentric_factor: null
+    molar_mass: 0.1051356
+    critical_volume: null
+    critical_density: 3300.0
+  hydrogen_chloride:
+    aliases:
+    - hcl
+    critical_temperature: 324.55
+    critical_pressure: 8291521.207967199
+    acentric_factor: null
+    molar_mass: 0.0364609
+    critical_volume: null
+    critical_density: 11800
+  mdea:
+    aliases: []
+    critical_temperature: 741.0
+    critical_pressure: 4689900.0
+    acentric_factor: null
+    molar_mass: 0.1191622
+    critical_volume: null
+    critical_density: 2720.0
+  mea:
+    aliases: []
+    critical_temperature: 671.4
+    critical_pressure: 8125000.0
+    acentric_factor: null
+    molar_mass: 0.0610831
+    critical_volume: null
+    critical_density: 5390.0
+  sulfur_dioxide:
+    aliases:
+    - so2
+    critical_temperature: 430.64
+    critical_pressure: 7886587.6003464125
+    acentric_factor: null
+    molar_mass: 0.0640638
+    critical_volume: null
+    critical_density: 8195.0

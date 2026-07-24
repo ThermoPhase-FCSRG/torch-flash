@@ -1,0 +1,36 @@
+format: torch-flash-model-parameters
+schema_version: 1
+id: binary-interaction.whitson-2000
+model_kind: binary_interaction
+model: petroleum-cubic-kij
+version: "Whitson-2000-Table-A-3"
+description: Whitson and Brule Appendix A petroleum PR and SRK binary interactions.
+units:
+  kij: dimensionless
+references:
+  - citation: Whitson and Brule, Phase Behavior, SPE Monograph 20 (2000), Table A-3
+parameters:
+  hydrocarbons:
+    [methane, ethane, propane, isobutane, n_butane, isopentane, n_pentane,
+     n_hexane, n_heptane, n_octane, n_nonane, n_decane]
+  nonhydrocarbons: [nitrogen, carbon_dioxide, hydrogen_sulfide]
+  aggregate_from: n_heptane
+  eos:
+    PR:
+      hydrocarbon_rows:
+        nitrogen: [0.025, 0.010, 0.090, 0.095, 0.095, 0.100, 0.110, 0.110, 0.110]
+        carbon_dioxide: [0.105, 0.130, 0.125, 0.120, 0.115, 0.115, 0.115, 0.115, 0.115]
+        hydrogen_sulfide: [0.070, 0.085, 0.080, 0.075, 0.075, 0.070, 0.070, 0.055, 0.050]
+      nonhydrocarbon_pairs:
+        nitrogen|carbon_dioxide: 0.000
+        nitrogen|hydrogen_sulfide: 0.130
+        carbon_dioxide|hydrogen_sulfide: 0.135
+    SRK:
+      hydrocarbon_rows:
+        nitrogen: [0.020, 0.060, 0.080, 0.080, 0.080, 0.080, 0.080, 0.080, 0.080]
+        carbon_dioxide: [0.120, 0.150, 0.150, 0.150, 0.150, 0.150, 0.150, 0.150, 0.150]
+        hydrogen_sulfide: [0.080, 0.070, 0.070, 0.060, 0.060, 0.060, 0.060, 0.050, 0.030]
+      nonhydrocarbon_pairs:
+        nitrogen|carbon_dioxide: 0.000
+        nitrogen|hydrogen_sulfide: 0.120
+        carbon_dioxide|hydrogen_sulfide: 0.120

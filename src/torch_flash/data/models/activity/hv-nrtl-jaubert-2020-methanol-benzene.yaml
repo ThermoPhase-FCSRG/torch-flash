@@ -1,0 +1,41 @@
+format: torch-flash-model-parameters
+schema_version: 1
+id: activity.hv-nrtl-jaubert-2020-methanol-benzene
+model_kind: activity
+model: HV-NRTL
+version: "torch-flash-fit-v1"
+description: >-
+  SRK/HV-NRTL parameters fitted by torch-flash to methanol-benzene VLE in
+  the Jaubert et al. benchmark subset. Complete isotherms at 328.15 K and
+  433.15 K were excluded as validation holdouts.
+units:
+  energy_over_r: K
+  temperature_coefficient: dimensionless
+  nonrandomness: dimensionless
+  covolumes: m^3 mol^-1
+references:
+  - citation: Jaubert et al., Industrial & Engineering Chemistry Research 59 (2020) 14981-15027
+    doi: 10.1021/acs.iecr.0c01734
+  - citation: Toghiani, Toghiani, and Viswanath, Journal of Chemical & Engineering Data 39 (1994) 63-67
+    doi: 10.1021/je00013a018
+  - citation: Butcher and Medani, Journal of Applied Chemistry 18 (1968) 100-107
+    doi: 10.1002/jctb.5010180402
+  - citation: Huron and Vidal, Fluid Phase Equilibria 3 (1979) 255-271
+    doi: 10.1016/0378-3812(79)80001-1
+parameters:
+  components: [methanol, benzene]
+  energy_over_r:
+    - [0.0, 512.3267983829446]
+    - [1092.9391774268906, 0.0]
+  temperature_coefficient:
+    - [0.0, -1.4666938931099835]
+    - [-0.37470510783091293, 0.0]
+  nonrandomness:
+    - [0.0, 0.3]
+    - [0.3, 0.0]
+  covolume_cubic_parameter_set: cubic.srk-1972
+  fit_metadata:
+    objective: measured-phase log-fugacity residual
+    source_csv: tests/data/not-cleared/jaubert_2020_hv_bac5_vle.csv
+    holdout_temperatures_K: [328.15, 433.15]
+    excluded_zero_compositions: 0

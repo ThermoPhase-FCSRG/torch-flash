@@ -1,0 +1,246 @@
+format: torch-flash-model-parameters
+schema_version: 1
+id: cpa.oliveira-2007-hydrocarbon-water
+model_kind: cpa
+model: SRK-CPA
+version: "2007"
+description: >-
+  Hydrocarbon-water CPA parameters from Oliveira, Coutinho, and Queimada
+  (2007), Tables 1-3. Aromatics use one electron-acceptor solvation site and
+  the paper's modified-CR1 cross energy (half the water self-association
+  energy). This parameterization does not reproduce the low-temperature
+  hydrophobic solubility minimum identified by the authors.
+units:
+  critical_temperature: K
+  a0: Pa m^6 mol^-2
+  b: m^3 mol^-1
+  c1: dimensionless
+  association_energy: J mol^-1
+  association_volume: dimensionless
+  binary_interaction: dimensionless
+  cross_association_energy: J mol^-1
+  cross_association_volume: dimensionless
+references:
+  - citation: >-
+      Oliveira, Coutinho, and Queimada, Fluid Phase Equilibria 258 (2007)
+      58-66
+    doi: 10.1016/j.fluid.2007.05.023
+parameters:
+  default_combining_rule: CR1
+  components:
+    methane:
+      critical_temperature: 190.564
+      a0: 0.23
+      b: 2.95e-05
+      c1: 0.46
+      association_energy: 0.0
+      association_volume: 0.0
+      scheme: none
+    ethane:
+      critical_temperature: 305.322
+      a0: 0.55
+      b: 4.30e-05
+      c1: 0.59
+      association_energy: 0.0
+      association_volume: 0.0
+      scheme: none
+    propane:
+      critical_temperature: 369.89
+      a0: 0.92
+      b: 5.89e-05
+      c1: 0.67
+      association_energy: 0.0
+      association_volume: 0.0
+      scheme: none
+    n_butane:
+      critical_temperature: 425.125
+      a0: 1.35
+      b: 7.48e-05
+      c1: 0.73
+      association_energy: 0.0
+      association_volume: 0.0
+      scheme: none
+    n_pentane:
+      critical_temperature: 469.7
+      a0: 1.82
+      b: 9.13e-05
+      c1: 0.80
+      association_energy: 0.0
+      association_volume: 0.0
+      scheme: none
+    n_hexane:
+      critical_temperature: 507.82
+      a0: 2.34
+      b: 1.080e-04
+      c1: 0.87
+      association_energy: 0.0
+      association_volume: 0.0
+      scheme: none
+    n_heptane:
+      critical_temperature: 540.13
+      a0: 2.89
+      b: 1.250e-04
+      c1: 0.93
+      association_energy: 0.0
+      association_volume: 0.0
+      scheme: none
+    n_octane:
+      critical_temperature: 568.74
+      a0: 3.47
+      b: 1.422e-04
+      c1: 1.00
+      association_energy: 0.0
+      association_volume: 0.0
+      scheme: none
+    n_decane:
+      critical_temperature: 617.7
+      a0: 4.74
+      b: 1.765e-04
+      c1: 1.11
+      association_energy: 0.0
+      association_volume: 0.0
+      scheme: none
+    benzene:
+      critical_temperature: 562.02
+      a0: 1.79
+      b: 7.54e-05
+      c1: 0.77
+      association_energy: 0.0
+      association_volume: 0.0
+      scheme: 1B
+    toluene:
+      critical_temperature: 591.75
+      a0: 2.32
+      b: 9.21e-05
+      c1: 0.83
+      association_energy: 0.0
+      association_volume: 0.0
+      scheme: 1B
+    o_xylene:
+      critical_temperature: 630.259
+      a0: 2.92
+      b: 1.086e-04
+      c1: 0.88
+      association_energy: 0.0
+      association_volume: 0.0
+      scheme: 1B
+    m_xylene:
+      critical_temperature: 616.89
+      a0: 2.91
+      b: 1.091e-04
+      c1: 0.88
+      association_energy: 0.0
+      association_volume: 0.0
+      scheme: 1B
+    p_xylene:
+      critical_temperature: 616.168
+      a0: 2.83
+      b: 1.110e-04
+      c1: 0.75
+      association_energy: 0.0
+      association_volume: 0.0
+      scheme: 1B
+    1_3_5_trimethylbenzene:
+      critical_temperature: 637.3
+      a0: 3.48
+      b: 1.250e-04
+      c1: 0.94
+      association_energy: 0.0
+      association_volume: 0.0
+      scheme: 1B
+    ethylbenzene:
+      critical_temperature: 617.12
+      a0: 2.87
+      b: 1.085e-04
+      c1: 0.87
+      association_energy: 0.0
+      association_volume: 0.0
+      scheme: 1B
+    propylbenzene:
+      critical_temperature: 638.35
+      a0: 3.36
+      b: 1.214e-04
+      c1: 0.90
+      association_energy: 0.0
+      association_volume: 0.0
+      scheme: 1B
+    butylbenzene:
+      critical_temperature: 660.5
+      a0: 4.05
+      b: 1.417e-04
+      c1: 0.97
+      association_energy: 0.0
+      association_volume: 0.0
+      scheme: 1B
+    pentylbenzene:
+      critical_temperature: 675.0
+      a0: 4.76
+      b: 1.607e-04
+      c1: 1.02
+      association_energy: 0.0
+      association_volume: 0.0
+      scheme: 1B
+    cumene:
+      critical_temperature: 631.0
+      a0: 3.38
+      b: 1.284e-04
+      c1: 0.97
+      association_energy: 0.0
+      association_volume: 0.0
+      scheme: 1B
+    styrene:
+      critical_temperature: 635.0
+      a0: 2.66
+      b: 9.48e-05
+      c1: 0.82
+      association_energy: 0.0
+      association_volume: 0.0
+      scheme: 1B
+    water:
+      critical_temperature: 647.096
+      a0: 0.12
+      b: 1.45e-05
+      c1: 0.67
+      association_energy: 16655.0
+      association_volume: 0.069
+      scheme: 4C
+  binary_interactions:
+    kind: constant
+    pairs:
+      methane|water: 0.165
+      ethane|water: 0.141
+      propane|water: 0.117
+      n_butane|water: 0.092
+      n_pentane|water: 0.068
+      n_hexane|water: 0.044
+      n_heptane|water: 0.019
+      n_octane|water: -0.005
+      n_decane|water: -0.054
+      benzene|water: 0.047
+      toluene|water: 0.008
+      o_xylene|water: -0.022
+      m_xylene|water: 0.001
+      p_xylene|water: -0.054
+      1_3_5_trimethylbenzene|water: -0.011
+      ethylbenzene|water: -0.016
+      propylbenzene|water: 0.012
+      butylbenzene|water: -0.048
+      pentylbenzene|water: -0.050
+      cumene|water: -0.057
+      styrene|water: 0.033
+  cross_association:
+    rule: modified_cr1
+    pairs:
+      benzene|water: {association_energy: 8327.5, association_volume: 0.089}
+      toluene|water: {association_energy: 8327.5, association_volume: 0.068}
+      o_xylene|water: {association_energy: 8327.5, association_volume: 0.051}
+      m_xylene|water: {association_energy: 8327.5, association_volume: 0.074}
+      p_xylene|water: {association_energy: 8327.5, association_volume: 0.063}
+      1_3_5_trimethylbenzene|water:
+        {association_energy: 8327.5, association_volume: 0.063}
+      ethylbenzene|water: {association_energy: 8327.5, association_volume: 0.051}
+      propylbenzene|water: {association_energy: 8327.5, association_volume: 0.059}
+      butylbenzene|water: {association_energy: 8327.5, association_volume: 0.020}
+      pentylbenzene|water: {association_energy: 8327.5, association_volume: 0.039}
+      cumene|water: {association_energy: 8327.5, association_volume: 0.046}
+      styrene|water: {association_energy: 8327.5, association_volume: 0.079}

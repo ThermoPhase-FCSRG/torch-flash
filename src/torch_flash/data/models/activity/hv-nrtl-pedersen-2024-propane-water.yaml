@@ -1,0 +1,29 @@
+format: torch-flash-model-parameters
+schema_version: 1
+id: activity.hv-nrtl-pedersen-2024-propane-water
+model_kind: activity
+model: HV-NRTL
+version: "Pedersen-2024-Table-16.3"
+description: Original infinite-pressure HV-NRTL parameters for water and propane.
+units:
+  energy_over_r: K
+  temperature_coefficient: dimensionless
+  nonrandomness: dimensionless
+  covolumes: m^3 mol^-1
+references:
+  - citation: Pedersen et al., Phase Behavior of Petroleum Reservoir Fluids, 3rd ed., Table 16.3
+    doi: 10.1201/9780429457418
+  - citation: Huron and Vidal, Fluid Phase Equilibria 3 (1979) 255-271
+    doi: 10.1016/0378-3812(79)80001-1
+parameters:
+  components: [water, propane]
+  energy_over_r:
+    - [0.0, -2026.0]
+    - [6065.0, 0.0]
+  temperature_coefficient:
+    - [0.0, -3.82]
+    - [-3.92, 0.0]
+  nonrandomness:
+    - [0.0, 0.05]
+    - [0.05, 0.0]
+  covolume_cubic_parameter_set: cubic.srk-1972

@@ -1,0 +1,4692 @@
+format: torch-flash-model-parameters
+schema_version: 1
+id: activity.unifac-original-public-2026
+model_kind: activity
+model: original-UNIFAC
+version: public-table-2026-07-24
+description: Original VLE-UNIFAC subgroup geometry and directed main-group interactions. The frozen public
+  table is the DDBST published-parameter set accessed on 2026-07-24 and cross-checked against thermo 0.6.0.
+  Bundled component fragmentations are convenience records, not an exhaustive structure database.
+units:
+  relative_volume: dimensionless
+  relative_surface_area: dimensionless
+  interaction: K
+  coordination_number: dimensionless
+references:
+- citation: Fredenslund, Jones, and Prausnitz, AIChE Journal 21 (1975) 1086-1099
+  doi: 10.1002/aic.690210607
+- citation: Hansen et al., Industrial & Engineering Chemistry Research 30 (1991) 2352-2355
+  doi: 10.1021/ie00058a017
+- citation: Wittig, Lohmann, and Gmehling, Industrial & Engineering Chemistry Research 42 (2003) 183-188
+  doi: 10.1021/ie020506l
+- citation: DDBST, Parameters of the Original UNIFAC Model, accessed 2026-07-24
+  url: https://www.ddbst.com/published-parameters-unifac.html
+- citation: Bell et al., thermo original-UNIFAC data, MIT License, version 0.6.0
+  url: https://github.com/CalebBell/thermo
+parameters:
+  variant: original-vle
+  coordination_number: 10.0
+  subgroups:
+    sg_001:
+      number: 1
+      name: CH3
+      main_group: 1
+      main_group_name: CH2
+      relative_volume: 0.9011
+      relative_surface_area: 0.848
+    sg_002:
+      number: 2
+      name: CH2
+      main_group: 1
+      main_group_name: CH2
+      relative_volume: 0.6744
+      relative_surface_area: 0.54
+    sg_003:
+      number: 3
+      name: CH
+      main_group: 1
+      main_group_name: CH2
+      relative_volume: 0.4469
+      relative_surface_area: 0.228
+    sg_004:
+      number: 4
+      name: C
+      main_group: 1
+      main_group_name: CH2
+      relative_volume: 0.2195
+      relative_surface_area: 0.0
+    sg_005:
+      number: 5
+      name: CH2=CH
+      main_group: 2
+      main_group_name: C=C
+      relative_volume: 1.3454
+      relative_surface_area: 1.176
+    sg_006:
+      number: 6
+      name: CH=CH
+      main_group: 2
+      main_group_name: C=C
+      relative_volume: 1.1167
+      relative_surface_area: 0.867
+    sg_007:
+      number: 7
+      name: CH2=C
+      main_group: 2
+      main_group_name: C=C
+      relative_volume: 1.1173
+      relative_surface_area: 0.988
+    sg_008:
+      number: 8
+      name: CH=C
+      main_group: 2
+      main_group_name: C=C
+      relative_volume: 0.8886
+      relative_surface_area: 0.676
+    sg_009:
+      number: 9
+      name: ACH
+      main_group: 3
+      main_group_name: ACH
+      relative_volume: 0.5313
+      relative_surface_area: 0.4
+    sg_010:
+      number: 10
+      name: AC
+      main_group: 3
+      main_group_name: ACH
+      relative_volume: 0.3652
+      relative_surface_area: 0.12
+    sg_011:
+      number: 11
+      name: ACCH3
+      main_group: 4
+      main_group_name: ACCH2
+      relative_volume: 1.2663
+      relative_surface_area: 0.968
+    sg_012:
+      number: 12
+      name: ACCH2
+      main_group: 4
+      main_group_name: ACCH2
+      relative_volume: 1.0396
+      relative_surface_area: 0.66
+    sg_013:
+      number: 13
+      name: ACCH
+      main_group: 4
+      main_group_name: ACCH2
+      relative_volume: 0.8121
+      relative_surface_area: 0.348
+    sg_014:
+      number: 14
+      name: OH
+      main_group: 5
+      main_group_name: OH
+      relative_volume: 1.0
+      relative_surface_area: 1.2
+    sg_015:
+      number: 15
+      name: CH3OH
+      main_group: 6
+      main_group_name: CH3OH
+      relative_volume: 1.4311
+      relative_surface_area: 1.432
+    sg_016:
+      number: 16
+      name: H2O
+      main_group: 7
+      main_group_name: H2O
+      relative_volume: 0.92
+      relative_surface_area: 1.4
+    sg_017:
+      number: 17
+      name: ACOH
+      main_group: 8
+      main_group_name: ACOH
+      relative_volume: 0.8952
+      relative_surface_area: 0.68
+    sg_018:
+      number: 18
+      name: CH3CO
+      main_group: 9
+      main_group_name: CH2CO
+      relative_volume: 1.6724
+      relative_surface_area: 1.488
+    sg_019:
+      number: 19
+      name: CH2CO
+      main_group: 9
+      main_group_name: CH2CO
+      relative_volume: 1.4457
+      relative_surface_area: 1.18
+    sg_020:
+      number: 20
+      name: CHO
+      main_group: 10
+      main_group_name: CHO
+      relative_volume: 0.998
+      relative_surface_area: 0.948
+    sg_021:
+      number: 21
+      name: CH3COO
+      main_group: 11
+      main_group_name: CCOO
+      relative_volume: 1.9031
+      relative_surface_area: 1.728
+    sg_022:
+      number: 22
+      name: CH2COO
+      main_group: 11
+      main_group_name: CCOO
+      relative_volume: 1.6764
+      relative_surface_area: 1.42
+    sg_023:
+      number: 23
+      name: HCOO
+      main_group: 12
+      main_group_name: HCOO
+      relative_volume: 1.242
+      relative_surface_area: 1.188
+    sg_024:
+      number: 24
+      name: CH3O
+      main_group: 13
+      main_group_name: CH2O
+      relative_volume: 1.145
+      relative_surface_area: 1.088
+    sg_025:
+      number: 25
+      name: CH2O
+      main_group: 13
+      main_group_name: CH2O
+      relative_volume: 0.9183
+      relative_surface_area: 0.78
+    sg_026:
+      number: 26
+      name: CHO
+      main_group: 13
+      main_group_name: CH2O
+      relative_volume: 0.6908
+      relative_surface_area: 0.468
+    sg_027:
+      number: 27
+      name: THF
+      main_group: 13
+      main_group_name: CH2O
+      relative_volume: 0.9183
+      relative_surface_area: 1.1
+    sg_028:
+      number: 28
+      name: CH3NH2
+      main_group: 14
+      main_group_name: CNH2
+      relative_volume: 1.5959
+      relative_surface_area: 1.544
+    sg_029:
+      number: 29
+      name: CH2NH2
+      main_group: 14
+      main_group_name: CNH2
+      relative_volume: 1.3692
+      relative_surface_area: 1.236
+    sg_030:
+      number: 30
+      name: CHNH2
+      main_group: 14
+      main_group_name: CNH2
+      relative_volume: 1.1417
+      relative_surface_area: 0.924
+    sg_031:
+      number: 31
+      name: CH3NH
+      main_group: 15
+      main_group_name: CNH
+      relative_volume: 1.4337
+      relative_surface_area: 1.244
+    sg_032:
+      number: 32
+      name: CH2NH
+      main_group: 15
+      main_group_name: CNH
+      relative_volume: 1.207
+      relative_surface_area: 0.936
+    sg_033:
+      number: 33
+      name: CHNH
+      main_group: 15
+      main_group_name: CNH
+      relative_volume: 0.9795
+      relative_surface_area: 0.624
+    sg_034:
+      number: 34
+      name: CH3N
+      main_group: 16
+      main_group_name: (C)3N
+      relative_volume: 1.1865
+      relative_surface_area: 0.94
+    sg_035:
+      number: 35
+      name: CH2N
+      main_group: 16
+      main_group_name: (C)3N
+      relative_volume: 0.9597
+      relative_surface_area: 0.632
+    sg_036:
+      number: 36
+      name: ACNH2
+      main_group: 17
+      main_group_name: ACNH2
+      relative_volume: 1.06
+      relative_surface_area: 0.816
+    sg_037:
+      number: 37
+      name: C5H5N
+      main_group: 18
+      main_group_name: PYRIDINE
+      relative_volume: 2.9993
+      relative_surface_area: 2.113
+    sg_038:
+      number: 38
+      name: C5H4N
+      main_group: 18
+      main_group_name: PYRIDINE
+      relative_volume: 2.8332
+      relative_surface_area: 1.833
+    sg_039:
+      number: 39
+      name: C5H3N
+      main_group: 18
+      main_group_name: PYRIDINE
+      relative_volume: 2.667
+      relative_surface_area: 1.553
+    sg_040:
+      number: 40
+      name: CH3CN
+      main_group: 19
+      main_group_name: CCN
+      relative_volume: 1.8701
+      relative_surface_area: 1.724
+    sg_041:
+      number: 41
+      name: CH2CN
+      main_group: 19
+      main_group_name: CCN
+      relative_volume: 1.6434
+      relative_surface_area: 1.416
+    sg_042:
+      number: 42
+      name: COOH
+      main_group: 20
+      main_group_name: COOH
+      relative_volume: 1.3013
+      relative_surface_area: 1.224
+    sg_043:
+      number: 43
+      name: HCOOH
+      main_group: 20
+      main_group_name: COOH
+      relative_volume: 1.528
+      relative_surface_area: 1.532
+    sg_044:
+      number: 44
+      name: CH2CL
+      main_group: 21
+      main_group_name: CCL
+      relative_volume: 1.4654
+      relative_surface_area: 1.264
+    sg_045:
+      number: 45
+      name: CHCL
+      main_group: 21
+      main_group_name: CCL
+      relative_volume: 1.238
+      relative_surface_area: 0.952
+    sg_046:
+      number: 46
+      name: CCL
+      main_group: 21
+      main_group_name: CCL
+      relative_volume: 1.0106
+      relative_surface_area: 0.724
+    sg_047:
+      number: 47
+      name: CH2CL2
+      main_group: 22
+      main_group_name: CCL2
+      relative_volume: 2.2564
+      relative_surface_area: 1.988
+    sg_048:
+      number: 48
+      name: CHCL2
+      main_group: 22
+      main_group_name: CCL2
+      relative_volume: 2.0606
+      relative_surface_area: 1.684
+    sg_049:
+      number: 49
+      name: CCL2
+      main_group: 22
+      main_group_name: CCL2
+      relative_volume: 1.8016
+      relative_surface_area: 1.448
+    sg_050:
+      number: 50
+      name: CHCL3
+      main_group: 23
+      main_group_name: CCL3
+      relative_volume: 2.87
+      relative_surface_area: 2.41
+    sg_051:
+      number: 51
+      name: CCL3
+      main_group: 23
+      main_group_name: CCL3
+      relative_volume: 2.6401
+      relative_surface_area: 2.184
+    sg_052:
+      number: 52
+      name: CCL4
+      main_group: 24
+      main_group_name: CCL4
+      relative_volume: 3.39
+      relative_surface_area: 2.91
+    sg_053:
+      number: 53
+      name: ACCL
+      main_group: 25
+      main_group_name: ACCL
+      relative_volume: 1.1562
+      relative_surface_area: 0.844
+    sg_054:
+      number: 54
+      name: CH3NO2
+      main_group: 26
+      main_group_name: CNO2
+      relative_volume: 2.0086
+      relative_surface_area: 1.868
+    sg_055:
+      number: 55
+      name: CH2NO2
+      main_group: 26
+      main_group_name: CNO2
+      relative_volume: 1.7818
+      relative_surface_area: 1.56
+    sg_056:
+      number: 56
+      name: CHNO2
+      main_group: 26
+      main_group_name: CNO2
+      relative_volume: 1.5544
+      relative_surface_area: 1.248
+    sg_057:
+      number: 57
+      name: ACNO2
+      main_group: 27
+      main_group_name: ACNO2
+      relative_volume: 1.4199
+      relative_surface_area: 1.104
+    sg_058:
+      number: 58
+      name: CS2
+      main_group: 28
+      main_group_name: CS2
+      relative_volume: 2.057
+      relative_surface_area: 1.65
+    sg_059:
+      number: 59
+      name: CH3SH
+      main_group: 29
+      main_group_name: CH3SH
+      relative_volume: 1.877
+      relative_surface_area: 1.676
+    sg_060:
+      number: 60
+      name: CH2SH
+      main_group: 29
+      main_group_name: CH3SH
+      relative_volume: 1.651
+      relative_surface_area: 1.368
+    sg_061:
+      number: 61
+      name: FURFURAL
+      main_group: 30
+      main_group_name: FURFURAL
+      relative_volume: 3.168
+      relative_surface_area: 2.484
+    sg_062:
+      number: 62
+      name: DOH
+      main_group: 31
+      main_group_name: DOH
+      relative_volume: 2.4088
+      relative_surface_area: 2.248
+    sg_063:
+      number: 63
+      name: I
+      main_group: 32
+      main_group_name: I
+      relative_volume: 1.264
+      relative_surface_area: 0.992
+    sg_064:
+      number: 64
+      name: BR
+      main_group: 33
+      main_group_name: BR
+      relative_volume: 0.9492
+      relative_surface_area: 0.832
+    sg_065:
+      number: 65
+      name: CH=-C
+      main_group: 34
+      main_group_name: C=-C
+      relative_volume: 1.292
+      relative_surface_area: 1.088
+    sg_066:
+      number: 66
+      name: C=-C
+      main_group: 34
+      main_group_name: C=-C
+      relative_volume: 1.0613
+      relative_surface_area: 0.784
+    sg_067:
+      number: 67
+      name: DMSO
+      main_group: 35
+      main_group_name: DMSO
+      relative_volume: 2.8266
+      relative_surface_area: 2.472
+    sg_068:
+      number: 68
+      name: ACRY
+      main_group: 36
+      main_group_name: ACRY
+      relative_volume: 2.3144
+      relative_surface_area: 2.052
+    sg_069:
+      number: 69
+      name: CL-(C=C)
+      main_group: 37
+      main_group_name: CLCC
+      relative_volume: 0.791
+      relative_surface_area: 0.724
+    sg_070:
+      number: 70
+      name: C=C
+      main_group: 2
+      main_group_name: C=C
+      relative_volume: 0.6605
+      relative_surface_area: 0.485
+    sg_071:
+      number: 71
+      name: ACF
+      main_group: 38
+      main_group_name: ACF
+      relative_volume: 0.6948
+      relative_surface_area: 0.524
+    sg_072:
+      number: 72
+      name: DMF
+      main_group: 39
+      main_group_name: DMF
+      relative_volume: 3.0856
+      relative_surface_area: 2.736
+    sg_073:
+      number: 73
+      name: HCON(CH2)2
+      main_group: 39
+      main_group_name: DMF
+      relative_volume: 2.6322
+      relative_surface_area: 2.12
+    sg_074:
+      number: 74
+      name: CF3
+      main_group: 40
+      main_group_name: CF2
+      relative_volume: 1.406
+      relative_surface_area: 1.38
+    sg_075:
+      number: 75
+      name: CF2
+      main_group: 40
+      main_group_name: CF2
+      relative_volume: 1.0105
+      relative_surface_area: 0.92
+    sg_076:
+      number: 76
+      name: CF
+      main_group: 40
+      main_group_name: CF2
+      relative_volume: 0.615
+      relative_surface_area: 0.46
+    sg_077:
+      number: 77
+      name: COO
+      main_group: 41
+      main_group_name: COO
+      relative_volume: 1.38
+      relative_surface_area: 1.2
+    sg_078:
+      number: 78
+      name: SIH3
+      main_group: 42
+      main_group_name: SIH2
+      relative_volume: 1.6035
+      relative_surface_area: 1.2632
+    sg_079:
+      number: 79
+      name: SIH2
+      main_group: 42
+      main_group_name: SIH2
+      relative_volume: 1.4443
+      relative_surface_area: 1.0063
+    sg_080:
+      number: 80
+      name: SIH
+      main_group: 42
+      main_group_name: SIH2
+      relative_volume: 1.2853
+      relative_surface_area: 0.7494
+    sg_081:
+      number: 81
+      name: SI
+      main_group: 42
+      main_group_name: SIH2
+      relative_volume: 1.047
+      relative_surface_area: 0.4099
+    sg_082:
+      number: 82
+      name: SIH2O
+      main_group: 43
+      main_group_name: SIO
+      relative_volume: 1.4838
+      relative_surface_area: 1.0621
+    sg_083:
+      number: 83
+      name: SIHO
+      main_group: 43
+      main_group_name: SIO
+      relative_volume: 1.303
+      relative_surface_area: 0.7639
+    sg_084:
+      number: 84
+      name: SIO
+      main_group: 43
+      main_group_name: SIO
+      relative_volume: 1.1044
+      relative_surface_area: 0.4657
+    sg_085:
+      number: 85
+      name: NMP
+      main_group: 44
+      main_group_name: NMP
+      relative_volume: 3.981
+      relative_surface_area: 3.2
+    sg_086:
+      number: 86
+      name: CCL3F
+      main_group: 45
+      main_group_name: CCLF
+      relative_volume: 3.0356
+      relative_surface_area: 2.644
+    sg_087:
+      number: 87
+      name: CCL2F
+      main_group: 45
+      main_group_name: CCLF
+      relative_volume: 2.2287
+      relative_surface_area: 1.916
+    sg_088:
+      number: 88
+      name: HCCL2F
+      main_group: 45
+      main_group_name: CCLF
+      relative_volume: 2.406
+      relative_surface_area: 2.116
+    sg_089:
+      number: 89
+      name: HCCLF
+      main_group: 45
+      main_group_name: CCLF
+      relative_volume: 1.6493
+      relative_surface_area: 1.416
+    sg_090:
+      number: 90
+      name: CCLF2
+      main_group: 45
+      main_group_name: CCLF
+      relative_volume: 1.8174
+      relative_surface_area: 1.648
+    sg_091:
+      number: 91
+      name: HCCLF2
+      main_group: 45
+      main_group_name: CCLF
+      relative_volume: 1.967
+      relative_surface_area: 1.828
+    sg_092:
+      number: 92
+      name: CCLF3
+      main_group: 45
+      main_group_name: CCLF
+      relative_volume: 2.1721
+      relative_surface_area: 2.1
+    sg_093:
+      number: 93
+      name: CCL2F2
+      main_group: 45
+      main_group_name: CCLF
+      relative_volume: 2.6243
+      relative_surface_area: 2.376
+    sg_094:
+      number: 94
+      name: AMH2
+      main_group: 46
+      main_group_name: CON(AM)
+      relative_volume: 1.4515
+      relative_surface_area: 1.248
+    sg_095:
+      number: 95
+      name: AMHCH3
+      main_group: 46
+      main_group_name: CON(AM)
+      relative_volume: 2.1905
+      relative_surface_area: 1.796
+    sg_096:
+      number: 96
+      name: AMHCH2
+      main_group: 46
+      main_group_name: CON(AM)
+      relative_volume: 1.9637
+      relative_surface_area: 1.488
+    sg_097:
+      number: 97
+      name: AM(CH3)2
+      main_group: 46
+      main_group_name: CON(AM)
+      relative_volume: 2.8589
+      relative_surface_area: 2.428
+    sg_098:
+      number: 98
+      name: AMCH3CH2
+      main_group: 46
+      main_group_name: CON(AM)
+      relative_volume: 2.6322
+      relative_surface_area: 2.12
+    sg_099:
+      number: 99
+      name: AM(CH2)2
+      main_group: 46
+      main_group_name: CON(AM)
+      relative_volume: 2.4054
+      relative_surface_area: 1.812
+    sg_100:
+      number: 100
+      name: C2H5O2
+      main_group: 47
+      main_group_name: OCCOH
+      relative_volume: 2.1226
+      relative_surface_area: 1.904
+    sg_101:
+      number: 101
+      name: C2H4O2
+      main_group: 47
+      main_group_name: OCCOH
+      relative_volume: 1.8952
+      relative_surface_area: 1.592
+    sg_102:
+      number: 102
+      name: CH3S
+      main_group: 48
+      main_group_name: CH2S
+      relative_volume: 1.613
+      relative_surface_area: 1.368
+    sg_103:
+      number: 103
+      name: CH2S
+      main_group: 48
+      main_group_name: CH2S
+      relative_volume: 1.3863
+      relative_surface_area: 1.06
+    sg_104:
+      number: 104
+      name: CHS
+      main_group: 48
+      main_group_name: CH2S
+      relative_volume: 1.1589
+      relative_surface_area: 0.748
+    sg_105:
+      number: 105
+      name: MORPH
+      main_group: 49
+      main_group_name: MORPH
+      relative_volume: 3.474
+      relative_surface_area: 2.796
+    sg_106:
+      number: 106
+      name: C4H4S
+      main_group: 50
+      main_group_name: THIOPHEN
+      relative_volume: 2.8569
+      relative_surface_area: 2.14
+    sg_107:
+      number: 107
+      name: C4H3S
+      main_group: 50
+      main_group_name: THIOPHEN
+      relative_volume: 2.6908
+      relative_surface_area: 1.86
+    sg_108:
+      number: 108
+      name: C4H2S
+      main_group: 50
+      main_group_name: THIOPHEN
+      relative_volume: 2.5247
+      relative_surface_area: 1.58
+    sg_109:
+      number: 109
+      name: NCO
+      main_group: 51
+      main_group_name: NCO
+      relative_volume: 1.0567
+      relative_surface_area: 0.732
+    sg_118:
+      number: 118
+      name: (CH2)2SU
+      main_group: 55
+      main_group_name: SULFONES
+      relative_volume: 2.6869
+      relative_surface_area: 2.12
+    sg_119:
+      number: 119
+      name: CH2CHSU
+      main_group: 55
+      main_group_name: SULFONES
+      relative_volume: 2.4595
+      relative_surface_area: 1.808
+    sg_178:
+      number: 178
+      name: IMIDAZOL
+      main_group: 84
+      main_group_name: IMIDAZOL
+      relative_volume: 2.026
+      relative_surface_area: 0.868
+    sg_179:
+      number: 179
+      name: BTI
+      main_group: 85
+      main_group_name: BTI
+      relative_volume: 5.774
+      relative_surface_area: 4.932
+  interactions:
+  - - 1
+    - 2
+    - 86.02
+  - - 1
+    - 3
+    - 61.13
+  - - 1
+    - 4
+    - 76.5
+  - - 1
+    - 5
+    - 986.5
+  - - 1
+    - 6
+    - 697.2
+  - - 1
+    - 7
+    - 1318.0
+  - - 1
+    - 8
+    - 1333.0
+  - - 1
+    - 9
+    - 476.4
+  - - 1
+    - 10
+    - 677.0
+  - - 1
+    - 11
+    - 232.1
+  - - 1
+    - 12
+    - 507.0
+  - - 1
+    - 13
+    - 251.5
+  - - 1
+    - 14
+    - 391.5
+  - - 1
+    - 15
+    - 255.7
+  - - 1
+    - 16
+    - 206.6
+  - - 1
+    - 17
+    - 920.7
+  - - 1
+    - 18
+    - 287.77
+  - - 1
+    - 19
+    - 597.0
+  - - 1
+    - 20
+    - 663.5
+  - - 1
+    - 21
+    - 35.93
+  - - 1
+    - 22
+    - 53.76
+  - - 1
+    - 23
+    - 24.9
+  - - 1
+    - 24
+    - 104.3
+  - - 1
+    - 25
+    - 11.44
+  - - 1
+    - 26
+    - 661.5
+  - - 1
+    - 27
+    - 543.0
+  - - 1
+    - 28
+    - 153.6
+  - - 1
+    - 29
+    - 184.4
+  - - 1
+    - 30
+    - 354.55
+  - - 1
+    - 31
+    - 3025.0
+  - - 1
+    - 32
+    - 335.8
+  - - 1
+    - 33
+    - 479.5
+  - - 1
+    - 34
+    - 298.9
+  - - 1
+    - 35
+    - 526.5
+  - - 1
+    - 36
+    - 689.0
+  - - 1
+    - 37
+    - -4.189
+  - - 1
+    - 38
+    - 125.8
+  - - 1
+    - 39
+    - 485.3
+  - - 1
+    - 40
+    - -2.859
+  - - 1
+    - 41
+    - 387.1
+  - - 1
+    - 42
+    - -450.4
+  - - 1
+    - 43
+    - 252.7
+  - - 1
+    - 44
+    - 220.3
+  - - 1
+    - 45
+    - -5.869
+  - - 1
+    - 46
+    - 390.9
+  - - 1
+    - 47
+    - 553.3
+  - - 1
+    - 48
+    - 187.0
+  - - 1
+    - 49
+    - 216.1
+  - - 1
+    - 50
+    - 92.99
+  - - 1
+    - 51
+    - 699.13
+  - - 1
+    - 55
+    - 808.59
+  - - 1
+    - 84
+    - -1243.0
+  - - 1
+    - 85
+    - 637.65
+  - - 2
+    - 1
+    - -35.36
+  - - 2
+    - 3
+    - 38.81
+  - - 2
+    - 4
+    - 74.15
+  - - 2
+    - 5
+    - 524.1
+  - - 2
+    - 6
+    - 787.6
+  - - 2
+    - 7
+    - 270.6
+  - - 2
+    - 8
+    - 526.1
+  - - 2
+    - 9
+    - 182.6
+  - - 2
+    - 10
+    - 448.75
+  - - 2
+    - 11
+    - 37.85
+  - - 2
+    - 12
+    - 333.5
+  - - 2
+    - 13
+    - 214.5
+  - - 2
+    - 14
+    - 240.9
+  - - 2
+    - 15
+    - 163.9
+  - - 2
+    - 16
+    - 61.11
+  - - 2
+    - 17
+    - 749.3
+  - - 2
+    - 18
+    - 280.5
+  - - 2
+    - 19
+    - 336.9
+  - - 2
+    - 20
+    - 318.9
+  - - 2
+    - 21
+    - -36.87
+  - - 2
+    - 22
+    - 58.55
+  - - 2
+    - 23
+    - -13.99
+  - - 2
+    - 24
+    - -109.7
+  - - 2
+    - 25
+    - 100.1
+  - - 2
+    - 26
+    - 357.5
+  - - 2
+    - 28
+    - 76.3
+  - - 2
+    - 30
+    - 262.9
+  - - 2
+    - 33
+    - 183.8
+  - - 2
+    - 34
+    - 31.14
+  - - 2
+    - 35
+    - 179.0
+  - - 2
+    - 36
+    - -52.87
+  - - 2
+    - 37
+    - -66.46
+  - - 2
+    - 38
+    - 359.3
+  - - 2
+    - 39
+    - -70.45
+  - - 2
+    - 40
+    - 449.4
+  - - 2
+    - 41
+    - 48.33
+  - - 2
+    - 44
+    - 86.46
+  - - 2
+    - 46
+    - 200.2
+  - - 2
+    - 47
+    - 268.1
+  - - 2
+    - 48
+    - -617.0
+  - - 2
+    - 49
+    - 62.56
+  - - 2
+    - 55
+    - 200.94
+  - - 2
+    - 84
+    - -861.46
+  - - 2
+    - 85
+    - 424.93
+  - - 3
+    - 1
+    - -11.12
+  - - 3
+    - 2
+    - 3.446
+  - - 3
+    - 4
+    - 167.0
+  - - 3
+    - 5
+    - 636.1
+  - - 3
+    - 6
+    - 637.35
+  - - 3
+    - 7
+    - 903.8
+  - - 3
+    - 8
+    - 1329.0
+  - - 3
+    - 9
+    - 25.77
+  - - 3
+    - 10
+    - 347.3
+  - - 3
+    - 11
+    - 5.994
+  - - 3
+    - 12
+    - 287.1
+  - - 3
+    - 13
+    - 32.14
+  - - 3
+    - 14
+    - 161.7
+  - - 3
+    - 15
+    - 122.8
+  - - 3
+    - 16
+    - 90.49
+  - - 3
+    - 17
+    - 648.2
+  - - 3
+    - 18
+    - -4.449
+  - - 3
+    - 19
+    - 212.5
+  - - 3
+    - 20
+    - 537.4
+  - - 3
+    - 21
+    - -18.81
+  - - 3
+    - 22
+    - -144.4
+  - - 3
+    - 23
+    - -231.9
+  - - 3
+    - 24
+    - 3.0
+  - - 3
+    - 25
+    - 187.0
+  - - 3
+    - 26
+    - 168.04
+  - - 3
+    - 27
+    - 194.9
+  - - 3
+    - 28
+    - 52.068
+  - - 3
+    - 29
+    - -10.43
+  - - 3
+    - 30
+    - -64.69
+  - - 3
+    - 31
+    - 210.366
+  - - 3
+    - 32
+    - 113.3
+  - - 3
+    - 33
+    - 261.3
+  - - 3
+    - 34
+    - 154.26
+  - - 3
+    - 35
+    - 169.9
+  - - 3
+    - 36
+    - 383.9
+  - - 3
+    - 37
+    - -259.1
+  - - 3
+    - 38
+    - 389.3
+  - - 3
+    - 39
+    - 245.6
+  - - 3
+    - 40
+    - 22.67
+  - - 3
+    - 41
+    - 103.5
+  - - 3
+    - 42
+    - -432.3
+  - - 3
+    - 43
+    - 238.9
+  - - 3
+    - 44
+    - 30.04
+  - - 3
+    - 45
+    - -88.11
+  - - 3
+    - 47
+    - 333.3
+  - - 3
+    - 49
+    - -59.58
+  - - 3
+    - 50
+    - -39.16
+  - - 3
+    - 55
+    - 360.82
+  - - 4
+    - 1
+    - -69.7
+  - - 4
+    - 2
+    - -113.6
+  - - 4
+    - 3
+    - -146.8
+  - - 4
+    - 5
+    - 803.2
+  - - 4
+    - 6
+    - 603.25
+  - - 4
+    - 7
+    - 5695.0
+  - - 4
+    - 8
+    - 884.9
+  - - 4
+    - 9
+    - -52.1
+  - - 4
+    - 10
+    - 586.8
+  - - 4
+    - 11
+    - 5688.0
+  - - 4
+    - 12
+    - 197.8
+  - - 4
+    - 13
+    - 213.1
+  - - 4
+    - 14
+    - 19.02
+  - - 4
+    - 15
+    - -49.29
+  - - 4
+    - 16
+    - 23.5
+  - - 4
+    - 17
+    - 664.2
+  - - 4
+    - 18
+    - 52.8
+  - - 4
+    - 19
+    - 6096.0
+  - - 4
+    - 20
+    - 872.3
+  - - 4
+    - 21
+    - -114.14
+  - - 4
+    - 22
+    - -111.0
+  - - 4
+    - 23
+    - -80.25
+  - - 4
+    - 24
+    - -141.3
+  - - 4
+    - 25
+    - -211.0
+  - - 4
+    - 26
+    - 3629.0
+  - - 4
+    - 27
+    - 4448.0
+  - - 4
+    - 28
+    - -9.451
+  - - 4
+    - 29
+    - 393.6
+  - - 4
+    - 30
+    - 48.49
+  - - 4
+    - 31
+    - 4975.0
+  - - 4
+    - 32
+    - 259.0
+  - - 4
+    - 33
+    - 210.0
+  - - 4
+    - 34
+    - -152.55
+  - - 4
+    - 35
+    - 4284.0
+  - - 4
+    - 36
+    - -119.2
+  - - 4
+    - 37
+    - -282.5
+  - - 4
+    - 38
+    - 101.4
+  - - 4
+    - 39
+    - 5629.0
+  - - 4
+    - 40
+    - -245.39
+  - - 4
+    - 41
+    - 69.26
+  - - 4
+    - 44
+    - 46.38
+  - - 4
+    - 47
+    - 421.9
+  - - 4
+    - 49
+    - -203.6
+  - - 4
+    - 50
+    - 184.9
+  - - 4
+    - 55
+    - 233.51
+  - - 5
+    - 1
+    - 156.4
+  - - 5
+    - 2
+    - 457.0
+  - - 5
+    - 3
+    - 89.6
+  - - 5
+    - 4
+    - 25.82
+  - - 5
+    - 6
+    - -137.1
+  - - 5
+    - 7
+    - 353.5
+  - - 5
+    - 8
+    - -259.7
+  - - 5
+    - 9
+    - 84.0
+  - - 5
+    - 10
+    - -203.6
+  - - 5
+    - 11
+    - 101.1
+  - - 5
+    - 12
+    - 267.8
+  - - 5
+    - 13
+    - 28.06
+  - - 5
+    - 14
+    - 8.642
+  - - 5
+    - 15
+    - 42.7
+  - - 5
+    - 16
+    - -323.0
+  - - 5
+    - 17
+    - -52.39
+  - - 5
+    - 18
+    - 170.029
+  - - 5
+    - 19
+    - 6.712
+  - - 5
+    - 20
+    - 199.0
+  - - 5
+    - 21
+    - 75.62
+  - - 5
+    - 22
+    - 65.28
+  - - 5
+    - 23
+    - -98.12
+  - - 5
+    - 24
+    - 143.1
+  - - 5
+    - 25
+    - 123.5
+  - - 5
+    - 26
+    - 256.5
+  - - 5
+    - 27
+    - 157.1
+  - - 5
+    - 28
+    - 488.9
+  - - 5
+    - 29
+    - 147.5
+  - - 5
+    - 30
+    - -120.46
+  - - 5
+    - 31
+    - -318.93
+  - - 5
+    - 32
+    - 313.5
+  - - 5
+    - 33
+    - 202.1
+  - - 5
+    - 34
+    - 727.8
+  - - 5
+    - 35
+    - -202.1
+  - - 5
+    - 36
+    - 74.27
+  - - 5
+    - 37
+    - 225.8
+  - - 5
+    - 38
+    - 44.78
+  - - 5
+    - 39
+    - -143.9
+  - - 5
+    - 41
+    - 190.3
+  - - 5
+    - 42
+    - -817.7
+  - - 5
+    - 43
+    - -1712.8
+  - - 5
+    - 44
+    - -504.2
+  - - 5
+    - 45
+    - 72.96
+  - - 5
+    - 46
+    - -382.7
+  - - 5
+    - 47
+    - -248.3
+  - - 5
+    - 49
+    - 104.7
+  - - 5
+    - 50
+    - 57.65
+  - - 5
+    - 55
+    - 215.81
+  - - 5
+    - 84
+    - -1840.8
+  - - 5
+    - 85
+    - 56.298
+  - - 6
+    - 1
+    - 16.51
+  - - 6
+    - 2
+    - -12.52
+  - - 6
+    - 3
+    - -50.0
+  - - 6
+    - 4
+    - -44.5
+  - - 6
+    - 5
+    - 249.1
+  - - 6
+    - 7
+    - -180.95
+  - - 6
+    - 8
+    - -101.7
+  - - 6
+    - 9
+    - 23.39
+  - - 6
+    - 10
+    - 306.42
+  - - 6
+    - 11
+    - -10.72
+  - - 6
+    - 12
+    - 179.7
+  - - 6
+    - 13
+    - -128.6
+  - - 6
+    - 14
+    - 359.3
+  - - 6
+    - 15
+    - -20.98
+  - - 6
+    - 16
+    - 53.9
+  - - 6
+    - 17
+    - 489.7
+  - - 6
+    - 18
+    - 580.48
+  - - 6
+    - 19
+    - 53.28
+  - - 6
+    - 20
+    - -202.0
+  - - 6
+    - 21
+    - -38.32
+  - - 6
+    - 22
+    - -102.54
+  - - 6
+    - 23
+    - -139.35
+  - - 6
+    - 24
+    - -44.76
+  - - 6
+    - 25
+    - -28.25
+  - - 6
+    - 26
+    - 75.14
+  - - 6
+    - 27
+    - 457.88
+  - - 6
+    - 28
+    - -31.09
+  - - 6
+    - 29
+    - 17.5
+  - - 6
+    - 30
+    - -61.76
+  - - 6
+    - 31
+    - -119.2
+  - - 6
+    - 32
+    - 212.1
+  - - 6
+    - 33
+    - 106.3
+  - - 6
+    - 34
+    - -119.1
+  - - 6
+    - 35
+    - -399.3
+  - - 6
+    - 36
+    - -5.224
+  - - 6
+    - 37
+    - 33.47
+  - - 6
+    - 38
+    - -48.25
+  - - 6
+    - 39
+    - -172.4
+  - - 6
+    - 41
+    - 165.7
+  - - 6
+    - 45
+    - -52.1
+  - - 6
+    - 48
+    - 37.63
+  - - 6
+    - 49
+    - -59.4
+  - - 6
+    - 50
+    - -46.01
+  - - 6
+    - 55
+    - 150.02
+  - - 7
+    - 1
+    - 300.0
+  - - 7
+    - 2
+    - 496.1
+  - - 7
+    - 3
+    - 362.3
+  - - 7
+    - 4
+    - 377.6
+  - - 7
+    - 5
+    - -229.1
+  - - 7
+    - 6
+    - 289.6
+  - - 7
+    - 8
+    - 324.5
+  - - 7
+    - 9
+    - -195.4
+  - - 7
+    - 10
+    - -116.0
+  - - 7
+    - 11
+    - 72.87
+  - - 7
+    - 12
+    - 233.87
+  - - 7
+    - 13
+    - 540.5
+  - - 7
+    - 14
+    - 48.89
+  - - 7
+    - 15
+    - 168.0
+  - - 7
+    - 16
+    - 304.0
+  - - 7
+    - 17
+    - 243.2
+  - - 7
+    - 18
+    - 459.0
+  - - 7
+    - 19
+    - 112.6
+  - - 7
+    - 20
+    - -14.09
+  - - 7
+    - 21
+    - 325.44
+  - - 7
+    - 22
+    - 370.4
+  - - 7
+    - 23
+    - 353.68
+  - - 7
+    - 24
+    - 497.54
+  - - 7
+    - 25
+    - 133.9
+  - - 7
+    - 26
+    - 220.6
+  - - 7
+    - 27
+    - 399.5
+  - - 7
+    - 28
+    - 887.1
+  - - 7
+    - 30
+    - 188.026
+  - - 7
+    - 31
+    - 12.72
+  - - 7
+    - 33
+    - 777.1
+  - - 7
+    - 35
+    - -139.0
+  - - 7
+    - 36
+    - 160.8
+  - - 7
+    - 39
+    - 319.0
+  - - 7
+    - 41
+    - -197.5
+  - - 7
+    - 42
+    - -363.8
+  - - 7
+    - 44
+    - -452.2
+  - - 7
+    - 46
+    - 835.6
+  - - 7
+    - 47
+    - 139.6
+  - - 7
+    - 49
+    - 407.9
+  - - 7
+    - 55
+    - -255.63
+  - - 8
+    - 1
+    - 275.8
+  - - 8
+    - 2
+    - 217.5
+  - - 8
+    - 3
+    - 25.34
+  - - 8
+    - 4
+    - 244.2
+  - - 8
+    - 5
+    - -451.6
+  - - 8
+    - 6
+    - -265.2
+  - - 8
+    - 7
+    - -601.8
+  - - 8
+    - 9
+    - -356.1
+  - - 8
+    - 10
+    - -271.1
+  - - 8
+    - 11
+    - -449.4
+  - - 8
+    - 12
+    - -32.52
+  - - 8
+    - 13
+    - -162.8742
+  - - 8
+    - 14
+    - -832.97
+  - - 8
+    - 17
+    - 119.9
+  - - 8
+    - 18
+    - -305.5
+  - - 8
+    - 20
+    - 408.9
+  - - 8
+    - 22
+    - 517.27
+  - - 8
+    - 24
+    - 1827.0
+  - - 8
+    - 25
+    - 6915.0
+  - - 8
+    - 27
+    - -413.48
+  - - 8
+    - 28
+    - 8483.5
+  - - 8
+    - 31
+    - -687.1
+  - - 8
+    - 41
+    - -494.2
+  - - 8
+    - 44
+    - -659.0
+  - - 8
+    - 50
+    - 1005.0
+  - - 9
+    - 1
+    - 26.76
+  - - 9
+    - 2
+    - 42.92
+  - - 9
+    - 3
+    - 140.1
+  - - 9
+    - 4
+    - 365.8
+  - - 9
+    - 5
+    - 164.5
+  - - 9
+    - 6
+    - 108.65
+  - - 9
+    - 7
+    - 472.5
+  - - 9
+    - 8
+    - -133.1
+  - - 9
+    - 10
+    - -37.36
+  - - 9
+    - 11
+    - -213.7
+  - - 9
+    - 12
+    - -190.4
+  - - 9
+    - 13
+    - -103.6
+  - - 9
+    - 15
+    - -174.2
+  - - 9
+    - 16
+    - -169.0
+  - - 9
+    - 17
+    - 6201.0
+  - - 9
+    - 18
+    - 7.341
+  - - 9
+    - 19
+    - 481.7
+  - - 9
+    - 20
+    - 669.4
+  - - 9
+    - 21
+    - -191.69
+  - - 9
+    - 22
+    - -130.3
+  - - 9
+    - 23
+    - -354.55
+  - - 9
+    - 24
+    - -39.2
+  - - 9
+    - 25
+    - -119.8
+  - - 9
+    - 26
+    - 137.5
+  - - 9
+    - 27
+    - 548.5
+  - - 9
+    - 28
+    - 216.138
+  - - 9
+    - 29
+    - -46.28
+  - - 9
+    - 30
+    - -163.7
+  - - 9
+    - 31
+    - 71.46
+  - - 9
+    - 32
+    - 53.59
+  - - 9
+    - 33
+    - 245.2
+  - - 9
+    - 34
+    - -246.6
+  - - 9
+    - 35
+    - -44.58
+  - - 9
+    - 36
+    - -63.5
+  - - 9
+    - 37
+    - -34.57
+  - - 9
+    - 39
+    - -61.7
+  - - 9
+    - 41
+    - -18.8
+  - - 9
+    - 42
+    - -588.9
+  - - 9
+    - 47
+    - 37.54
+  - - 9
+    - 50
+    - -162.6
+  - - 10
+    - 1
+    - 505.7
+  - - 10
+    - 2
+    - 56.3
+  - - 10
+    - 3
+    - 23.39
+  - - 10
+    - 4
+    - 106.0
+  - - 10
+    - 5
+    - 529.0
+  - - 10
+    - 6
+    - -340.18
+  - - 10
+    - 7
+    - 480.8
+  - - 10
+    - 8
+    - -155.6
+  - - 10
+    - 9
+    - 128.0
+  - - 10
+    - 11
+    - -110.3
+  - - 10
+    - 12
+    - 766.0
+  - - 10
+    - 13
+    - 304.1
+  - - 10
+    - 19
+    - -106.4
+  - - 10
+    - 20
+    - 497.5
+  - - 10
+    - 21
+    - 751.9
+  - - 10
+    - 22
+    - 67.52
+  - - 10
+    - 23
+    - -483.7
+  - - 10
+    - 32
+    - 117.0
+  - - 10
+    - 34
+    - 2.21
+  - - 10
+    - 36
+    - -339.2
+  - - 10
+    - 37
+    - 172.4
+  - - 10
+    - 39
+    - -268.8
+  - - 10
+    - 41
+    - -275.5
+  - - 11
+    - 1
+    - 114.8
+  - - 11
+    - 2
+    - 132.1
+  - - 11
+    - 3
+    - 85.84
+  - - 11
+    - 4
+    - -170.0
+  - - 11
+    - 5
+    - 245.4
+  - - 11
+    - 6
+    - 249.63
+  - - 11
+    - 7
+    - 200.8
+  - - 11
+    - 8
+    - -36.72
+  - - 11
+    - 9
+    - 372.2
+  - - 11
+    - 10
+    - 185.1
+  - - 11
+    - 12
+    - -241.8
+  - - 11
+    - 13
+    - -235.7
+  - - 11
+    - 15
+    - -73.5
+  - - 11
+    - 16
+    - -196.7
+  - - 11
+    - 17
+    - 475.5
+  - - 11
+    - 18
+    - -0.13
+  - - 11
+    - 19
+    - 494.6
+  - - 11
+    - 20
+    - 660.2
+  - - 11
+    - 21
+    - -34.74
+  - - 11
+    - 22
+    - 108.85
+  - - 11
+    - 23
+    - -209.66
+  - - 11
+    - 24
+    - 54.57
+  - - 11
+    - 25
+    - 442.4
+  - - 11
+    - 26
+    - -81.13
+  - - 11
+    - 28
+    - 183.046
+  - - 11
+    - 30
+    - 202.25
+  - - 11
+    - 31
+    - -101.7
+  - - 11
+    - 32
+    - 148.3
+  - - 11
+    - 33
+    - 18.88
+  - - 11
+    - 34
+    - 71.48
+  - - 11
+    - 35
+    - 52.08
+  - - 11
+    - 36
+    - -28.61
+  - - 11
+    - 37
+    - -275.2
+  - - 11
+    - 39
+    - 85.33
+  - - 11
+    - 41
+    - 560.2
+  - - 11
+    - 47
+    - 151.8
+  - - 12
+    - 1
+    - 329.3
+  - - 12
+    - 2
+    - 110.4
+  - - 12
+    - 3
+    - 18.12
+  - - 12
+    - 4
+    - 428.0
+  - - 12
+    - 5
+    - 139.4
+  - - 12
+    - 6
+    - 227.8
+  - - 12
+    - 7
+    - 124.63
+  - - 12
+    - 8
+    - -234.25
+  - - 12
+    - 9
+    - 385.4
+  - - 12
+    - 10
+    - -236.5
+  - - 12
+    - 11
+    - 1167.0
+  - - 12
+    - 13
+    - -234.0
+  - - 12
+    - 18
+    - -233.4
+  - - 12
+    - 19
+    - -47.25
+  - - 12
+    - 20
+    - -268.1
+  - - 12
+    - 22
+    - 31.0
+  - - 12
+    - 23
+    - -126.2
+  - - 12
+    - 24
+    - 179.7
+  - - 12
+    - 25
+    - 24.28
+  - - 12
+    - 29
+    - 103.9
+  - - 12
+    - 33
+    - 298.13
+  - - 12
+    - 37
+    - -11.4
+  - - 12
+    - 39
+    - 308.9
+  - - 12
+    - 41
+    - -122.3
+  - - 13
+    - 1
+    - 83.36
+  - - 13
+    - 2
+    - 26.51
+  - - 13
+    - 3
+    - 52.13
+  - - 13
+    - 4
+    - 65.69
+  - - 13
+    - 5
+    - 237.7
+  - - 13
+    - 6
+    - 238.4
+  - - 13
+    - 7
+    - -314.7
+  - - 13
+    - 8
+    - -178.5461
+  - - 13
+    - 9
+    - 191.1
+  - - 13
+    - 10
+    - -7.838
+  - - 13
+    - 11
+    - 461.3
+  - - 13
+    - 12
+    - 457.3
+  - - 13
+    - 14
+    - -78.36
+  - - 13
+    - 15
+    - 251.5
+  - - 13
+    - 16
+    - 5422.2998
+  - - 13
+    - 17
+    - -46.39
+  - - 13
+    - 18
+    - 213.2
+  - - 13
+    - 19
+    - -18.51
+  - - 13
+    - 20
+    - 664.6
+  - - 13
+    - 21
+    - 301.14
+  - - 13
+    - 22
+    - 137.77
+  - - 13
+    - 23
+    - -154.3
+  - - 13
+    - 24
+    - 47.67
+  - - 13
+    - 25
+    - 134.8
+  - - 13
+    - 26
+    - 95.18
+  - - 13
+    - 27
+    - 155.11
+  - - 13
+    - 28
+    - 140.896
+  - - 13
+    - 29
+    - -8.538
+  - - 13
+    - 30
+    - 170.1
+  - - 13
+    - 31
+    - -20.11
+  - - 13
+    - 32
+    - -149.5
+  - - 13
+    - 33
+    - -202.3
+  - - 13
+    - 34
+    - -156.57
+  - - 13
+    - 35
+    - 128.8
+  - - 13
+    - 37
+    - 240.2
+  - - 13
+    - 38
+    - -273.95
+  - - 13
+    - 39
+    - 254.8
+  - - 13
+    - 40
+    - -172.51
+  - - 13
+    - 41
+    - 417.0
+  - - 13
+    - 42
+    - 1338.0
+  - - 14
+    - 1
+    - -30.48
+  - - 14
+    - 2
+    - 1.163
+  - - 14
+    - 3
+    - -44.85
+  - - 14
+    - 4
+    - 296.4
+  - - 14
+    - 5
+    - -242.8
+  - - 14
+    - 6
+    - -481.65
+  - - 14
+    - 7
+    - -330.4
+  - - 14
+    - 8
+    - -870.8
+  - - 14
+    - 13
+    - 222.1
+  - - 14
+    - 15
+    - -107.2
+  - - 14
+    - 16
+    - -41.11
+  - - 14
+    - 17
+    - -200.7
+  - - 14
+    - 19
+    - 358.9
+  - - 14
+    - 21
+    - -82.92
+  - - 14
+    - 24
+    - -99.81
+  - - 14
+    - 25
+    - 30.05
+  - - 14
+    - 29
+    - -70.14
+  - - 14
+    - 35
+    - 874.19
+  - - 14
+    - 39
+    - -164.0
+  - - 14
+    - 42
+    - -664.4
+  - - 14
+    - 43
+    - 275.9
+  - - 15
+    - 1
+    - 65.33
+  - - 15
+    - 2
+    - -28.7
+  - - 15
+    - 3
+    - -22.31
+  - - 15
+    - 4
+    - 223.0
+  - - 15
+    - 5
+    - -150.0
+  - - 15
+    - 6
+    - -370.3
+  - - 15
+    - 7
+    - -448.2
+  - - 15
+    - 9
+    - 394.6
+  - - 15
+    - 11
+    - 136.0
+  - - 15
+    - 13
+    - -56.08
+  - - 15
+    - 14
+    - 127.4
+  - - 15
+    - 16
+    - -189.2
+  - - 15
+    - 17
+    - 138.54
+  - - 15
+    - 18
+    - 431.49
+  - - 15
+    - 19
+    - 147.1
+  - - 15
+    - 24
+    - 71.23
+  - - 15
+    - 25
+    - -18.93
+  - - 15
+    - 31
+    - 939.07
+  - - 15
+    - 38
+    - 570.9
+  - - 15
+    - 39
+    - -255.22
+  - - 15
+    - 41
+    - -38.77
+  - - 15
+    - 42
+    - 448.1
+  - - 15
+    - 43
+    - -1327.0
+  - - 16
+    - 1
+    - -83.98
+  - - 16
+    - 2
+    - -25.38
+  - - 16
+    - 3
+    - -223.9
+  - - 16
+    - 4
+    - 109.9
+  - - 16
+    - 5
+    - 28.6
+  - - 16
+    - 6
+    - -406.8
+  - - 16
+    - 7
+    - -598.8
+  - - 16
+    - 9
+    - 225.3
+  - - 16
+    - 11
+    - 2888.6001
+  - - 16
+    - 13
+    - -194.1
+  - - 16
+    - 14
+    - 38.89
+  - - 16
+    - 15
+    - 865.9
+  - - 16
+    - 17
+    - 287.43
+  - - 16
+    - 19
+    - 1255.1
+  - - 16
+    - 21
+    - -182.91
+  - - 16
+    - 22
+    - -73.85
+  - - 16
+    - 23
+    - -352.9
+  - - 16
+    - 24
+    - -262.0
+  - - 16
+    - 25
+    - -181.9
+  - - 16
+    - 35
+    - 243.1
+  - - 16
+    - 38
+    - -196.312
+  - - 16
+    - 39
+    - 22.05
+  - - 17
+    - 1
+    - 1139.0
+  - - 17
+    - 2
+    - 2000.0
+  - - 17
+    - 3
+    - 247.5
+  - - 17
+    - 4
+    - 762.8
+  - - 17
+    - 5
+    - -17.4
+  - - 17
+    - 6
+    - -118.1
+  - - 17
+    - 7
+    - -341.6
+  - - 17
+    - 8
+    - -253.1
+  - - 17
+    - 9
+    - -450.3
+  - - 17
+    - 11
+    - -294.8
+  - - 17
+    - 13
+    - 285.36
+  - - 17
+    - 14
+    - -15.07
+  - - 17
+    - 15
+    - 64.3
+  - - 17
+    - 16
+    - -24.46
+  - - 17
+    - 18
+    - 89.7
+  - - 17
+    - 19
+    - -281.6
+  - - 17
+    - 20
+    - -396.0
+  - - 17
+    - 21
+    - 287.0
+  - - 17
+    - 22
+    - -111.0
+  - - 17
+    - 24
+    - 882.0
+  - - 17
+    - 25
+    - 617.5
+  - - 17
+    - 27
+    - -139.3
+  - - 17
+    - 31
+    - 0.1004
+  - - 17
+    - 39
+    - -334.4
+  - - 17
+    - 41
+    - -89.42
+  - - 18
+    - 1
+    - -101.56
+  - - 18
+    - 2
+    - -47.63
+  - - 18
+    - 3
+    - 31.87
+  - - 18
+    - 4
+    - 49.8
+  - - 18
+    - 5
+    - -132.3
+  - - 18
+    - 6
+    - -378.24
+  - - 18
+    - 7
+    - -332.9
+  - - 18
+    - 8
+    - -341.6
+  - - 18
+    - 9
+    - 29.1
+  - - 18
+    - 11
+    - 8.87
+  - - 18
+    - 12
+    - 554.4
+  - - 18
+    - 13
+    - -156.1
+  - - 18
+    - 15
+    - -207.66
+  - - 18
+    - 17
+    - 117.4
+  - - 18
+    - 19
+    - -169.67
+  - - 18
+    - 20
+    - -153.7
+  - - 18
+    - 22
+    - -351.6
+  - - 18
+    - 23
+    - -114.73
+  - - 18
+    - 24
+    - -205.3
+  - - 18
+    - 25
+    - -2.17
+  - - 18
+    - 27
+    - 2845.0
+  - - 18
+    - 33
+    - -60.78
+  - - 18
+    - 37
+    - 160.7
+  - - 18
+    - 38
+    - -158.8
+  - - 18
+    - 50
+    - -136.6
+  - - 19
+    - 1
+    - 24.82
+  - - 19
+    - 2
+    - -40.62
+  - - 19
+    - 3
+    - -22.97
+  - - 19
+    - 4
+    - -138.4
+  - - 19
+    - 5
+    - 185.4
+  - - 19
+    - 6
+    - 162.6
+  - - 19
+    - 7
+    - 242.8
+  - - 19
+    - 9
+    - -287.5
+  - - 19
+    - 10
+    - 224.66
+  - - 19
+    - 11
+    - -266.6
+  - - 19
+    - 12
+    - 99.37
+  - - 19
+    - 13
+    - 38.81
+  - - 19
+    - 14
+    - -157.3
+  - - 19
+    - 15
+    - -108.5
+  - - 19
+    - 16
+    - -446.86
+  - - 19
+    - 17
+    - 777.4
+  - - 19
+    - 18
+    - 134.28
+  - - 19
+    - 20
+    - 205.27
+  - - 19
+    - 21
+    - 4.933
+  - - 19
+    - 22
+    - -152.7
+  - - 19
+    - 23
+    - -15.62
+  - - 19
+    - 24
+    - -54.86
+  - - 19
+    - 25
+    - -4.624
+  - - 19
+    - 26
+    - -0.515
+  - - 19
+    - 28
+    - 230.852
+  - - 19
+    - 29
+    - 0.4604
+  - - 19
+    - 31
+    - 177.5
+  - - 19
+    - 33
+    - -62.17
+  - - 19
+    - 34
+    - -203.02
+  - - 19
+    - 36
+    - 81.57
+  - - 19
+    - 37
+    - -55.77
+  - - 19
+    - 39
+    - -151.5
+  - - 19
+    - 41
+    - 120.3
+  - - 19
+    - 47
+    - 16.23
+  - - 20
+    - 1
+    - 315.3
+  - - 20
+    - 2
+    - 1264.0
+  - - 20
+    - 3
+    - 62.32
+  - - 20
+    - 4
+    - 89.86
+  - - 20
+    - 5
+    - -151.0
+  - - 20
+    - 6
+    - 339.8
+  - - 20
+    - 7
+    - -66.17
+  - - 20
+    - 8
+    - -11.0
+  - - 20
+    - 9
+    - -297.8
+  - - 20
+    - 10
+    - -165.5
+  - - 20
+    - 11
+    - -256.3
+  - - 20
+    - 12
+    - 193.9
+  - - 20
+    - 13
+    - -338.5
+  - - 20
+    - 17
+    - 493.8
+  - - 20
+    - 18
+    - -313.5
+  - - 20
+    - 19
+    - 92.07
+  - - 20
+    - 21
+    - 13.41
+  - - 20
+    - 22
+    - -44.7
+  - - 20
+    - 23
+    - 39.63
+  - - 20
+    - 24
+    - 183.4
+  - - 20
+    - 25
+    - -79.08
+  - - 20
+    - 30
+    - -208.9
+  - - 20
+    - 32
+    - 228.4
+  - - 20
+    - 33
+    - -95.0
+  - - 20
+    - 35
+    - -463.6
+  - - 20
+    - 37
+    - -11.16
+  - - 20
+    - 39
+    - -228.0
+  - - 20
+    - 41
+    - -337.0
+  - - 20
+    - 46
+    - -322.3
+  - - 21
+    - 1
+    - 91.46
+  - - 21
+    - 2
+    - 40.25
+  - - 21
+    - 3
+    - 4.68
+  - - 21
+    - 4
+    - 122.91
+  - - 21
+    - 5
+    - 562.2
+  - - 21
+    - 6
+    - 529.0
+  - - 21
+    - 7
+    - 698.24
+  - - 21
+    - 9
+    - 286.28
+  - - 21
+    - 10
+    - -47.51
+  - - 21
+    - 11
+    - 35.38
+  - - 21
+    - 13
+    - 225.39
+  - - 21
+    - 14
+    - 131.2
+  - - 21
+    - 16
+    - 151.38
+  - - 21
+    - 17
+    - 429.7
+  - - 21
+    - 19
+    - 54.32
+  - - 21
+    - 20
+    - 519.1
+  - - 21
+    - 22
+    - 108.31
+  - - 21
+    - 23
+    - 249.15
+  - - 21
+    - 24
+    - 62.42
+  - - 21
+    - 25
+    - 153.0
+  - - 21
+    - 26
+    - 32.73
+  - - 21
+    - 27
+    - 86.2
+  - - 21
+    - 28
+    - 450.088
+  - - 21
+    - 29
+    - 59.02
+  - - 21
+    - 30
+    - 65.56
+  - - 21
+    - 32
+    - 2.22
+  - - 21
+    - 33
+    - 344.4
+  - - 21
+    - 37
+    - -168.2
+  - - 21
+    - 39
+    - 6.57
+  - - 21
+    - 41
+    - 63.67
+  - - 22
+    - 1
+    - 34.01
+  - - 22
+    - 2
+    - -23.5
+  - - 22
+    - 3
+    - 121.3
+  - - 22
+    - 4
+    - 140.78
+  - - 22
+    - 5
+    - 527.6
+  - - 22
+    - 6
+    - 669.9
+  - - 22
+    - 7
+    - 708.69
+  - - 22
+    - 8
+    - 1633.5
+  - - 22
+    - 9
+    - 82.86
+  - - 22
+    - 10
+    - 190.6
+  - - 22
+    - 11
+    - -132.95
+  - - 22
+    - 12
+    - 80.99
+  - - 22
+    - 13
+    - -197.71
+  - - 22
+    - 16
+    - -141.4
+  - - 22
+    - 17
+    - 140.8
+  - - 22
+    - 18
+    - 587.3
+  - - 22
+    - 19
+    - 258.6
+  - - 22
+    - 20
+    - 543.3
+  - - 22
+    - 21
+    - -84.53
+  - - 22
+    - 23
+    - 0.0
+  - - 22
+    - 24
+    - 56.33
+  - - 22
+    - 25
+    - 223.1
+  - - 22
+    - 26
+    - 108.9
+  - - 22
+    - 30
+    - 149.56
+  - - 22
+    - 32
+    - 177.6
+  - - 22
+    - 33
+    - 315.9
+  - - 22
+    - 35
+    - 215.0
+  - - 22
+    - 37
+    - -91.8
+  - - 22
+    - 39
+    - -160.28
+  - - 22
+    - 41
+    - -96.87
+  - - 22
+    - 47
+    - 361.1
+  - - 23
+    - 1
+    - 36.7
+  - - 23
+    - 2
+    - 51.06
+  - - 23
+    - 3
+    - 288.5
+  - - 23
+    - 4
+    - 69.9
+  - - 23
+    - 5
+    - 742.1
+  - - 23
+    - 6
+    - 649.1
+  - - 23
+    - 7
+    - 826.76
+  - - 23
+    - 9
+    - 552.1
+  - - 23
+    - 10
+    - 242.8
+  - - 23
+    - 11
+    - 176.45
+  - - 23
+    - 12
+    - 235.6
+  - - 23
+    - 13
+    - -20.93
+  - - 23
+    - 16
+    - -293.7
+  - - 23
+    - 18
+    - 18.98
+  - - 23
+    - 19
+    - 74.04
+  - - 23
+    - 20
+    - 504.2
+  - - 23
+    - 21
+    - -157.1
+  - - 23
+    - 22
+    - 0.0
+  - - 23
+    - 24
+    - -30.1
+  - - 23
+    - 25
+    - 192.1
+  - - 23
+    - 28
+    - 116.612
+  - - 23
+    - 30
+    - -64.38
+  - - 23
+    - 32
+    - 86.4
+  - - 23
+    - 33
+    - 168.8
+  - - 23
+    - 35
+    - 363.7
+  - - 23
+    - 37
+    - 111.2
+  - - 23
+    - 41
+    - 255.8
+  - - 23
+    - 44
+    - -35.68
+  - - 23
+    - 48
+    - 565.9
+  - - 24
+    - 1
+    - -78.45
+  - - 24
+    - 2
+    - 160.9
+  - - 24
+    - 3
+    - -4.7
+  - - 24
+    - 4
+    - 134.7
+  - - 24
+    - 5
+    - 856.3
+  - - 24
+    - 6
+    - 709.6
+  - - 24
+    - 7
+    - 1201.0
+  - - 24
+    - 8
+    - 10000.0
+  - - 24
+    - 9
+    - 372.0
+  - - 24
+    - 11
+    - 129.49
+  - - 24
+    - 12
+    - 351.9
+  - - 24
+    - 13
+    - 113.9
+  - - 24
+    - 14
+    - 261.1
+  - - 24
+    - 15
+    - 91.13
+  - - 24
+    - 16
+    - 316.9
+  - - 24
+    - 17
+    - 898.2
+  - - 24
+    - 18
+    - 368.5
+  - - 24
+    - 19
+    - 491.95
+  - - 24
+    - 20
+    - 631.0
+  - - 24
+    - 21
+    - 11.8
+  - - 24
+    - 22
+    - 17.97
+  - - 24
+    - 23
+    - 51.9
+  - - 24
+    - 25
+    - -75.97
+  - - 24
+    - 26
+    - 490.88
+  - - 24
+    - 27
+    - 534.7
+  - - 24
+    - 28
+    - 132.2
+  - - 24
+    - 30
+    - 546.68
+  - - 24
+    - 32
+    - 247.8
+  - - 24
+    - 33
+    - 146.6
+  - - 24
+    - 35
+    - 337.7
+  - - 24
+    - 36
+    - 369.49
+  - - 24
+    - 37
+    - 187.1
+  - - 24
+    - 38
+    - 215.2
+  - - 24
+    - 39
+    - 498.6
+  - - 24
+    - 41
+    - 256.5
+  - - 24
+    - 43
+    - 233.1
+  - - 24
+    - 47
+    - 423.1
+  - - 24
+    - 48
+    - 63.95
+  - - 24
+    - 50
+    - 108.5
+  - - 24
+    - 55
+    - 585.19
+  - - 25
+    - 1
+    - 106.8
+  - - 25
+    - 2
+    - 70.32
+  - - 25
+    - 3
+    - -97.27
+  - - 25
+    - 4
+    - 402.5
+  - - 25
+    - 5
+    - 325.7
+  - - 25
+    - 6
+    - 612.8
+  - - 25
+    - 7
+    - -274.5
+  - - 25
+    - 8
+    - 622.3
+  - - 25
+    - 9
+    - 518.4
+  - - 25
+    - 11
+    - -171.1
+  - - 25
+    - 12
+    - 383.3
+  - - 25
+    - 13
+    - -25.15
+  - - 25
+    - 14
+    - 108.5
+  - - 25
+    - 15
+    - 102.2
+  - - 25
+    - 16
+    - 2951.0
+  - - 25
+    - 17
+    - 334.9
+  - - 25
+    - 18
+    - 20.18
+  - - 25
+    - 19
+    - 363.5
+  - - 25
+    - 20
+    - 993.4
+  - - 25
+    - 21
+    - -129.7
+  - - 25
+    - 22
+    - -8.309
+  - - 25
+    - 23
+    - -0.2266
+  - - 25
+    - 24
+    - 248.4
+  - - 25
+    - 26
+    - 132.7
+  - - 25
+    - 27
+    - 2213.0
+  - - 25
+    - 33
+    - 593.4
+  - - 25
+    - 35
+    - 1337.37
+  - - 25
+    - 39
+    - 5143.1401
+  - - 25
+    - 40
+    - 309.58
+  - - 25
+    - 41
+    - -71.18
+  - - 25
+    - 44
+    - -209.7
+  - - 25
+    - 47
+    - 434.1
+  - - 26
+    - 1
+    - -32.69
+  - - 26
+    - 2
+    - -1.996
+  - - 26
+    - 3
+    - 10.38
+  - - 26
+    - 4
+    - -97.05
+  - - 26
+    - 5
+    - 261.6
+  - - 26
+    - 6
+    - 252.56
+  - - 26
+    - 7
+    - 417.9
+  - - 26
+    - 9
+    - -142.61
+  - - 26
+    - 11
+    - 129.3
+  - - 26
+    - 13
+    - -94.49
+  - - 26
+    - 19
+    - 0.283
+  - - 26
+    - 21
+    - 113.0
+  - - 26
+    - 22
+    - -9.639
+  - - 26
+    - 24
+    - -34.68
+  - - 26
+    - 25
+    - 132.9
+  - - 26
+    - 27
+    - 533.2
+  - - 26
+    - 28
+    - 320.2
+  - - 26
+    - 31
+    - 139.822
+  - - 26
+    - 32
+    - 304.3
+  - - 26
+    - 33
+    - 10.17
+  - - 26
+    - 34
+    - -27.701
+  - - 26
+    - 37
+    - 10.76
+  - - 26
+    - 39
+    - -223.1
+  - - 26
+    - 41
+    - 248.4
+  - - 26
+    - 45
+    - -218.9
+  - - 26
+    - 50
+    - -4.565
+  - - 27
+    - 1
+    - 5541.0
+  - - 27
+    - 3
+    - 1824.0
+  - - 27
+    - 4
+    - -127.8
+  - - 27
+    - 5
+    - 561.6
+  - - 27
+    - 6
+    - 511.29
+  - - 27
+    - 7
+    - 360.7
+  - - 27
+    - 8
+    - 815.12
+  - - 27
+    - 9
+    - -101.5
+  - - 27
+    - 13
+    - 220.66
+  - - 27
+    - 17
+    - 134.9
+  - - 27
+    - 18
+    - 2475.0
+  - - 27
+    - 21
+    - 1971.0
+  - - 27
+    - 24
+    - 514.6
+  - - 27
+    - 25
+    - -123.1
+  - - 27
+    - 26
+    - -85.12
+  - - 27
+    - 32
+    - 2990.0
+  - - 27
+    - 33
+    - -124.0
+  - - 28
+    - 1
+    - -52.65
+  - - 28
+    - 2
+    - 16.623
+  - - 28
+    - 3
+    - 21.497
+  - - 28
+    - 4
+    - 40.675
+  - - 28
+    - 5
+    - 609.8
+  - - 28
+    - 6
+    - 914.2
+  - - 28
+    - 7
+    - 1081.0
+  - - 28
+    - 8
+    - 1421.3
+  - - 28
+    - 9
+    - 303.657
+  - - 28
+    - 11
+    - 243.775
+  - - 28
+    - 13
+    - 112.382
+  - - 28
+    - 19
+    - 335.743
+  - - 28
+    - 21
+    - -73.092
+  - - 28
+    - 23
+    - -26.058
+  - - 28
+    - 24
+    - -60.71
+  - - 28
+    - 26
+    - 277.8
+  - - 28
+    - 32
+    - 292.7
+  - - 28
+    - 37
+    - -47.37
+  - - 28
+    - 41
+    - 469.8
+  - - 29
+    - 1
+    - -7.481
+  - - 29
+    - 3
+    - 28.41
+  - - 29
+    - 4
+    - 19.56
+  - - 29
+    - 5
+    - 461.6
+  - - 29
+    - 6
+    - 448.6
+  - - 29
+    - 9
+    - 160.6
+  - - 29
+    - 12
+    - 201.5
+  - - 29
+    - 13
+    - 63.71
+  - - 29
+    - 14
+    - 106.7
+  - - 29
+    - 19
+    - 161.0
+  - - 29
+    - 21
+    - -27.94
+  - - 29
+    - 35
+    - 31.66
+  - - 29
+    - 39
+    - 78.92
+  - - 29
+    - 44
+    - 1004.2
+  - - 29
+    - 48
+    - -18.27
+  - - 30
+    - 1
+    - -25.31
+  - - 30
+    - 2
+    - 82.64
+  - - 30
+    - 3
+    - 157.29
+  - - 30
+    - 4
+    - 128.8
+  - - 30
+    - 5
+    - 521.63
+  - - 30
+    - 6
+    - 287.0
+  - - 30
+    - 7
+    - 23.484
+  - - 30
+    - 9
+    - 317.5
+  - - 30
+    - 11
+    - -146.31
+  - - 30
+    - 13
+    - -87.31
+  - - 30
+    - 20
+    - 570.6
+  - - 30
+    - 21
+    - -39.46
+  - - 30
+    - 22
+    - -116.21
+  - - 30
+    - 23
+    - 48.484
+  - - 30
+    - 24
+    - -133.16
+  - - 30
+    - 41
+    - 43.37
+  - - 31
+    - 1
+    - 139.93
+  - - 31
+    - 3
+    - 221.4
+  - - 31
+    - 4
+    - 150.64
+  - - 31
+    - 5
+    - 267.6
+  - - 31
+    - 6
+    - 240.8
+  - - 31
+    - 7
+    - -137.4
+  - - 31
+    - 8
+    - 838.4
+  - - 31
+    - 9
+    - 135.4
+  - - 31
+    - 11
+    - 152.0
+  - - 31
+    - 13
+    - 9.207
+  - - 31
+    - 15
+    - -213.74
+  - - 31
+    - 17
+    - 192.3
+  - - 31
+    - 19
+    - 169.6
+  - - 31
+    - 26
+    - 481.348
+  - - 31
+    - 35
+    - -417.2
+  - - 31
+    - 39
+    - 302.2
+  - - 31
+    - 41
+    - 347.8
+  - - 31
+    - 44
+    - -262.0
+  - - 31
+    - 47
+    - -353.5
+  - - 32
+    - 1
+    - 128.0
+  - - 32
+    - 3
+    - 58.68
+  - - 32
+    - 4
+    - 26.41
+  - - 32
+    - 5
+    - 501.3
+  - - 32
+    - 6
+    - 431.3
+  - - 32
+    - 9
+    - 138.0
+  - - 32
+    - 10
+    - 245.9
+  - - 32
+    - 11
+    - 21.92
+  - - 32
+    - 13
+    - 476.6
+  - - 32
+    - 20
+    - 616.6
+  - - 32
+    - 21
+    - 179.25
+  - - 32
+    - 22
+    - -40.82
+  - - 32
+    - 23
+    - 21.76
+  - - 32
+    - 24
+    - 48.49
+  - - 32
+    - 26
+    - 64.28
+  - - 32
+    - 27
+    - 2448.0
+  - - 32
+    - 28
+    - -27.45
+  - - 32
+    - 33
+    - 6.37
+  - - 32
+    - 41
+    - 68.55
+  - - 33
+    - 1
+    - -31.52
+  - - 33
+    - 2
+    - 174.6
+  - - 33
+    - 3
+    - -154.2
+  - - 33
+    - 4
+    - 1112.0
+  - - 33
+    - 5
+    - 524.9
+  - - 33
+    - 6
+    - 494.7
+  - - 33
+    - 7
+    - 79.18
+  - - 33
+    - 9
+    - -142.6
+  - - 33
+    - 11
+    - 24.37
+  - - 33
+    - 12
+    - -92.26
+  - - 33
+    - 13
+    - 736.4
+  - - 33
+    - 18
+    - -42.71
+  - - 33
+    - 19
+    - 136.9
+  - - 33
+    - 20
+    - 5256.0
+  - - 33
+    - 21
+    - -262.3
+  - - 33
+    - 22
+    - -174.5
+  - - 33
+    - 23
+    - -46.8
+  - - 33
+    - 24
+    - 77.55
+  - - 33
+    - 25
+    - -185.3
+  - - 33
+    - 26
+    - 125.3
+  - - 33
+    - 27
+    - 4288.0
+  - - 33
+    - 32
+    - 37.1
+  - - 33
+    - 35
+    - 32.9
+  - - 33
+    - 37
+    - -48.33
+  - - 33
+    - 39
+    - 336.25
+  - - 33
+    - 41
+    - -195.1
+  - - 34
+    - 1
+    - -72.88
+  - - 34
+    - 2
+    - 41.38
+  - - 34
+    - 3
+    - -101.12
+  - - 34
+    - 4
+    - 614.52
+  - - 34
+    - 5
+    - 68.95
+  - - 34
+    - 6
+    - 967.71
+  - - 34
+    - 9
+    - 443.615
+  - - 34
+    - 10
+    - -55.87
+  - - 34
+    - 11
+    - -111.45
+  - - 34
+    - 13
+    - 173.77
+  - - 34
+    - 19
+    - 329.12
+  - - 34
+    - 26
+    - 174.433
+  - - 34
+    - 37
+    - 2073.2
+  - - 34
+    - 39
+    - -119.8
+  - - 35
+    - 1
+    - 50.49
+  - - 35
+    - 2
+    - 64.07
+  - - 35
+    - 3
+    - -2.504
+  - - 35
+    - 4
+    - -143.2
+  - - 35
+    - 5
+    - -25.87
+  - - 35
+    - 6
+    - 695.0
+  - - 35
+    - 7
+    - -240.0
+  - - 35
+    - 9
+    - 110.4
+  - - 35
+    - 11
+    - 41.57
+  - - 35
+    - 13
+    - -93.51
+  - - 35
+    - 14
+    - -366.51
+  - - 35
+    - 16
+    - -257.2
+  - - 35
+    - 20
+    - -180.2
+  - - 35
+    - 22
+    - -215.0
+  - - 35
+    - 23
+    - -343.6
+  - - 35
+    - 24
+    - -58.43
+  - - 35
+    - 25
+    - -334.12
+  - - 35
+    - 29
+    - 85.7
+  - - 35
+    - 31
+    - 535.8
+  - - 35
+    - 33
+    - -111.2
+  - - 35
+    - 39
+    - -97.71
+  - - 35
+    - 41
+    - 153.7
+  - - 36
+    - 1
+    - -165.9
+  - - 36
+    - 2
+    - 573.0
+  - - 36
+    - 3
+    - -123.6
+  - - 36
+    - 4
+    - 397.4
+  - - 36
+    - 5
+    - 389.3
+  - - 36
+    - 6
+    - 218.8
+  - - 36
+    - 7
+    - 386.6
+  - - 36
+    - 9
+    - 114.55
+  - - 36
+    - 10
+    - 354.0
+  - - 36
+    - 11
+    - 175.53
+  - - 36
+    - 19
+    - -42.31
+  - - 36
+    - 24
+    - -85.148
+  - - 36
+    - 37
+    - -208.8
+  - - 36
+    - 39
+    - -8.804
+  - - 36
+    - 41
+    - 423.4
+  - - 37
+    - 1
+    - 47.41
+  - - 37
+    - 2
+    - 124.2
+  - - 37
+    - 3
+    - 395.8
+  - - 37
+    - 4
+    - 419.1
+  - - 37
+    - 5
+    - 738.9
+  - - 37
+    - 6
+    - 528.0
+  - - 37
+    - 9
+    - -40.9
+  - - 37
+    - 10
+    - 183.8
+  - - 37
+    - 11
+    - 611.3
+  - - 37
+    - 12
+    - 134.5
+  - - 37
+    - 13
+    - -217.9
+  - - 37
+    - 18
+    - 281.6
+  - - 37
+    - 19
+    - 335.2
+  - - 37
+    - 20
+    - 898.2
+  - - 37
+    - 21
+    - 383.2
+  - - 37
+    - 22
+    - 301.9
+  - - 37
+    - 23
+    - -149.8
+  - - 37
+    - 24
+    - -134.2
+  - - 37
+    - 26
+    - 379.4
+  - - 37
+    - 28
+    - 167.9
+  - - 37
+    - 33
+    - 322.42
+  - - 37
+    - 34
+    - 631.5
+  - - 37
+    - 36
+    - 837.2
+  - - 37
+    - 39
+    - 255.0
+  - - 37
+    - 41
+    - 730.8
+  - - 37
+    - 44
+    - 26.35
+  - - 37
+    - 48
+    - 2429.0
+  - - 38
+    - 1
+    - -5.132
+  - - 38
+    - 2
+    - -131.7
+  - - 38
+    - 3
+    - -237.2
+  - - 38
+    - 4
+    - -157.3
+  - - 38
+    - 5
+    - 649.7
+  - - 38
+    - 6
+    - 645.9
+  - - 38
+    - 13
+    - 167.3
+  - - 38
+    - 15
+    - -198.8
+  - - 38
+    - 16
+    - 116.478
+  - - 38
+    - 18
+    - 159.8
+  - - 38
+    - 24
+    - -124.6
+  - - 38
+    - 39
+    - -110.65
+  - - 38
+    - 40
+    - -117.17
+  - - 39
+    - 1
+    - -31.95
+  - - 39
+    - 2
+    - 249.0
+  - - 39
+    - 3
+    - -133.9
+  - - 39
+    - 4
+    - -240.2
+  - - 39
+    - 5
+    - 64.16
+  - - 39
+    - 6
+    - 172.2
+  - - 39
+    - 7
+    - -287.1
+  - - 39
+    - 9
+    - 97.04
+  - - 39
+    - 10
+    - 13.89
+  - - 39
+    - 11
+    - -82.12
+  - - 39
+    - 12
+    - -116.7
+  - - 39
+    - 13
+    - -158.2
+  - - 39
+    - 14
+    - 49.7
+  - - 39
+    - 15
+    - 10.03
+  - - 39
+    - 16
+    - -185.2
+  - - 39
+    - 17
+    - 343.7
+  - - 39
+    - 19
+    - 150.6
+  - - 39
+    - 20
+    - -97.77
+  - - 39
+    - 21
+    - -55.21
+  - - 39
+    - 22
+    - 397.24
+  - - 39
+    - 24
+    - -186.7
+  - - 39
+    - 25
+    - -374.16
+  - - 39
+    - 26
+    - 223.6
+  - - 39
+    - 29
+    - -71.0
+  - - 39
+    - 31
+    - -191.7
+  - - 39
+    - 33
+    - -176.26
+  - - 39
+    - 34
+    - 6.699
+  - - 39
+    - 35
+    - 136.6
+  - - 39
+    - 36
+    - 5.15
+  - - 39
+    - 37
+    - -137.7
+  - - 39
+    - 38
+    - 50.06
+  - - 39
+    - 40
+    - -5.579
+  - - 39
+    - 41
+    - 72.31
+  - - 40
+    - 1
+    - 147.3
+  - - 40
+    - 2
+    - 62.4
+  - - 40
+    - 3
+    - 140.6
+  - - 40
+    - 4
+    - 839.83
+  - - 40
+    - 13
+    - 278.15
+  - - 40
+    - 25
+    - 33.95
+  - - 40
+    - 38
+    - 185.6
+  - - 40
+    - 39
+    - 55.8
+  - - 40
+    - 45
+    - 111.8
+  - - 41
+    - 1
+    - 529.0
+  - - 41
+    - 2
+    - 1397.0
+  - - 41
+    - 3
+    - 317.6
+  - - 41
+    - 4
+    - 615.8
+  - - 41
+    - 5
+    - 88.63
+  - - 41
+    - 6
+    - 171.0
+  - - 41
+    - 7
+    - 284.4
+  - - 41
+    - 8
+    - -167.3
+  - - 41
+    - 9
+    - 123.4
+  - - 41
+    - 10
+    - 577.5
+  - - 41
+    - 11
+    - -234.9
+  - - 41
+    - 12
+    - 145.4
+  - - 41
+    - 13
+    - -247.8
+  - - 41
+    - 15
+    - 284.5
+  - - 41
+    - 17
+    - -22.1
+  - - 41
+    - 19
+    - -61.6
+  - - 41
+    - 20
+    - 1179.0
+  - - 41
+    - 21
+    - 182.2
+  - - 41
+    - 22
+    - 305.4
+  - - 41
+    - 23
+    - -193.0
+  - - 41
+    - 24
+    - 335.7
+  - - 41
+    - 25
+    - 956.1
+  - - 41
+    - 26
+    - -124.7
+  - - 41
+    - 28
+    - 885.5
+  - - 41
+    - 30
+    - -64.28
+  - - 41
+    - 31
+    - -264.3
+  - - 41
+    - 32
+    - 288.1
+  - - 41
+    - 33
+    - 627.7
+  - - 41
+    - 35
+    - -29.34
+  - - 41
+    - 36
+    - -53.91
+  - - 41
+    - 37
+    - -198.0
+  - - 41
+    - 39
+    - -28.65
+  - - 41
+    - 47
+    - 122.4
+  - - 42
+    - 1
+    - -34.36
+  - - 42
+    - 3
+    - 787.9
+  - - 42
+    - 5
+    - 1913.0
+  - - 42
+    - 7
+    - 180.2
+  - - 42
+    - 9
+    - 992.4
+  - - 42
+    - 13
+    - 448.5
+  - - 42
+    - 14
+    - 961.8
+  - - 42
+    - 15
+    - 1464.2
+  - - 42
+    - 43
+    - -2166.0
+  - - 43
+    - 1
+    - 110.2
+  - - 43
+    - 3
+    - 234.4
+  - - 43
+    - 5
+    - 430.06
+  - - 43
+    - 14
+    - -125.2
+  - - 43
+    - 15
+    - 1603.8
+  - - 43
+    - 24
+    - 70.81
+  - - 43
+    - 42
+    - 745.3
+  - - 44
+    - 1
+    - 13.89
+  - - 44
+    - 2
+    - -16.11
+  - - 44
+    - 3
+    - -23.88
+  - - 44
+    - 4
+    - 6.214
+  - - 44
+    - 5
+    - 796.9
+  - - 44
+    - 7
+    - 832.2
+  - - 44
+    - 8
+    - -234.7
+  - - 44
+    - 23
+    - -196.2
+  - - 44
+    - 25
+    - 161.5
+  - - 44
+    - 29
+    - -274.1
+  - - 44
+    - 31
+    - 262.0
+  - - 44
+    - 37
+    - -66.31
+  - - 45
+    - 1
+    - 30.74
+  - - 45
+    - 3
+    - 167.9
+  - - 45
+    - 5
+    - 794.4
+  - - 45
+    - 6
+    - 762.7
+  - - 45
+    - 26
+    - 844.0
+  - - 45
+    - 40
+    - -32.17
+  - - 46
+    - 1
+    - 27.97
+  - - 46
+    - 2
+    - 9.755
+  - - 46
+    - 5
+    - 394.8
+  - - 46
+    - 7
+    - -509.3
+  - - 46
+    - 20
+    - -70.25
+  - - 47
+    - 1
+    - -11.92
+  - - 47
+    - 2
+    - 132.4
+  - - 47
+    - 3
+    - -86.88
+  - - 47
+    - 4
+    - -19.45
+  - - 47
+    - 5
+    - 517.5
+  - - 47
+    - 7
+    - -205.7
+  - - 47
+    - 9
+    - 156.4
+  - - 47
+    - 11
+    - -3.444
+  - - 47
+    - 19
+    - 119.2
+  - - 47
+    - 22
+    - -194.7
+  - - 47
+    - 24
+    - 3.163
+  - - 47
+    - 25
+    - 7.082
+  - - 47
+    - 31
+    - 515.8
+  - - 47
+    - 41
+    - 101.2
+  - - 48
+    - 1
+    - 39.93
+  - - 48
+    - 2
+    - 543.6
+  - - 48
+    - 6
+    - 420.0
+  - - 48
+    - 23
+    - -363.1
+  - - 48
+    - 24
+    - -11.3
+  - - 48
+    - 29
+    - 6.971
+  - - 48
+    - 37
+    - 148.9
+  - - 49
+    - 1
+    - -23.61
+  - - 49
+    - 2
+    - 161.1
+  - - 49
+    - 3
+    - 142.9
+  - - 49
+    - 4
+    - 274.1
+  - - 49
+    - 5
+    - -61.2
+  - - 49
+    - 6
+    - -89.24
+  - - 49
+    - 7
+    - -384.3
+  - - 50
+    - 1
+    - -8.479
+  - - 50
+    - 3
+    - 23.93
+  - - 50
+    - 4
+    - 2.845
+  - - 50
+    - 5
+    - 682.5
+  - - 50
+    - 6
+    - 597.8
+  - - 50
+    - 8
+    - 810.5
+  - - 50
+    - 9
+    - 278.8
+  - - 50
+    - 18
+    - 221.4
+  - - 50
+    - 24
+    - -79.34
+  - - 50
+    - 26
+    - 176.3
+  - - 51
+    - 1
+    - 456.19
+  - - 55
+    - 1
+    - 245.21
+  - - 55
+    - 2
+    - 384.45
+  - - 55
+    - 3
+    - 47.05
+  - - 55
+    - 4
+    - 347.13
+  - - 55
+    - 5
+    - 72.19
+  - - 55
+    - 6
+    - 265.75
+  - - 55
+    - 7
+    - 627.39
+  - - 55
+    - 24
+    - 75.04
+  - - 84
+    - 1
+    - 125.36
+  - - 84
+    - 2
+    - -391.81
+  - - 84
+    - 5
+    - 111.65
+  - - 84
+    - 85
+    - 1517.5
+  - - 85
+    - 1
+    - 221.56
+  - - 85
+    - 2
+    - 629.96
+  - - 85
+    - 5
+    - 122.19
+  - - 85
+    - 84
+    - -1869.9
+  component_assignments:
+    ethane:
+      1: 2
+    propane:
+      1: 2
+      2: 1
+    n_butane:
+      1: 2
+      2: 2
+    isobutane:
+      1: 3
+      3: 1
+    n_pentane:
+      1: 2
+      2: 3
+    n_hexane:
+      1: 2
+      2: 4
+    n_heptane:
+      1: 2
+      2: 5
+    n_octane:
+      1: 2
+      2: 6
+    n_nonane:
+      1: 2
+      2: 7
+    n_decane:
+      1: 2
+      2: 8
+    benzene:
+      9: 6
+    toluene:
+      9: 5
+      11: 1
+    methanol:
+      15: 1
+    ethanol:
+      1: 1
+      2: 1
+      14: 1
+    water:
+      16: 1
+    acetone:
+      1: 1
+      18: 1
+    2_butanone:
+      1: 1
+      2: 1
+      18: 1
+    2_propanol:
+      1: 2
+      3: 1
+      14: 1
+  provenance_notes:
+  - The public table contains 113 subgroups, 54 main groups, and 1270 directed nonzero/off-diagonal records.
+  - Missing directed pairs are unavailable parameters and must not be interpreted as zero.
+  - 'UEA/AIM differs from this pinned table at some subgroup values: CH3CO Q is 1.448 at AIM versus 1.488
+    here; CH2Cl2 Q is 1.998 at AIM versus 1.988 here.'
+  - UEA/AIM also appends Balslev-Abildskov groups under a numbering scheme incompatible with the current
+    DDBST public table; those groups are not silently merged.

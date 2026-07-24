@@ -1,0 +1,129 @@
+format: torch-flash-model-parameters
+schema_version: 1
+id: cpa.yan-2009-reservoir-fluids
+model_kind: cpa
+model: SRK-CPA reservoir fluids
+version: "2009"
+description: >-
+  Reservoir-fluid CPA setup from Yan, Kontogeorgis, and Stenby (2009). The
+  temperature-dependent light-hydrocarbon/water BIPs and C7+ monomer
+  characterization coefficients are from that paper. Light-hydrocarbon and
+  water pure parameters are the Oliveira et al. (2007) values used for a
+  traceable bundled setup; Yan et al. refer those pure parameters to earlier
+  CPA literature rather than reproducing their table.
+units:
+  critical_temperature: K
+  a0: Pa m^6 mol^-2
+  b: m^3 mol^-1
+  c1: dimensionless
+  association_energy: J mol^-1
+  association_volume: dimensionless
+  binary_interaction_a: dimensionless
+  binary_interaction_b: K
+  normal_boiling_pressure: Pa
+references:
+  - citation: >-
+      Yan, Kontogeorgis, and Stenby, Fluid Phase Equilibria 276 (2009) 75-85
+    doi: 10.1016/j.fluid.2008.10.007
+  - citation: >-
+      Oliveira, Coutinho, and Queimada, Fluid Phase Equilibria 258 (2007)
+      58-66
+    doi: 10.1016/j.fluid.2007.05.023
+parameters:
+  default_combining_rule: ECR
+  components:
+    methane:
+      critical_temperature: 190.564
+      a0: 0.23
+      b: 2.95e-05
+      c1: 0.46
+      association_energy: 0.0
+      association_volume: 0.0
+      scheme: none
+    ethane:
+      critical_temperature: 305.322
+      a0: 0.55
+      b: 4.30e-05
+      c1: 0.59
+      association_energy: 0.0
+      association_volume: 0.0
+      scheme: none
+    propane:
+      critical_temperature: 369.89
+      a0: 0.92
+      b: 5.89e-05
+      c1: 0.67
+      association_energy: 0.0
+      association_volume: 0.0
+      scheme: none
+    n_butane:
+      critical_temperature: 425.125
+      a0: 1.35
+      b: 7.48e-05
+      c1: 0.73
+      association_energy: 0.0
+      association_volume: 0.0
+      scheme: none
+    n_heptane:
+      critical_temperature: 540.13
+      a0: 2.89
+      b: 1.250e-04
+      c1: 0.93
+      association_energy: 0.0
+      association_volume: 0.0
+      scheme: none
+    water:
+      critical_temperature: 647.096
+      a0: 0.12
+      b: 1.45e-05
+      c1: 0.67
+      association_energy: 16655.0
+      association_volume: 0.069
+      scheme: 4C
+    methanol:
+      critical_temperature: 512.64
+      a0: 0.40531
+      b: 3.0978e-05
+      c1: 0.43102
+      association_energy: 24591.0
+      association_volume: 0.0161
+      scheme: 2B
+    ethylene_glycol:
+      critical_temperature: 720.0
+      a0: 1.0819
+      b: 5.14e-05
+      c1: 0.6744
+      association_energy: 19752.0
+      association_volume: 0.0141
+      scheme: 4C
+  binary_interactions:
+    kind: a_plus_b_over_temperature
+    pairs:
+      methane|water: {a: 0.6769, b: -213.5}
+      ethane|water: {a: 0.4497, b: -127.2}
+      propane|water: {a: 0.4809, b: -130.5}
+      n_butane|water: {a: 0.2828, b: -73.73}
+      methane|methanol: {a: 0.01, b: 0.0}
+      methanol|water: {a: -0.09, b: 0.0}
+      ethylene_glycol|methane: {a: 0.05, b: 0.0}
+      ethylene_glycol|ethane: {a: 0.05, b: 0.0}
+      ethylene_glycol|propane: {a: 0.05, b: 0.0}
+      ethylene_glycol|n_butane: {a: 0.05, b: 0.0}
+      ethylene_glycol|n_heptane: {a: 0.05, b: 0.0}
+      ethylene_glycol|water: {a: -0.115, b: 0.0}
+      n_heptane|water: {a: 0.0095, b: 0.0}
+  heavy_end_correlations:
+    normal_boiling_pressure: 101325.0
+    srk_omega_a: 0.42748
+    srk_omega_b: 0.08664
+    srk_m: [0.480, 1.574, -0.176]
+    normal_alkane_temperature: [1885.45947, 0.222337924, 950.853406]
+    log_normal_alkane_pressure_bar:
+      [-4.05282558e-12, 8.76125776e-9, -7.4578304e-6, -1.09972989e-4, 4.16059295]
+    normal_alkane_acentric: [-2553.0653, 3.68418, 608.7226]
+    normal_alkane_specific_gravity: [1.8, 11.7372, 3.336e-3, -976.3, 325700.0]
+    critical_temperature_ratio:
+      numerator: [-12.0690795, 22.8626562, 89.7115818]
+      denominator: [-12.6311386, 30.6779472, 62.4698965]
+    log_critical_pressure_ratio:
+      [-677.989269, 76624.406, -29811.8749, 10949.2202, 28099.1573]

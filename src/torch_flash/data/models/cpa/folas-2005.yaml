@@ -1,0 +1,108 @@
+format: torch-flash-model-parameters
+schema_version: 1
+id: cpa.folas-2005
+model_kind: cpa
+model: SRK-CPA
+version: "2005"
+description: Pure-component CPA parameters from Folas et al. Table 1, converted to SI.
+units:
+  critical_temperature: K
+  a0: Pa m^6 mol^-2
+  b: m^3 mol^-1
+  c1: dimensionless
+  association_energy: J mol^-1
+  association_volume: dimensionless
+references:
+  - citation: Folas et al., Industrial and Engineering Chemistry Research 44 (2005)
+    doi: 10.1021/ie048832j
+parameters:
+  default_combining_rule: ECR
+  components:
+    water:
+      critical_temperature: 647.29
+      a0: 0.12277
+      b: 1.4515e-05
+      c1: 0.67359
+      association_energy: 16655.0
+      association_volume: 0.0692
+      scheme: 4C
+    methanol:
+      critical_temperature: 512.64
+      a0: 0.40531
+      b: 3.0978e-05
+      c1: 0.43102
+      association_energy: 24591.0
+      association_volume: 0.0161
+      scheme: 2B
+    ethanol:
+      critical_temperature: 513.92
+      a0: 0.86716
+      b: 4.911e-05
+      c1: 0.7369
+      association_energy: 21532.0
+      association_volume: 0.008
+      scheme: 2B
+    ethylene_glycol:
+      critical_temperature: 720.0
+      a0: 1.0819
+      b: 5.14e-05
+      c1: 0.6744
+      association_energy: 19752.0
+      association_volume: 0.0141
+      scheme: 4C
+    1_propanol:
+      critical_temperature: 536.78
+      a0: 1.19102
+      b: 6.411e-05
+      c1: 0.91709
+      association_energy: 21000.0
+      association_volume: 0.0081
+      scheme: 2B
+    2_propanol:
+      critical_temperature: 508.3
+      a0: 1.06019
+      b: 6.411e-05
+      c1: 0.9468
+      association_energy: 21000.0
+      association_volume: 0.0091
+      scheme: 2B
+    1_butanol:
+      critical_temperature: 563.05
+      a0: 1.56949
+      b: 7.97e-05
+      c1: 0.9784
+      association_energy: 21000.0
+      association_volume: 0.0082
+      scheme: 2B
+    1_octanol:
+      critical_temperature: 652.5
+      a0: 4.15822
+      b: 0.0001485
+      c1: 1.1486
+      association_energy: 26759.0
+      association_volume: 0.00014
+      scheme: 2B
+    propane:
+      critical_temperature: 369.83
+      a0: 0.911875
+      b: 5.7834e-05
+      c1: 0.63071
+      association_energy: 0.0
+      association_volume: 0.0
+      scheme: none
+    n_butane:
+      critical_temperature: 425.18
+      a0: 1.31427
+      b: 7.2081e-05
+      c1: 0.70771
+      association_energy: 0.0
+      association_volume: 0.0
+      scheme: none
+    n_heptane:
+      critical_temperature: 540.2
+      a0: 2.9178
+      b: 0.00012535
+      c1: 0.9137
+      association_energy: 0.0
+      association_volume: 0.0
+      scheme: none

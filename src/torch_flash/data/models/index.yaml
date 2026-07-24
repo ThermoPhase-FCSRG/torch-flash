@@ -1,0 +1,116 @@
+format: torch-flash-parameter-index
+schema_version: 1
+parameter_sets:
+  activity.unifac-original-public-2026:
+    path: activity/unifac-original-public-2026.yaml
+    aliases:
+      - unifac
+      - unifac-original
+      - original-unifac
+  activity.hv-nrtl-pedersen-2024-propane-water:
+    path: activity/hv-nrtl-pedersen-2024-propane-water.yaml
+    aliases:
+      - pedersen-hv-propane-water
+      - hv-nrtl-propane-water
+  activity.hv-nrtl-jaubert-2020-n-butane-water:
+    path: activity/hv-nrtl-jaubert-2020-n-butane-water.yaml
+    aliases:
+      - jaubert-hv-n-butane-water
+      - hv-nrtl-n-butane-water
+  activity.hv-nrtl-jaubert-2020-ethanol-n-heptane:
+    path: activity/hv-nrtl-jaubert-2020-ethanol-n-heptane.yaml
+    aliases:
+      - jaubert-hv-ethanol-n-heptane
+      - hv-nrtl-ethanol-n-heptane
+  activity.hv-nrtl-jaubert-2020-methanol-benzene:
+    path: activity/hv-nrtl-jaubert-2020-methanol-benzene.yaml
+    aliases:
+      - jaubert-hv-methanol-benzene
+      - hv-nrtl-methanol-benzene
+  binary-interaction.pedersen-2024:
+    path: binary_interaction/pedersen-2024.yaml
+    aliases:
+      - pedersen-bip
+      - pedersen-2024-bip
+  binary-interaction.whitson-2000:
+    path: binary_interaction/whitson-2000.yaml
+    aliases:
+      - whitson-bip
+      - whitson-2000-bip
+  binary-interaction.segovia-2017-methane-n-decane:
+    path: binary_interaction/segovia-2017-methane-n-decane.yaml
+    aliases:
+      - segovia-methane-n-decane
+      - methane-n-decane-covolume
+  characterization.pedersen-2024:
+    path: characterization/pedersen-2024.yaml
+    aliases:
+      - pedersen-characterization
+      - pedersen-c7-plus
+  characterization.whitson-2000:
+    path: characterization/whitson-2000.yaml
+    aliases:
+      - whitson-characterization
+      - whitson-gamma
+  cpa.folas-2005:
+    path: cpa/folas-2005.yaml
+    aliases:
+      - cpa-folas-2005
+      - folas-2005
+  cpa.oliveira-2007-hydrocarbon-water:
+    path: cpa/oliveira-2007-hydrocarbon-water.yaml
+    aliases:
+      - cpa-oliveira-2007
+      - cpa-hydrocarbon-water
+  cpa.yan-2009-reservoir-fluids:
+    path: cpa/yan-2009-reservoir-fluids.yaml
+    aliases:
+      - cpa-yan-2009
+      - cpa-reservoir-fluids
+      - cpa-petroleum
+  cubic.pr-1976:
+    path: cubic/pr-1976.yaml
+    aliases:
+      - pr76
+      - pr-1976
+  cubic.pr-1978:
+    path: cubic/pr-1978.yaml
+    aliases:
+      - pr78
+      - pr-1978
+  cubic.srk-1972:
+    path: cubic/srk-1972.yaml
+    aliases:
+      - srk
+      - srk-1972
+  group-contribution.ppr78-jaubert-mutelet-2004:
+    path: group_contribution/ppr78-jaubert-mutelet-2004.yaml
+    aliases:
+      - ppr78
+      - ppr78-2004
+      - jaubert-mutelet-ppr78
+  multifluid.eos-cg-2021:
+    path: multifluid/eos-cg-2021.yaml
+    aliases:
+      - eoscg2021
+      - eos-cg-2021
+  multifluid.gerg-2008:
+    path: multifluid/gerg-2008.yaml
+    aliases:
+      - gerg2008
+      - gerg-2008
+  standard-state.poling-2001:
+    path: standard_state/poling-2001.yaml
+    aliases:
+      - poling
+      - poling-ideal-gas
+  volume-translation.pedersen-2024:
+    path: volume_translation/pedersen-2024.yaml
+    aliases:
+      - pedersen-volume-translation
+      - peneloux-pedersen
+  volume-translation.whitson-2000:
+    path: volume_translation/whitson-2000.yaml
+    aliases:
+      - whitson-volume-translation
+      - peneloux-whitson
