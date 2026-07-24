@@ -1,34 +1,3 @@
-<div align="center">
-  <table>
-    <tr>
-      <td align="center" bgcolor="#ffffff">
-        <a href="https://github.com/ThermoPhase-FCSRG">
-          <img
-            src="resources/logo/TP%20LOGO-%20Horizontal,%20colorful,%20transparent%20background-%20extended%20version.png"
-            alt="ThermoPhase — Fluid and Complex Systems Research Group"
-            width="680"
-          />
-        </a>
-        <br />
-        <a href="https://www.gov.br/lncc/pt-br">
-          <img
-            src="resources/logo/lncc.svg"
-            alt="Laboratório Nacional de Computação Científica — LNCC"
-            width="260"
-          />
-        </a>
-        <a href="https://www.udesc.br/">
-          <img
-            src="resources/logo/udesc-horizontal.jpg"
-            alt="Universidade do Estado de Santa Catarina — UDESC"
-            width="260"
-          />
-        </a>
-      </td>
-    </tr>
-  </table>
-</div>
-
 # torch-flash
 
 [![Tests](https://github.com/volpatto/torch-flash/actions/workflows/tests.yml/badge.svg)](https://github.com/volpatto/torch-flash/actions/workflows/tests.yml)
@@ -45,9 +14,7 @@ equilibrium solvers: a supplied composition, temperature, and pressure can be
 evaluated directly and differentiated for optimization, machine learning, or
 coupled simulation.
 
-Version 0.1 is an alpha research release. Its current model coverage,
-assumptions, and limitations are documented in
-[Model scope](docs/model-scope.md).
+The current model coverage, assumptions, and limitations are documented in [Model scope](docs/model-scope.md).
 
 ## Installation
 
@@ -236,3 +203,34 @@ Brazil, and is partially developed at the
 [Universidade do Estado de Santa Catarina (UDESC)](https://www.udesc.br/).
 The project is developed by the
 [ThermoPhase — Fluid and Complex Systems Research Group](https://github.com/ThermoPhase-FCSRG).
+
+<div align="center">
+  <table>
+    <tr>
+      <td align="center" bgcolor="#ffffff">
+        <a href="https://github.com/ThermoPhase-FCSRG">
+          <img
+            src="resources/logo/TP%20LOGO-%20Horizontal,%20colorful,%20transparent%20background-%20extended%20version.png"
+            alt="ThermoPhase — Fluid and Complex Systems Research Group"
+            width="680"
+          />
+        </a>
+        <br />
+        <a href="https://www.gov.br/lncc/pt-br">
+          <img
+            src="resources/logo/lncc.svg"
+            alt="Laboratório Nacional de Computação Científica — LNCC"
+            width="260"
+          />
+        </a>
+        <a href="https://www.udesc.br/">
+          <img
+            src="resources/logo/udesc-horizontal.jpg"
+            alt="Universidade do Estado de Santa Catarina — UDESC"
+            width="260"
+          />
+        </a>
+      </td>
+    </tr>
+  </table>
+</div>
