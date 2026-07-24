@@ -341,9 +341,16 @@ pixi run -e default format-check
 pixi run -e default typecheck
 pixi run -e default test-cov
 pixi run -e default check-data-rights
-pixi run -e default python scripts/sync_deps.py --check
+pixi run -e default sync-deps-check
 pixi run -e docs mkdocs build --strict
 ```
+
+Treat `pixi.toml` as the dependency source of truth. Run `pixi run sync-deps`
+after dependency changes; the generated pip metadata intentionally contains
+the normal `core` requirements and only the `groups`, `intel`, and `gpu`
+extras. Use `pixi run bump-version <version>` to synchronize
+`pyproject.toml`, `pixi.toml`, `src/torch_flash/__init__.py`, and
+`CITATION.cff`, then refresh and check `pixi.lock`.
 
 For notebooks and optional external comparisons:
 

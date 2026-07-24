@@ -22,9 +22,9 @@ pixi run lint
 pixi run format-check
 pixi run typecheck
 pixi run test-cov
+pixi run sync-deps-check
 pixi run build
 pixi run check-dist
-pixi run -e default python scripts/sync_deps.py --check
 pixi run -e benchmarks notebooks-sync
 ```
 
@@ -42,6 +42,67 @@ reproducible extraction code.
 Notebooks are paired through Jupytext. Edit the `.py` source, synchronize, and
 execute the notebook from top to bottom. Record package versions, SI units,
 reference provenance, assumptions, and limitations.
+
+## Dependency metadata
+
+Declare dependencies in `pixi.toml`; do not maintain parallel constraints
+manually in `pyproject.toml`. Synchronize the pip-facing metadata after changing
+a dependency:
+
+```bash
+pixi run sync-deps
+pixi run sync-deps-check
+pixi lock --check
+```
+
+The ordinary `pip install torch-flash` dependencies come from Pixi's `core`
+feature. Only the `groups`, `intel`, and `gpu` features are exported as pip
+extras:
+
+```bash
+python -m pip install "torch-flash[groups]"
+python -m pip install "torch-flash[intel]"
+python -m pip install "torch-flash[gpu]"
+```
+
+There is no `default` extra: the default capability is the package's normal
+dependency set. Test, development, notebook, documentation,
+external-comparison, and benchmark features remain Pixi-only. The Python
+interpreter and Conda-only accelerator selectors such as `mkl`, `cuda-version`,
+and `pytorch-gpu` are not copied into pip metadata; their pip-installable
+companion packages are exported where applicable. Name or specifier
+translations belong in `scripts/sync_deps.py`. The `intel` and `gpu` extras
+currently target Linux and Windows; GPU execution also requires a compatible
+CUDA runtime and device.
+
+## Version and release metadata
+
+Use the version task instead of editing version strings individually:
+
+```bash
+pixi run bump-version 0.1.3 --dry-run
+pixi run bump-version 0.1.3
+pixi lock
+```
+
+The task updates `pyproject.toml`, `pixi.toml`,
+`src/torch_flash/__init__.py`, and `CITATION.cff`. It refuses to proceed if
+those files already disagree, so resolve any inconsistency deliberately before
+starting a new bump.
+
+Before creating the matching `v<version>` tag, run:
+
+```bash
+pixi run sync-deps-check
+pixi lock --check
+pixi run lint
+pixi run format-check
+pixi run typecheck
+pixi run test-cov
+pixi run build
+pixi run -e default twine check dist/*
+pixi run check-dist
+```
 
 ## Pull requests
 

@@ -1,6 +1,6 @@
 [workspace]
 name = "torch-flash"
-version = "0.1.0"
+version = "0.1.2"
 description = "Differentiable phase-equilibrium flash calculations built on PyTorch"
 channels = ["conda-forge", "pytorch", "nvidia"]
 platforms = [
@@ -110,6 +110,9 @@ build = "python -m build"
 check-dist = "python scripts/check_distribution.py dist/*"
 check-data-rights = "python scripts/check_data_rights.py"
 local-docs = "mkdocs serve"
+bump-version = "python scripts/bump_version.py"
+sync-deps = "python scripts/sync_deps.py"
+sync-deps-check = "python scripts/sync_deps.py --check"
 
 [environments]
 default = { features = ["core", "dev", "test"], solve-group = "core" }
