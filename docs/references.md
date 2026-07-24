@@ -4,7 +4,7 @@ Scientific claims in `torch-flash` cite the source that defines the equation,
 reports the parameter set, or supplies the experimental/reference data. A
 software comparison is identified separately from experimental validation.
 The frozen CSV provenance is recorded in
-[`tests/data/README.md`](https://github.com/volpatto/torch-flash/blob/main/tests/data/README.md).
+[`tests/data/README.md`](https://github.com/ThermoPhase-FCSRG/torch-flash/blob/main/tests/data/README.md).
 
 ## Equilibrium algorithms and classical models
 
@@ -111,7 +111,7 @@ sources.
 - The Huron-Vidal BAC-5 subset uses the same Jaubert et al. workbook and
   retains 328 states for n-butane/water, ethanol/n-heptane, and
   methanol/benzene. Primary sources with persistent identifiers are listed in
-  the [frozen-data manifest](https://github.com/volpatto/torch-flash/blob/main/tests/data/README.md).
+  the [frozen-data manifest](https://github.com/ThermoPhase-FCSRG/torch-flash/blob/main/tests/data/README.md).
   The curated subset excludes 23 rows whose component identity cannot be
   established consistently from the workbook metadata and its cited primary
   source.

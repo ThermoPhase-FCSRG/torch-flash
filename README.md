@@ -1,9 +1,9 @@
 # torch-flash
 
-[![Tests](https://github.com/volpatto/torch-flash/actions/workflows/tests.yml/badge.svg)](https://github.com/volpatto/torch-flash/actions/workflows/tests.yml)
-[![Coverage](https://codecov.io/gh/volpatto/torch-flash/branch/main/graph/badge.svg)](https://codecov.io/gh/volpatto/torch-flash)
-[![Supported OS](https://img.shields.io/badge/OS-Linux%20%7C%20macOS%20%7C%20Windows-blue)](https://github.com/volpatto/torch-flash/actions/workflows/tests.yml)
-[![Docs](https://github.com/volpatto/torch-flash/actions/workflows/docs.yml/badge.svg)](https://volpatto.github.io/torch-flash/)
+[![Tests](https://github.com/ThermoPhase-FCSRG/torch-flash/actions/workflows/tests.yml/badge.svg)](https://github.com/ThermoPhase-FCSRG/torch-flash/actions/workflows/tests.yml)
+[![Coverage](https://codecov.io/gh/ThermoPhase-FCSRG/torch-flash/branch/main/graph/badge.svg)](https://codecov.io/gh/ThermoPhase-FCSRG/torch-flash)
+[![Supported OS](https://img.shields.io/badge/OS-Linux%20%7C%20macOS%20%7C%20Windows-blue)](https://github.com/ThermoPhase-FCSRG/torch-flash/actions/workflows/tests.yml)
+[![Docs](https://github.com/ThermoPhase-FCSRG/torch-flash/actions/workflows/docs.yml/badge.svg)](https://thermophase-fcsrg.github.io/torch-flash/)
 [![PyPI](https://img.shields.io/pypi/v/torch-flash.svg)](https://pypi.org/project/torch-flash/)
 [![Python](https://img.shields.io/pypi/pyversions/torch-flash.svg)](https://pypi.org/project/torch-flash/)
 [![License: LGPL-2.1](https://img.shields.io/badge/license-LGPL--2.1-blue.svg)](LICENSE)
@@ -167,7 +167,7 @@ distribution.
 
 ## Documentation
 
-- [Rendered documentation](https://volpatto.github.io/torch-flash/)
+- [Rendered documentation](https://thermophase-fcsrg.github.io/torch-flash/)
 - [Model scope and numerical assumptions](docs/model-scope.md)
 - [Python API](docs/api.md)
 - [Parameter and component databases](docs/parameters.md)

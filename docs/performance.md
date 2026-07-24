@@ -63,7 +63,7 @@ one-time inter-operation thread setting.
 
 ## Executed benchmark scope
 
-[`16_performance_backends.ipynb`](https://github.com/volpatto/torch-flash/blob/main/notebooks/performance/16_performance_backends.ipynb)
+[`16_performance_backends.ipynb`](https://github.com/ThermoPhase-FCSRG/torch-flash/blob/main/notebooks/performance/16_performance_backends.ipynb)
 records hardware, package versions, cold compilation, warmed medians,
 pressure/root residuals, and plots. Its Apple arm64 results are approximately:
 
@@ -89,7 +89,7 @@ difference is `1.94e-10`. This is the workload used by the regression rather
 than a synthetic pressure-only kernel.
 
 The complete CO2/N2 PR78 envelope in
-[`23_synthetic_co2_pr78_derivatives.ipynb`](https://github.com/volpatto/torch-flash/blob/main/notebooks/verification/23_synthetic_co2_pr78_derivatives.ipynb)
+[`23_synthetic_co2_pr78_derivatives.ipynb`](https://github.com/ThermoPhase-FCSRG/torch-flash/blob/main/notebooks/verification/23_synthetic_co2_pr78_derivatives.ipynb)
 is a different workload: 469 ordered bubble, dew, and fixed-log-K
 continuation solves, each only three or four variables wide. The continuation
 path uses a secant predictor, two successive-substitution corrections, and an

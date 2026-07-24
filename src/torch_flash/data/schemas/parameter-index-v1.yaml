@@ -1,5 +1,5 @@
 $schema: https://json-schema.org/draft/2020-12/schema
-$id: https://volpatto.github.io/torch-flash/schemas/parameter-index-v1
+$id: https://thermophase-fcsrg.github.io/torch-flash/schemas/parameter-index-v1
 title: torch-flash bundled parameter index
 type: object
 additionalProperties: false
