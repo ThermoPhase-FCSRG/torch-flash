@@ -216,7 +216,8 @@ refs/
 .vscode/
 notebooks/**/*.png
 notebooks/local-only/
-tests/data/not-cleared/
+# Research inputs whose redistribution status is not cleared
+/tests/data/not-cleared/
 tmp/
 [.]tmp/
 outputs/
