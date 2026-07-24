@@ -95,9 +95,9 @@ PYTHONPATH = "$PIXI_PROJECT_ROOT/src${PYTHONPATH:+:$PYTHONPATH}"
 PYTHONPATH = "%PIXI_PROJECT_ROOT%\\src;%PYTHONPATH%"
 
 [tasks]
-lint = "ruff check src tests scripts"
-format = "ruff format src tests scripts"
-format-check = "ruff format --check src tests scripts"
+lint = "ruff check ."
+format = "ruff format ."
+format-check = "ruff format --check ."
 typecheck = "mypy"
 test = "pytest -q"
 test-cov = "pytest -q --cov=torch_flash --cov-branch --cov-report=term-missing --cov-report=xml:coverage.xml --cov-fail-under=99"

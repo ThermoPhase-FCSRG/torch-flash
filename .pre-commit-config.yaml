@@ -44,13 +44,10 @@ repos:
     - id: nbqa-ruff
       # Markdown title cells replace module docstrings, helper functions are not
       # public APIs, bare expressions render rich output, and cell-local imports
-      # intentionally follow setup cells.
+      # intentionally follow setup cells. Their rule exceptions are centralized
+      # in .ruff.toml.
       args:
         - --fix
-        - --ignore=D100
-        - --ignore=D103
-        - --ignore=B018
-        - --ignore=E402
       files: ^notebooks/.*\.ipynb$
 
 - repo: local
