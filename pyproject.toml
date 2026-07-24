@@ -1,0 +1,156 @@
+[build-system]
+requires = ["hatchling>=1.27"]
+build-backend = "hatchling.build"
+
+[project]
+name = "torch-flash"
+version = "0.1.0"
+description = "Differentiable phase-equilibrium flash calculations built on PyTorch"
+readme = "README.md"
+requires-python = ">=3.11"
+license = "LGPL-2.1-only"
+license-files = ["LICENSE", "COPYRIGHT", "THIRD_PARTY_NOTICES.md", "docs/licensing.md"]
+authors = [
+  { name = "Diego Volpatto", email = "volpatto@lncc.br" },
+]
+keywords = [
+  "autodiff",
+  "chemical-equilibrium",
+  "equation-of-state",
+  "flash-calculation",
+  "pytorch",
+  "thermodynamics",
+]
+classifiers = [
+  "Development Status :: 3 - Alpha",
+  "Intended Audience :: Science/Research",
+  "License :: OSI Approved :: GNU Lesser General Public License v2 (LGPLv2)",
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3.11",
+  "Programming Language :: Python :: 3.12",
+  "Programming Language :: Python :: 3.13",
+  "Topic :: Scientific/Engineering :: Chemistry",
+  "Topic :: Scientific/Engineering :: Physics",
+  "Typing :: Typed",
+]
+dependencies = [
+  "chemicals>=1.5.2",
+  "numpy>=1.26",
+  "pyyaml>=6.0",
+  "torch>=2.4,<3",
+  "typing_extensions>=4.10",
+]
+
+[project.optional-dependencies]
+test = [
+  "pytest>=8",
+  "pytest-cov>=5",
+  "pytest-regressions>=2.8",
+]
+dev = [
+  "build>=1.2",
+  "mypy>=1.10",
+  "pre-commit>=3.7",
+  "ruff>=0.11",
+  "twine>=5",
+]
+notebooks = [
+  "ipykernel>=6.29",
+  "jupyterlab>=4",
+  "jupytext>=1.17,<2",
+  "matplotlib>=3.8",
+  "pandas>=2.2",
+]
+external = [
+  "CoolProp>=7",
+  "teqp>=0.22",
+  "thermo>=0.4",
+]
+groups = [
+  "ugropy>=3.2,<4",
+]
+benchmarks = [
+  "pytest-benchmark>=5",
+  "neqsim>=3.16",
+  "teqp>=0.22",
+  "thermopack>=2.2",
+]
+docs = [
+  "mkdocs>=1.6,<2",
+  "mkdocs-material>=9.5",
+  "mkdocstrings[python]>=0.27",
+]
+intel = [
+  "pypardiso>=0.4; sys_platform == 'linux' or sys_platform == 'win32'",
+]
+gpu = [
+  "nvmath-python>=0.9; sys_platform == 'linux' or sys_platform == 'win32'",
+  "torch-sla[all]; sys_platform == 'linux' or sys_platform == 'win32'",
+]
+
+[project.urls]
+Homepage = "https://github.com/volpatto/torch-flash"
+Documentation = "https://volpatto.github.io/torch-flash"
+Repository = "https://github.com/volpatto/torch-flash"
+Issues = "https://github.com/volpatto/torch-flash/issues"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/torch_flash"]
+
+[tool.hatch.build.targets.sdist]
+only-include = [
+  "src",
+  "CITATION.cff",
+  "docs/licensing.md",
+  "docs/references.md",
+]
+
+[tool.pytest.ini_options]
+minversion = "8.0"
+addopts = "-ra --strict-config --strict-markers"
+testpaths = ["tests"]
+markers = [
+  "external: requires an optional external thermodynamic package",
+  "slow: exhaustive scientific or numerical regression test",
+]
+
+[tool.coverage.run]
+branch = true
+source = ["torch_flash"]
+
+[tool.coverage.report]
+fail_under = 99
+show_missing = true
+skip_covered = true
+exclude_also = [
+  "if TYPE_CHECKING:",
+  "raise NotImplementedError",
+]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+exclude = [".git", ".pixi", "tmp", "notebooks"]
+
+[tool.ruff.lint]
+select = ["B", "D", "E", "F", "I", "N", "RUF", "UP", "W"]
+ignore = ["D105", "D107", "D203", "D213", "N802", "N803", "N806"]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**" = ["D"]
+
+[tool.ruff.lint.pydocstyle]
+convention = "numpy"
+
+[tool.mypy]
+files = ["src/torch_flash"]
+python_version = "3.13"
+check_untyped_defs = true
+disallow_incomplete_defs = true
+no_implicit_optional = true
+show_error_codes = true
+strict_equality = true
+warn_redundant_casts = true
+warn_return_any = true
+warn_unused_configs = true
+ignore_missing_imports = true

@@ -1,0 +1,13 @@
+line-length = 100
+target-version = "py311"
+exclude = [".git", ".pixi", "tmp", "notebooks"]
+
+[lint]
+select = ["B", "D", "E", "F", "I", "N", "RUF", "UP", "W"]
+ignore = ["D105", "D107", "D203", "D213", "N802", "N803", "N806"]
+
+[lint.per-file-ignores]
+"tests/**" = ["D"]
+
+[lint.pydocstyle]
+convention = "numpy"

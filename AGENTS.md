@@ -1,0 +1,392 @@
+# Repository instructions for AI coding agents
+
+## Scope and purpose
+
+This file applies to the entire `torch-flash` repository. Keep one root
+instruction file unless a genuinely independent subtree later requires
+different rules.
+
+`torch-flash` is scientific software for differentiable thermodynamic
+properties and phase-equilibrium calculations on PyTorch. Treat correctness,
+traceability, numerical robustness, and reproducibility as product
+requirements, not optional polish.
+
+The current checkout is the source of truth. Before changing anything, inspect
+the relevant implementation, tests, parameter documents, notebooks, and
+documentation. Do not rely on remembered repository state or an earlier
+conversation when the files can be checked directly.
+
+## Collaboration style
+
+- Work autonomously within the requested scope. Make reasonable,
+  evidence-based assumptions when they are reversible and do not alter the
+  scientific question.
+- Lead status updates and the final response with the concrete outcome.
+  Mention changed files, executed checks, measured results, and remaining
+  limitations.
+- Be concise but scientifically explicit. State assumptions, units, parameter
+  identities, numerical tolerances, and possible failure modes when they
+  affect interpretation.
+- Do not stop at a plausible-looking implementation. Continue through tests,
+  numerical checks, notebook execution, plots, documentation, and packaging
+  checks appropriate to the change.
+- Do not claim completion when a required numerical gate, validation,
+  notebook execution, or final QA step has not run. Report unexecuted expensive
+  or unavailable checks precisely.
+- Ask for user input only when a missing choice would materially change the
+  scientific result or authorize a broader/destructive action.
+- Preserve unrelated user changes. Inspect `git status` before editing, avoid
+  destructive Git operations, and do not rewrite or delete work merely to
+  obtain a clean tree.
+- Use fast repository searches such as `rg` and `rg --files`. Prefer small,
+  reviewable patches over bulk rewrites.
+
+## Non-negotiable scientific standards
+
+### Reference hierarchy and independent implementation
+
+1. Prefer the primary paper, book equation, official supplement, or standard
+   that defines the model and parameter set.
+2. Use authoritative open implementations and official documentation to
+   cross-check interpretation.
+3. Use ThermoPack, teqp, NeqSim, CoolProp, `thermo`, and similar packages as
+   independent numerical references, with exact versions and settings
+   recorded.
+
+Never translate or lightly rewrite third-party implementation code. Implement
+the published mathematics independently, cite the defining source, and use
+external software only to check behavior. Do not describe a generic cubic,
+association, activity, or Helmholtz form as a named model unless its required
+published terms and coefficients are present.
+
+When sources disagree:
+
+- inspect the primary equations and errata;
+- record the exact convention selected;
+- add a regression that distinguishes the alternatives; and
+- describe the `torch-flash` formulation directly, with its defining citation.
+
+In user-facing documentation, do not editorialize about errors, omissions, or
+shortcomings in another source or implementation. State what `torch-flash`
+implements and validates. Keep any unavoidable source-identity or provenance
+decision neutral and confined to the relevant validation or data manifest.
+
+Never fabricate, infer, or silently fit a missing published coefficient. A
+custom fit must have a distinct identifier and must be labeled as, for
+example, “GERG-2008 form after fit,” not as the published GERG-2008
+parameterization.
+
+### Units, states, and thermodynamic meaning
+
+- Public thermodynamic inputs and outputs use SI units.
+- Record any source-unit conversion next to the ingestion code or parameter
+  metadata and test at least one conversion.
+- Use canonical component names from the component database. Preserve aliases
+  only at API boundaries.
+- Keep the supplied homogeneous-state API independent of equilibrium solving.
+  Properties at a specified `(T, P, x)` or `(T, V, n)` state must not require a
+  flash.
+- Keep root selection, physical phase identification, and equilibrium regime
+  as separate concepts. Phase identification is a diagnostic with ambiguity,
+  not a new equilibrium equation.
+- Do not hide critical-region ill-conditioning, multiple roots, metastability,
+  or phase disappearance behind broad tolerances.
+- Reject algebraic homogeneous `x = y` solutions as two-phase coexistence
+  unless a dedicated critical calculation establishes the endpoint.
+
+### Numerical solver behavior
+
+- Every iterative solver must expose convergence, iteration count, and a
+  physically meaningful residual. Include material-balance and fugacity
+  residuals where applicable.
+- Never silently return a failed solve as valid. Use a domain-specific warning,
+  explicit non-converged result, or exception according to the public API.
+- Initial guesses and continuation choices are scientific configuration.
+  Keep them explicit when they affect branch selection.
+- Test positivity, normalization, mass balance, root admissibility, and
+  invariance to harmless component permutations where applicable.
+- Choose tolerances from equation conditioning, float precision, and source
+  uncertainty. Explain non-obvious tolerances in the test.
+- Near critical points, verify branch continuity and closure; do not replace a
+  physical branch with the trivial solution merely because Newton converges.
+
+## Software architecture and API
+
+- Organize source by thermodynamic domain: equations of state, activity
+  models, mixing rules, material balance, flash/stability, properties,
+  characterization, transport, solvers, databases, and optional backends.
+- Prefer typed free functions for calculations. Use frozen dataclasses or
+  small classes when state, parameters, or a complex abstraction genuinely
+  benefits from encapsulation.
+- Keep native PyTorch models independent of optional external backends.
+- Maintain the separation between:
+  - immutable scientific parameter metadata;
+  - per-model tensors, including trainable tensors;
+  - runtime device/dtype/thread configuration; and
+  - numerical solver options.
+- Public APIs must be typed, documented, exported intentionally, and covered
+  by tests. Avoid exposing notebook-only helpers as package API.
+- Preserve backwards compatibility unless the task explicitly authorizes an
+  API break. If a correction changes numerical meaning, document the migration
+  and add a regression for the old failure.
+- Keep dependencies purposeful. Prefer existing PyTorch operations and the
+  repository solver abstractions before adding a new numerical dependency.
+
+## PyTorch, autodiff, batching, and runtime configuration
+
+- Preserve gradients through thermodynamic quantities and fitted parameters.
+  Do not detach, convert to NumPy, call `.item()`, or recreate tensors inside a
+  differentiable hot path unless the non-differentiable boundary is deliberate
+  and documented.
+- Honor the caller's device and dtype. Construct tensors from existing tensors
+  or configured tensor options so CPU, CUDA, and supported accelerators behave
+  consistently.
+- Support leading batch dimensions where the governing equations permit it.
+  Avoid Python loops over states in performance-sensitive kernels.
+- Use PyTorch autodiff instead of hand-derived model derivatives unless an
+  analytic expression is required for robustness or speed and is independently
+  checked against autodiff.
+- Configure device, dtype, CPU threading, and deterministic behavior before
+  model construction through the runtime configuration API. Library functions
+  must not repeatedly change process-wide thread settings.
+- Float64 is the reference precision for equilibrium and derivative work.
+  Treat float32 results near critical points or coalescing roots as a separate
+  accuracy study, not an equivalent benchmark.
+- `torch.compile` and GPU execution are workload-dependent. Compile repeated
+  tensor kernels and use GPUs for sufficiently large device-resident batches;
+  do not assume that tiny sequential Newton systems become faster on a GPU.
+
+## Parameters and component databases
+
+- Store bundled component and model parameters in versioned YAML, using the
+  schemas under `src/torch_flash/data/schemas/`.
+- Every parameter document must identify its model, version, SI units,
+  components, source references, and applicable validity or fitting range.
+- Shared component properties and model-specific constants are distinct.
+  Never substitute one for the other merely because they have the same name.
+- All packaged database constructors must also accept custom user databases or
+  explicit typed parameters/tensors.
+- Cache parsed immutable documents to avoid repeated disk I/O, but create
+  independent model instances and tensors. Never share a trainable tensor
+  accidentally through a cache.
+- Fitted parameters need a new identifier/version plus the dataset, objective,
+  split, bounds or priors, and parameterization recorded.
+- Diagnose fit identifiability with sensitivity/Jacobian rank, conditioning,
+  parameter correlations, and holdout behavior when the number of adjustable
+  parameters is substantial.
+
+## Verification, validation, and tests
+
+Use the terms precisely:
+
+- **Verification** checks that code solves the stated equations: analytical
+  limits, identities, published worked examples, autodiff parity, or
+  matched-input independent-software results.
+- **Validation** checks whether a selected model and parameter set represent
+  independent experimental observations.
+- **Calibration** estimates parameters. Agreement on calibration data is not
+  independent validation.
+- A model-generated reference bank is verification, not experimental data.
+
+For each model or bug fix, add the smallest useful combination of:
+
+- unit tests for equations and edge cases;
+- regression tests for the reported failure;
+- autodiff-versus-finite-difference or analytic checks;
+- integration tests for state properties and equilibrium;
+- published worked examples;
+- independent software baselines with identical constants and conventions;
+  and
+- experimental validation over a meaningful range.
+
+Requirements:
+
+- Maintain at least 99% branch-aware coverage from the start.
+- Do not weaken tolerances, delete difficult states, or exclude branches merely
+  to restore coverage.
+- Normal tests must not import ThermoPack, teqp, or NeqSim. Generate frozen,
+  versioned baselines separately and record generator, version, complete model
+  inputs, units, and residuals.
+- Use `pytest-regressions` where structured numerical output is more
+  reviewable than hand-written assertions.
+- A few hand-picked points are not sufficient for a validation study when a
+  fuller table or curve is available.
+- Match pure-component constants, alpha functions, mixing conventions,
+  standard states, root selection, and interaction parameters before
+  interpreting differences between packages.
+- Always distinguish numerical solver failure from poor physical model
+  agreement.
+
+## Notebook study standard
+
+Notebook studies are paired Jupytext artifacts. Edit the percent-format `.py`
+source first, synchronize it, execute the `.ipynb` from top to bottom, and
+inspect the saved tables and plots. Keep filenames paired and place studies in
+the appropriate category: `verification`, `validation`, `equilibrium`,
+`solubility`, `fitting`, `characterization`, or `performance`.
+
+Every scientific notebook should:
+
+1. state the question, model identity, parameter source, and verification or
+   validation class;
+2. show equations or cite the exact defining equation/table;
+3. record package versions, hardware where relevant, SI units, assumptions,
+   solver settings, convergence criteria, and data provenance;
+4. check convergence, residuals, phase separation, and material balance before
+   plotting;
+5. display the physical property or phase diagram, not only an error plot;
+6. plot experimental/reference markers together with model predictions;
+7. cover the available data and a scientifically useful range, with
+   extrapolation clearly marked;
+8. explain missing or non-converged curve segments instead of silently drawing
+   incomplete lines; and
+9. finish with quantitative metrics, limitations, and a reproducible
+   conclusion.
+
+Plot-specific expectations:
+
+- Fitting plots show experimental data and clearly labeled **before** and
+  **after** curves for every calibrated model.
+- Binary VLE studies distinguish liquid `x` and vapor `y`, include complete
+  `P-x-y` behavior when possible, and do not plot rejected `x = y` roots as
+  coexistence.
+- Phase envelopes should cover the full physically relevant two-phase region,
+  including the high-temperature/high-pressure closure when the model has one.
+- Density, viscosity, or thermal-property error plots must be accompanied by
+  the corresponding property-versus-pressure or property-versus-temperature
+  plot.
+- Performance studies report cold and warmed timing separately, repeat counts,
+  hardware, threads, dtype, batch shape, package versions, and accuracy or
+  residual checks.
+
+Do not manually edit notebook JSON to change a scientific result. Regenerate
+from the paired source. If execution is too expensive for routine CI, provide
+smoke-friendly settings and an explicit full-study path.
+
+## Performance work
+
+- Profile before optimizing and preserve an unoptimized correctness oracle or
+  an independent numerical comparison.
+- Optimize batch layout, tensor reuse, compiled kernels, initialization, and
+  continuation before introducing more complex backends.
+- Benchmark matched workloads. A homogeneous pressure call, a density root,
+  and a complete TP flash are different operations and must not share a timing
+  label.
+- Report accuracy with timing. A faster calculation that selects another root
+  or loses near-critical precision is not a valid speedup.
+- Keep hardware-specific measurements in the performance documentation or
+  notebooks, not in the README.
+
+## Documentation and claims
+
+- The README is a concise entry point: purpose, installation, minimal working
+  example, current capability summary, documentation links, disclosure, and
+  license.
+- Do not put changelog narratives, former-versus-current timings, transient
+  test counts, validation tables, or notebook inventories in the README.
+- Documentation describes the current implementation. Historical change logs
+  belong in release notes, not model or performance guides.
+- Put detailed verification, validation, benchmark conditions, notebook
+  studies, and scientific caveats in `docs/`.
+- Cite claims near the relevant text. Prefer primary references and persistent
+  DOIs. Distinguish equation source, parameter source, experimental source,
+  and external-software baseline.
+- Do not mention private workstation paths or untracked reference locations in
+  source, notebooks intended for release, documentation, logs, or package
+  artifacts.
+- Do not claim that a model is “complete” without naming the precise scope,
+  such as thermodynamic Helmholtz terms versus ancillary or transport
+  correlations.
+- Preserve the generative-AI disclosure and human responsibility statement.
+
+## Copyright, data rights, and release boundary
+
+- Do not vendor books, papers, publisher supplements, source workbooks, or
+  third-party source trees.
+- Public availability and citation do not grant redistribution permission.
+- Every research CSV requires an entry in `tests/data/rights.yaml` with source,
+  basis, status, and license where applicable.
+- `not-cleared` data must not be committed to a public repository. Keep
+  reproducible extraction code that operates on a lawful user-supplied source,
+  or replace the data with an openly licensed source.
+- Executed notebook tables, markers, and densely reconstructed plots derived
+  from `not-cleared` data require the same clearance. Stripping them from PyPI
+  alone is not sufficient for a public Git repository.
+- Project-generated external-software baselines may be retained when their
+  generator, software version, inputs, and third-party notices are recorded.
+- Retain attribution, license links, and modification notices for CC BY, MIT,
+  NIST, and other reusable sources.
+- Review substantial coefficient inventories for copyright, contract, and
+  database rights even when individual numerical facts may not be protected.
+- Wheels and source distributions must exclude notebooks, tests, scripts,
+  research CSVs, workbooks, plots, PDFs, and private reference material.
+- Never remove or rewrite legal notices to make a distribution check pass.
+
+Consult `docs/licensing.md`, `THIRD_PARTY_NOTICES.md`, and
+`tests/data/rights.yaml` before adding data or parameter tables.
+
+## Reproducible environments and cross-platform support
+
+Use Pixi environments and tasks rather than an ad hoc environment. Keep the
+manifest and lock file synchronized. The supported CI baseline includes Linux,
+Windows, and `macos-latest`; do not introduce shell-only assumptions into
+portable Python code or tests.
+
+Common commands:
+
+```bash
+pixi install
+pixi run -e default lint
+pixi run -e default format-check
+pixi run -e default typecheck
+pixi run -e default test-cov
+pixi run -e default check-data-rights
+pixi run -e default python scripts/sync_deps.py --check
+pixi run -e docs mkdocs build --strict
+```
+
+For notebooks and optional external comparisons:
+
+```bash
+pixi install -e benchmarks
+pixi run -e benchmarks notebooks-sync
+pixi run -e benchmarks notebooks-run
+```
+
+For a release-boundary check:
+
+```bash
+pixi run -e default build
+pixi run -e default twine check dist/*
+pixi run -e default check-dist
+```
+
+The exhaustive Whitson Rachford–Rice corpus is optional and supplied through
+`TORCH_FLASH_WHITSON_DATA`; do not vendor that external checkout.
+
+Prefer a targeted test while iterating, then run the complete relevant gate.
+Documentation-only work does not require the full numerical suite, but it does
+require a strict docs build and package metadata check when the README or
+release metadata changes.
+
+## Definition of done
+
+Before declaring a task complete, confirm as applicable:
+
+- governing equations and parameter identities match their cited sources;
+- units, tensor shapes, dtype, device, and gradients are correct;
+- convergence and physical residuals pass over representative and difficult
+  states;
+- verification and validation evidence are classified correctly;
+- a regression covers every fixed bug;
+- branch-aware coverage remains at least 99%;
+- notebook source and executed artifact are synchronized and visually
+  inspected;
+- experimental/reference data and model curves are visible and correctly
+  labeled;
+- documentation reflects the current behavior and known limitations;
+- data rights and third-party notices are complete;
+- wheel and source-distribution boundaries pass;
+- Linux, Windows, and macOS implications were considered; and
+- the final response reports what ran, what passed, and anything that remains
+  uncertain.

@@ -1,0 +1,122 @@
+[workspace]
+name = "torch-flash"
+version = "0.1.0"
+description = "Differentiable phase-equilibrium flash calculations built on PyTorch"
+channels = ["conda-forge", "pytorch", "nvidia"]
+platforms = [
+  "osx-arm64",
+  "linux-64",
+  "win-64",
+  { name = "linux-64-cuda", platform = "linux-64", cuda = "12.6" },
+  { name = "win-64-cuda", platform = "win-64", cuda = "12.6" },
+]
+
+[dependencies]
+python = ">=3.11"
+
+[feature.core.dependencies]
+python = ">=3.11,<3.14"
+chemicals = ">=1.5.2"
+numpy = ">=1.26"
+pyyaml = ">=6.0"
+pytorch = ">=2.4,<3"
+typing_extensions = ">=4.10"
+
+[feature.core.pypi-dependencies]
+torch-flash = { path = ".", editable = true }
+
+[feature.test.dependencies]
+pytest = ">=8"
+pytest-cov = ">=5"
+pytest-regressions = ">=2.8"
+
+[feature.dev.dependencies]
+python-build = ">=1.2"
+mypy = ">=1.10"
+pre-commit = ">=3.7"
+ruff = ">=0.11"
+twine = ">=5"
+
+[feature.notebooks.dependencies]
+ipykernel = ">=6.29"
+jupyterlab = ">=4"
+jupytext = ">=1.17,<2"
+matplotlib-base = ">=3.8"
+pandas = ">=2.2"
+
+[feature.external.pypi-dependencies]
+coolprop = ">=7"
+teqp = ">=0.22"
+thermo = ">=0.4"
+
+[feature.groups.pypi-dependencies]
+ugropy = ">=3.2,<4"
+
+[feature.benchmarks.dependencies]
+openjdk = ">=17"
+pytest-benchmark = ">=5"
+
+[feature.benchmarks.pypi-dependencies]
+neqsim = ">=3.16"
+teqp = ">=0.22"
+thermopack = ">=2.2"
+
+[feature.docs.dependencies]
+mkdocs = ">=1.6,<2"
+mkdocs-material = ">=9.5"
+
+[feature.docs.pypi-dependencies]
+mkdocstrings = { version = ">=0.27", extras = ["python"] }
+
+[feature.intel]
+platforms = ["linux-64", "win-64"]
+
+[feature.intel.dependencies]
+mkl = ">=2024"
+
+[feature.intel.pypi-dependencies]
+pypardiso = ">=0.4"
+
+[feature.gpu]
+platforms = ["linux-64-cuda", "win-64-cuda"]
+
+[feature.gpu.dependencies]
+cuda-version = "12.6.*"
+pytorch-gpu = ">=2.4,<3"
+
+[feature.gpu.pypi-dependencies]
+nvmath-python = ">=0.9"
+torch-sla = { version = "*", extras = ["all"] }
+
+[target.unix.activation.env]
+PYTHONPATH = "$PIXI_PROJECT_ROOT/src${PYTHONPATH:+:$PYTHONPATH}"
+
+[target.win.activation.env]
+PYTHONPATH = "%PIXI_PROJECT_ROOT%\\src;%PYTHONPATH%"
+
+[tasks]
+lint = "ruff check src tests scripts"
+format = "ruff format src tests scripts"
+format-check = "ruff format --check src tests scripts"
+typecheck = "mypy"
+test = "pytest -q"
+test-cov = "pytest -q --cov=torch_flash --cov-branch --cov-report=term-missing --cov-report=xml:coverage.xml --cov-fail-under=99"
+test-whitson = "pytest -q -m slow tests/test_whitson_contest.py"
+notebooks-sync = "python scripts/sync_notebooks.py"
+notebooks-run = "python scripts/run_notebooks.py"
+validation-figures = "python scripts/generate_validation_gallery.py"
+precommit = "pre-commit run --all-files"
+build = "python -m build"
+check-dist = "python scripts/check_distribution.py dist/*"
+check-data-rights = "python scripts/check_data_rights.py"
+local-docs = "mkdocs serve"
+
+[environments]
+default = { features = ["core", "dev", "test"], solve-group = "core" }
+test = { features = ["core", "test"], solve-group = "core" }
+notebooks = { features = ["core", "notebooks", "external"], solve-group = "notebooks" }
+benchmarks = { features = ["core", "notebooks", "external", "benchmarks"], solve-group = "benchmarks" }
+groups = { features = ["core", "groups"], solve-group = "groups" }
+docs = { features = ["docs"], solve-group = "docs" }
+intel = { features = ["core", "dev", "test", "intel"] }
+gpu = { features = ["core", "dev", "test", "gpu"] }
