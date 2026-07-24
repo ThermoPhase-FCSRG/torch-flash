@@ -28,15 +28,11 @@ CORE_EXCLUDED_PACKAGE_NAMES = frozenset(
     {
         "python",
         "torch-flash",
-        "ipykernel",
-        "tqdm",
-        "kaleido",
     }
 )
 CORE_FEATURE_NAME = "core"
-PYPROJECT_EXCLUDED_FEATURE_NAMES = frozenset({"core"})
+PYPROJECT_OPTIONAL_FEATURE_NAMES = frozenset({"groups", "intel", "gpu"})
 FEATURE_EXCLUDED_PACKAGE_NAMES = {
-    "benchmarks": frozenset({"openjdk"}),
     "gpu": frozenset({"cuda-version", "pytorch-gpu"}),
     "intel": frozenset({"mkl"}),
 }
@@ -235,7 +231,13 @@ def _render_requirements(
 
 
 def _sync_targets_from_pixi(pixi_data: dict[str, object]) -> tuple[list[SyncTarget], list[str]]:
-    """Create pyproject sync targets directly from Pixi dependency tables."""
+    """Create the intentionally public PyPI dependency targets from Pixi.
+
+    The core feature becomes ``project.dependencies`` (the ordinary/default
+    installation). Only features that are meaningful package capabilities are
+    exported as extras. Pixi-only development environments such as ``docs``,
+    ``test``, and ``benchmarks`` must not leak into the wheel metadata.
+    """
     targets = [
         SyncTarget(
             section="project",
@@ -245,7 +247,7 @@ def _sync_targets_from_pixi(pixi_data: dict[str, object]) -> tuple[list[SyncTarg
     ]
     empty_feature_names: list[str] = []
     for feature_name in _feature_data(pixi_data):
-        if feature_name in PYPROJECT_EXCLUDED_FEATURE_NAMES:
+        if feature_name not in PYPROJECT_OPTIONAL_FEATURE_NAMES:
             empty_feature_names.append(feature_name)
             continue
         rendered = _render_requirements(
@@ -433,6 +435,18 @@ def _remove_toml_array_section_key(
 def _sync_pyproject_text(pixi_data: dict[str, object], pyproject_text: str) -> str:
     """Return synchronized ``pyproject.toml`` text."""
     targets, empty_feature_names = _sync_targets_from_pixi(pixi_data)
+    pyproject_data = tomllib.loads(pyproject_text)
+    project = pyproject_data.get("project")
+    optional_dependencies = (
+        project.get("optional-dependencies") if isinstance(project, dict) else None
+    )
+    existing_optional_names = (
+        set(optional_dependencies) if isinstance(optional_dependencies, dict) else set()
+    )
+    names_to_remove = (existing_optional_names - PYPROJECT_OPTIONAL_FEATURE_NAMES).union(
+        empty_feature_names
+    )
+
     updated_text = pyproject_text
     for target in targets:
         updated_text = _replace_toml_array_section_key(
@@ -441,7 +455,7 @@ def _sync_pyproject_text(pixi_data: dict[str, object], pyproject_text: str) -> s
             key=target.key,
             new_items=target.requirements,
         )
-    for key in empty_feature_names:
+    for key in sorted(names_to_remove):
         updated_text = _remove_toml_array_section_key(
             updated_text,
             section="project.optional-dependencies",
