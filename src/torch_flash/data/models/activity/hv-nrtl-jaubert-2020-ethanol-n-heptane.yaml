@@ -1,0 +1,43 @@
+format: torch-flash-model-parameters
+schema_version: 1
+id: activity.hv-nrtl-jaubert-2020-ethanol-n-heptane
+model_kind: activity
+model: HV-NRTL
+version: "torch-flash-fit-v1"
+description: >-
+  SRK/HV-NRTL parameters fitted by torch-flash to ethanol-n-heptane VLE in
+  the Jaubert et al. benchmark subset. The complete 313.15 K isotherm was
+  excluded as a validation holdout.
+units:
+  energy_over_r: K
+  temperature_coefficient: dimensionless
+  nonrandomness: dimensionless
+  covolumes: m^3 mol^-1
+references:
+  - citation: Jaubert et al., Industrial & Engineering Chemistry Research 59 (2020) 14981-15027
+    doi: 10.1021/acs.iecr.0c01734
+  - citation: Berro, Rogalski, and Peneloux, Fluid Phase Equilibria 8 (1982) 55-73
+    doi: 10.1016/0378-3812(82)80005-8
+  - citation: Huron and Vidal, Fluid Phase Equilibria 3 (1979) 255-271
+    doi: 10.1016/0378-3812(79)80001-1
+parameters:
+  components: [ethanol, n_heptane]
+  energy_over_r:
+    - [0.0, 234.4139461863396]
+    - [804.5595179462907, 0.0]
+  temperature_coefficient:
+    - [0.0, -0.3714375290648538]
+    - [0.5150312412565542, 0.0]
+  nonrandomness:
+    - [0.0, 0.3]
+    - [0.3, 0.0]
+  covolume_cubic_parameter_set: cubic.srk-1972
+  fit_metadata:
+    objective: measured-phase log-fugacity residual
+    source_csv: tests/data/not-cleared/jaubert_2020_hv_bac5_vle.csv
+    holdout_temperatures_K: [313.15]
+    excluded_zero_compositions: 0
+    excluded_source_rows: 23
+    excluded_source_reason: >-
+      Jaubert worksheet 1102_17 cites doi:10.1021/je025604s, a
+      2-propanol-n-hexane paper, for nominal ethanol-n-heptane rows.

@@ -1,0 +1,28 @@
+format: torch-flash-model-parameters
+schema_version: 1
+id: binary-interaction.segovia-2017-methane-n-decane
+model_kind: binary_interaction
+model: cubic-vdw-one-fluid
+version: "torch-flash-fit-2026-07"
+description: >
+  PR78 methane+n-decane interactions. kij is the value used in Segovia et al.;
+  lij is a torch-flash density fit on 30 non-pure 80 MPa states excluding
+  323.15 K. The 33 non-pure 323.15 K states are an untouched validation set.
+  This pair-specific density fit is not a universal PR78 parameterization.
+units:
+  kij: dimensionless
+  lij: dimensionless
+references:
+  - citation: Segovia et al., J. Chem. Thermodynamics 109 (2017) 113-128
+    doi: 10.1016/j.jct.2017.01.022
+  - citation: Privat and Jaubert, Fluid Phase Equilibria 570 (2023) 113697
+    doi: 10.1016/j.fluid.2022.113697
+parameters:
+  component_order: [methane, n_decane]
+  defaults:
+    kij: 0.0
+    lij: 0.0
+  pairs:
+    methane|n_decane:
+      kij: 0.0409
+      lij: 0.047567430964013162

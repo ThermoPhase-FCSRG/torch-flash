@@ -1,0 +1,4 @@
+baseline: teqp-0.23.2-canonical-PR
+cases: 4
+maximum_logphi_error: 1.3766765505351941e-14
+maximum_z_error: 1.1102230246251565e-16

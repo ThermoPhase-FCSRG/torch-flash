@@ -1,0 +1,118 @@
+"""Autodifferentiable thermodynamic parameter estimation."""
+
+from __future__ import annotations
+
+from collections.abc import Callable, Iterable
+from dataclasses import dataclass
+
+import torch
+from torch import Tensor, nn
+
+from torch_flash.properties.state import StateModel
+from torch_flash.types import PhaseKind, normalize_composition
+
+
+@dataclass(frozen=True)
+class FitResult:
+    """Optimization history and final convergence diagnostics."""
+
+    losses: tuple[float, ...]
+    converged: bool
+    iterations: int
+    final_loss: float
+
+
+def least_squares_loss(
+    prediction: Tensor,
+    observation: Tensor,
+    *,
+    scale: Tensor | float = 1.0,
+    weights: Tensor | None = None,
+) -> Tensor:
+    """Return a dimensionless weighted mean-square residual."""
+    residual = (prediction - observation) / scale
+    if weights is not None:
+        residual = residual * torch.sqrt(weights)
+    return torch.mean(residual.square())
+
+
+def phase_equilibrium_residual(
+    model: StateModel,
+    temperature: Tensor,
+    pressure: Tensor,
+    phase1_composition: Tensor,
+    phase2_composition: Tensor,
+    *,
+    phase_kinds: tuple[PhaseKind, PhaseKind] = ("liquid", "vapor"),
+) -> Tensor:
+    """Return component log-fugacity equalities for measured phase pairs.
+
+    Inputs may contain independent batched states.  The residual is
+    dimensionless and is zero when every component has equal fugacity in the
+    two requested phases.  Strictly positive compositions are required
+    because the thermodynamic equality is evaluated in logarithmic form.
+    """
+    phase1 = normalize_composition(phase1_composition)
+    phase2 = normalize_composition(phase2_composition)
+    if phase1.shape != phase2.shape:
+        raise ValueError("phase-equilibrium compositions must have equal shapes")
+    if not bool(
+        torch.isfinite(phase1).all()
+        & torch.isfinite(phase2).all()
+        & (phase1 > 0.0).all()
+        & (phase2 > 0.0).all()
+    ):
+        raise ValueError("phase-equilibrium compositions must be finite and positive")
+    return (
+        torch.log(phase1)
+        + model.log_fugacity_coefficients(
+            temperature,
+            pressure,
+            phase1,
+            phase_kinds[0],
+        )
+        - torch.log(phase2)
+        - model.log_fugacity_coefficients(
+            temperature,
+            pressure,
+            phase2,
+            phase_kinds[1],
+        )
+    )
+
+
+def fit_parameters(
+    parameters: Iterable[nn.Parameter],
+    closure: Callable[[], Tensor],
+    *,
+    learning_rate: float = 0.05,
+    max_iterations: int = 500,
+    tolerance: float = 1.0e-10,
+) -> FitResult:
+    """Fit arbitrary PyTorch thermodynamic parameters with Adam.
+
+    The closure must recompute and return a scalar differentiable loss. Bounds
+    can be imposed by parameterizing physical values through sigmoid/softplus
+    transforms in the model.
+    """
+    trainable = tuple(parameters)
+    if not trainable:
+        raise ValueError("at least one trainable parameter is required")
+    optimizer = torch.optim.Adam(trainable, lr=learning_rate)
+    history: list[float] = []
+    converged = False
+    previous = torch.inf
+    for _iteration in range(1, max_iterations + 1):
+        optimizer.zero_grad()
+        loss = closure()
+        if loss.ndim != 0 or not bool(torch.isfinite(loss)):
+            raise ValueError("fitting closure must return one finite scalar loss")
+        loss.backward()
+        optimizer.step()
+        current = float(loss.detach())
+        history.append(current)
+        if abs(float(previous) - current) <= tolerance * max(1.0, abs(current)):
+            converged = True
+            break
+        previous = current
+    return FitResult(tuple(history), converged, _iteration, history[-1])

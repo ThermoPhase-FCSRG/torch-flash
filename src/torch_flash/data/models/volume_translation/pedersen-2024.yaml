@@ -1,0 +1,46 @@
+format: torch-flash-model-parameters
+schema_version: 1
+id: volume-translation.pedersen-2024
+model_kind: volume_translation
+model: Pedersen-Peneloux
+version: "2024-3rd-edition"
+description: >-
+  Péneloux SRK and Jhaveri-Youngren PR light-component correlations plus
+  Pedersen's ASTM-based temperature-dependent C7+ correction. Published c is
+  subtracted from the parent-EoS volume; torch-flash converts it to its
+  additive-shift convention.
+units:
+  rackett_intercept: dimensionless
+  rackett_acentric_slope: dimensionless
+  correlation_scale: dimensionless
+  correlation_target: dimensionless
+  reference_temperature: K
+  target_temperature: K
+  astm_density_constant: kg^2 m^-6 K^-1
+references:
+  - citation: >-
+      Pedersen, Christensen, Shaikh, Phase Behavior of Petroleum Reservoir
+      Fluids, 3rd ed. (2024), Sections 4.5 and 5.1.2
+    doi: 10.1201/9780429457418
+  - citation: >-
+      Péneloux, Rauzy, Fréze, Fluid Phase Equilibria 8 (1982) 7-23
+    doi: 10.1016/0378-3812(82)80002-2
+  - citation: >-
+      Jhaveri and Youngren, SPE Reservoir Engineering 3 (1988) 1033-1040
+    doi: 10.2118/13118-PA
+parameters:
+  rackett:
+    intercept: 0.29056
+    acentric_slope: -0.08775
+  correlations:
+    srk:
+      scale: 0.40768
+      target: 0.29441
+    pr:
+      scale: 0.50033
+      target: 0.25969
+  temperature_dependent:
+    reference_temperature: 288.15
+    target_temperature: 353.15
+    astm_density_constant: 613.9723
+    nonlinear_factor: 0.8

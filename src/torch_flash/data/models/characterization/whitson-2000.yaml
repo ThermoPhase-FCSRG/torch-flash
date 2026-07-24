@@ -1,0 +1,29 @@
+format: torch-flash-model-parameters
+schema_version: 1
+id: characterization.whitson-2000
+model_kind: characterization
+model: Whitson gamma heavy-end characterization
+version: "2000"
+description: >-
+  Shifted gamma-distribution and grouping defaults from Whitson and Brule
+  Chapter 5. Alpha remains an explicit user input because the source reports a
+  broad fluid-dependent range and recommends fitting measured TBP data.
+units:
+  molecular_weight: kg mol^-1
+references:
+  - citation: >-
+      Whitson and Brule, Phase Behavior, SPE Monograph 20 (2000), Chapter 5
+    isbn: 978-1-55563-087-8
+parameters:
+  gamma_distribution:
+    default_shape: 1.0
+    typical_shape_range: [0.5, 2.5]
+    molecular_weight_boundary_increment: 0.014
+    recommended_minimum_molecular_weight_relation:
+      scale: 110.0
+      multiplier: 4.0
+      exponent: 0.7
+  grouping:
+    count_intercept: 1.0
+    count_log_slope: 3.3
+    reference_carbon_number: 7

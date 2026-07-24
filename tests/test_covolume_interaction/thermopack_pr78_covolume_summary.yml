@@ -1,0 +1,4 @@
+baseline: ThermoPack-2.2.3-PR78
+cases: 6
+maximum_logphi_error: 1.2434497875801753e-14
+maximum_volume_error_m3_mol: 1.8973538018496328e-19

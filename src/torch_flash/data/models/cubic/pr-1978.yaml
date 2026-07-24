@@ -1,0 +1,28 @@
+format: torch-flash-model-parameters
+schema_version: 1
+id: cubic.pr-1978
+model_kind: cubic
+model: PR78
+version: "1978"
+description: Peng-Robinson equation with the 1978 high-acentric-factor extension.
+units:
+  omega_a: dimensionless
+  omega_b: dimensionless
+  delta1: dimensionless
+  delta2: dimensionless
+  alpha_coefficients: dimensionless
+  alpha_switch_acentric_factor: dimensionless
+references:
+  - citation: Robinson and Peng, GPA Research Report RR-28 (1978)
+parameters:
+  omega_a: 0.4572355289213822
+  omega_b: 0.07779607390388846
+  delta1: 2.414213562373095
+  delta2: -0.41421356237309515
+  alpha:
+    kind: pr78
+    switch_acentric_factor: 0.491
+    low:
+      coefficients: [0.37464, 1.54226, -0.26992]
+    high:
+      coefficients: [0.379642, 1.48503, -0.164423, 0.016666]

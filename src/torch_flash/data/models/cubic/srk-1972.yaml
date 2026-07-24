@@ -1,0 +1,25 @@
+format: torch-flash-model-parameters
+schema_version: 1
+id: cubic.srk-1972
+model_kind: cubic
+model: SRK
+version: "1972"
+description: Soave-Redlich-Kwong equation with the original Soave alpha function.
+units:
+  omega_a: dimensionless
+  omega_b: dimensionless
+  delta1: dimensionless
+  delta2: dimensionless
+  alpha_coefficients: dimensionless
+references:
+  - citation: Soave, Chemical Engineering Science 27 (1972) 1197-1203
+    doi: 10.1016/0009-2509(72)80096-4
+parameters:
+  omega_a: 0.4274802335403413
+  omega_b: 0.08664034996495773
+  delta1: 1.0
+  delta2: 0.0
+  alpha:
+    kind: srk
+    low:
+      coefficients: [0.480, 1.574, -0.176]

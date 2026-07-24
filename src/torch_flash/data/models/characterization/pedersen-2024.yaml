@@ -1,0 +1,42 @@
+format: torch-flash-model-parameters
+schema_version: 1
+id: characterization.pedersen-2024
+model_kind: characterization
+model: Pedersen heavy-end characterization
+version: "2024"
+description: >-
+  Model-neutral logarithmic heavy-end split, density relation, and
+  weight-based lumping constants from Pedersen et al. Chapter 5. The SRK and
+  PR property-correlation coefficients are model-specific adapters stored in
+  the same traceable source set.
+units:
+  molecular_weight_slope: g mol^-1 carbon-number^-1
+  molecular_weight_intercept: g mol^-1
+  critical_temperature: K
+  critical_pressure: atm
+  density: g cm^-3
+references:
+  - citation: >-
+      Pedersen, Christensen, and Shaikh, Phase Behavior of Petroleum Reservoir
+      Fluids, 3rd ed. (2024), Chapter 5
+    isbn: 978-1-138-32008-6
+parameters:
+  plus_split:
+    default_max_carbon_number: 80
+    molecular_weight: {slope: 14.0, intercept: -4.0}
+    density_log_carbon_number: true
+    default_anchor_density_ratio: 0.86
+  cubic_properties:
+    SRK:
+      critical_temperature: [163.12, 86.052, 0.43475, -1877.4]
+      log_critical_pressure: [-0.13408, 2.5019, 208.46, -3987.2, 1.0]
+      m: [0.74310, 0.0048122, 0.0096707, -3.7184e-6]
+      m_to_acentric_factor: [0.480, 1.574, -0.176]
+    PR:
+      critical_temperature: [73.4043, 97.3562, 0.618744, -2059.32]
+      log_critical_pressure: [0.0728462, 2.18811, 163.910, -4043.23, 0.25]
+      m: [0.373765, 0.00549269, 0.0117934, -4.93049e-6]
+      m_to_acentric_factor: [0.37464, 1.54226, -0.26992]
+  lumping:
+    basis: weight
+    property_average_basis: weight

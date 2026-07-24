@@ -1,0 +1,61 @@
+format: torch-flash-model-parameters
+schema_version: 1
+id: group-contribution.ppr78-jaubert-mutelet-2004
+model_kind: group_contribution
+model: PPR78
+version: "2004-original-six-group"
+description: >-
+  Original PPR78 group-contribution correlation for saturated hydrocarbons.
+  This set contains exactly the six groups and 30 universal A/B coefficients
+  in Jaubert and Mutelet (2004); it is not the later 21-group extension.
+units:
+  A: Pa
+  B: Pa
+  group_fraction: dimensionless
+  reference_temperature: K
+references:
+  - citation: >-
+      J.-N. Jaubert and F. Mutelet, Fluid Phase Equilibria 224 (2004)
+      285-304, Eq. (5), Table 1, and Appendix A
+    doi: 10.1016/j.fluid.2004.06.059
+  - citation: whitson wiki, Binary Interaction Parameters
+    url: https://wiki.whitson.com/eos/bips/
+    note: Secondary overview; the primary paper defines this six-group set.
+parameters:
+  reference_temperature: 298.15
+  groups:
+    - CH3
+    - CH2
+    - CH
+    - C
+    - CH4
+    - C2H6
+  interactions:
+    CH3|CH2: {A: 74810000.0, B: 165700000.0}
+    CH3|CH: {A: 261500000.0, B: 388800000.0}
+    CH3|C: {A: 396700000.0, B: 804300000.0}
+    CH3|CH4: {A: 32940000.0, B: -35000000.0}
+    CH3|C2H6: {A: 8579000.0, B: -29500000.0}
+    CH2|CH: {A: 51470000.0, B: 79610000.0}
+    CH2|C: {A: 88530000.0, B: 315000000.0}
+    CH2|CH4: {A: 36720000.0, B: 108400000.0}
+    CH2|C2H6: {A: 31230000.0, B: 84760000.0}
+    CH|C: {A: -305700000.0, B: -250800000.0}
+    CH|CH4: {A: 145200000.0, B: 301600000.0}
+    CH|C2H6: {A: 174300000.0, B: 352100000.0}
+    C|CH4: {A: 263900000.0, B: 531500000.0}
+    C|C2H6: {A: 333200000.0, B: 203800000.0}
+    CH4|C2H6: {A: 13040000.0, B: 6863000.0}
+  component_groups:
+    methane: {CH4: 1}
+    ethane: {C2H6: 1}
+    propane: {CH3: 2, CH2: 1}
+    isobutane: {CH3: 3, CH: 1}
+    n_butane: {CH3: 2, CH2: 2}
+    isopentane: {CH3: 3, CH2: 1, CH: 1}
+    n_pentane: {CH3: 2, CH2: 3}
+    n_hexane: {CH3: 2, CH2: 4}
+    n_heptane: {CH3: 2, CH2: 5}
+    n_octane: {CH3: 2, CH2: 6}
+    n_nonane: {CH3: 2, CH2: 7}
+    n_decane: {CH3: 2, CH2: 8}

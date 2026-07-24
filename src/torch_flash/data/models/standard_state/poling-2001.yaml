@@ -1,0 +1,80 @@
+format: torch-flash-model-parameters
+schema_version: 1
+id: standard-state.poling-2001
+model_kind: standard_state
+model: ideal-gas-cp-polynomial
+version: "Poling-2001"
+description: Dimensionless ideal-gas heat-capacity polynomials, Cp/R=sum(a_k T^k).
+units:
+  temperature: K
+  cp_over_r_coefficients: K^-k for polynomial coefficient k
+  reference_enthalpy: J mol^-1
+  reference_entropy: J mol^-1 K^-1
+references:
+  - citation: Poling, Prausnitz, and O'Connell, The Properties of Gases and Liquids, 5th ed. (2001)
+parameters:
+  default_reference_temperature: 273.15
+  components:
+    nitrogen:
+      coefficients: [3.539, -2.61e-4, 7.0e-8, 1.57e-9, -9.90e-13]
+      temperature_range: [50.0, 1000.0]
+    oxygen:
+      coefficients: [3.630, -1.794e-3, 6.58e-6, -6.00e-9, 1.79e-12]
+      temperature_range: [50.0, 1000.0]
+    argon:
+      coefficients: [2.500, 0.0, 0.0, 0.0, 0.0]
+      temperature_range: [50.0, 1000.0]
+    helium:
+      coefficients: [2.500, 0.0, 0.0, 0.0, 0.0]
+      temperature_range: [50.0, 1000.0]
+    carbon_monoxide:
+      coefficients: [3.912, -3.913e-3, 1.182e-5, -1.300e-8, 5.15e-12]
+      temperature_range: [50.0, 1000.0]
+    carbon_dioxide:
+      coefficients: [3.259, 1.356e-3, 1.502e-5, -2.374e-8, 1.056e-11]
+      temperature_range: [50.0, 1000.0]
+    hydrogen:
+      coefficients: [2.883, 3.681e-3, -7.72e-6, 6.92e-9, -2.13e-12]
+      temperature_range: [50.0, 1000.0]
+    hydrogen_sulfide:
+      coefficients: [4.266, -3.438e-3, 1.319e-5, -1.331e-8, 4.88e-12]
+      temperature_range: [50.0, 1000.0]
+    water:
+      coefficients: [4.395, -4.186e-3, 1.405e-5, -1.564e-8, 6.32e-12]
+      temperature_range: [50.0, 1000.0]
+    methane:
+      coefficients: [4.568, -8.975e-3, 3.631e-5, -3.407e-8, 1.091e-11]
+      temperature_range: [50.0, 1000.0]
+    ethane:
+      coefficients: [4.178, -4.427e-3, 5.660e-5, -6.651e-8, 2.487e-11]
+      temperature_range: [50.0, 1000.0]
+    propane:
+      coefficients: [3.847, 5.131e-3, 6.011e-5, -7.893e-8, 3.079e-11]
+      temperature_range: [50.0, 1000.0]
+    isobutane:
+      coefficients: [3.351, 1.7883e-2, 5.477e-5, -8.100e-8, 3.243e-11]
+      temperature_range: [200.0, 1000.0]
+    n_butane:
+      coefficients: [5.547, 5.536e-3, 8.057e-5, -1.0571e-7, 4.134e-11]
+      temperature_range: [200.0, 1000.0]
+    isopentane:
+      coefficients: [1.959, 3.8191e-2, 2.434e-5, -5.175e-8, 2.165e-11]
+      temperature_range: [200.0, 1000.0]
+    n_pentane:
+      coefficients: [7.554, -3.68e-4, 1.1846e-4, -1.4939e-7, 5.753e-11]
+      temperature_range: [200.0, 1000.0]
+    n_hexane:
+      coefficients: [8.831, -1.66e-4, 1.4302e-4, -1.8314e-7, 7.124e-11]
+      temperature_range: [200.0, 1000.0]
+    n_heptane:
+      coefficients: [9.634, 4.156e-3, 1.5494e-4, -2.0066e-7, 7.770e-11]
+      temperature_range: [200.0, 1000.0]
+    n_octane:
+      coefficients: [10.824, 4.983e-3, 1.7751e-4, -2.3137e-7, 8.980e-11]
+      temperature_range: [200.0, 1000.0]
+    n_nonane:
+      coefficients: [12.152, 4.575e-3, 2.0416e-4, -2.6777e-7, 1.0465e-10]
+      temperature_range: [200.0, 1000.0]
+    n_decane:
+      coefficients: [13.467, 4.139e-3, 2.3127e-4, -3.0477e-7, 1.1970e-10]
+      temperature_range: [200.0, 1000.0]

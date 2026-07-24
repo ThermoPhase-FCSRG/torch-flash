@@ -1,0 +1,105 @@
+$schema: https://json-schema.org/draft/2020-12/schema
+$id: https://volpatto.github.io/torch-flash/schemas/component-database-v1
+title: torch-flash component database
+type: object
+additionalProperties: false
+required:
+  - format
+  - schema_version
+  - id
+  - revision
+  - unit_system
+  - units
+  - references
+  - components
+properties:
+  format:
+    const: torch-flash-component-database
+  schema_version:
+    const: 1
+  id:
+    type: string
+    minLength: 1
+    pattern: "^[a-z0-9][a-z0-9._-]*$"
+  revision:
+    type: string
+    minLength: 1
+  description:
+    type: string
+  unit_system:
+    const: SI
+  units:
+    type: object
+    additionalProperties: false
+    required:
+      - critical_temperature
+      - critical_pressure
+      - acentric_factor
+      - molar_mass
+      - critical_volume
+      - critical_density
+    properties:
+      critical_temperature:
+        const: K
+      critical_pressure:
+        const: Pa
+      acentric_factor:
+        const: dimensionless
+      molar_mass:
+        const: kg mol^-1
+      critical_volume:
+        const: m^3 mol^-1
+      critical_density:
+        const: mol m^-3
+  references:
+    type: array
+    items:
+      type: object
+      minProperties: 1
+      additionalProperties:
+        type: string
+  components:
+    type: object
+    minProperties: 1
+    propertyNames:
+      pattern: "^[a-z0-9][a-z0-9_]*$"
+    additionalProperties:
+      type: object
+      additionalProperties: false
+      required:
+        - aliases
+        - critical_temperature
+        - critical_pressure
+        - acentric_factor
+        - molar_mass
+        - critical_volume
+        - critical_density
+      properties:
+        aliases:
+          type: array
+          uniqueItems: true
+          items:
+            type: string
+        critical_temperature:
+          type: number
+          exclusiveMinimum: 0
+        critical_pressure:
+          type: number
+          exclusiveMinimum: 0
+        acentric_factor:
+          type:
+            - number
+            - "null"
+        molar_mass:
+          type: number
+          exclusiveMinimum: 0
+        critical_volume:
+          type:
+            - number
+            - "null"
+          exclusiveMinimum: 0
+        critical_density:
+          type:
+            - number
+            - "null"
+          exclusiveMinimum: 0
