@@ -50,7 +50,7 @@ jobs:
         if: runner.os == 'Linux'
         shell: bash
         run: |
-          pixi run -e "${{ matrix.environment }}" python scripts/sync_deps.py --check
+          pixi run -e "${{ matrix.environment }}" sync-deps-check
           pixi run -e "${{ matrix.environment }}" check-data-rights
 
       - name: Fetch pinned Whitson contest corpus

@@ -59,6 +59,31 @@
   </div>
 </div>
 
+## Installation and package extras
+
+Install the default package capability from PyPI:
+
+```bash
+python -m pip install torch-flash
+```
+
+Three optional pip extras expose package-level integrations:
+
+```bash
+python -m pip install "torch-flash[groups]"
+python -m pip install "torch-flash[intel]"
+python -m pip install "torch-flash[gpu]"
+```
+
+The `intel` and `gpu` extras are currently active on Linux and Windows. The GPU
+extra also requires a compatible CUDA runtime and device.
+
+The normal installation is the `default` capability; it is not named
+`torch-flash[default]`. Development, testing, documentation, notebooks,
+external comparisons, and benchmarks use dedicated Pixi environments rather
+than pip extras. Maintainers should follow the
+[dependency and release metadata workflow](contributing.md#dependency-and-release-metadata).
+
 ## Scientific software with explicit thermodynamic state
 
 `torch-flash` provides differentiable thermodynamic state models and

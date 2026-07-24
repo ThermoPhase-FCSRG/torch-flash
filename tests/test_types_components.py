@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from importlib.metadata import version
+
 import pytest
 import torch
 
@@ -16,7 +18,7 @@ from torch_flash.types import (
 
 
 def test_package_metadata_and_public_surface():
-    assert torch_flash.__version__ == "0.1.0"
+    assert torch_flash.__version__ == version("torch-flash")
     assert "two_phase_flash" in torch_flash.__all__
 
 

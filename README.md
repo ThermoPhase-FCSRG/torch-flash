@@ -22,20 +22,38 @@ The current model coverage, assumptions, and limitations are documented in [Mode
 python -m pip install torch-flash
 ```
 
-Optional integrations and tools used to execute the repository studies are
-available through extras:
+Optional package capabilities are available through the `groups`, `intel`,
+and `gpu` extras:
 
 ```bash
-python -m pip install "torch-flash[external,notebooks]"
+python -m pip install "torch-flash[groups]"
+python -m pip install "torch-flash[intel]"
+python -m pip install "torch-flash[gpu]"
 ```
 
-The project uses [Pixi](https://pixi.sh) for reproducible development
-environments:
+The `intel` and `gpu` dependencies are currently published for Linux and
+Windows. GPU use additionally requires a compatible CUDA runtime and device.
+
+Development, documentation, notebook, external-comparison, and benchmark
+dependencies remain in their dedicated [Pixi](https://pixi.sh) environments:
 
 ```bash
 pixi install -e test
 pixi run -e test test-cov
 ```
+
+For maintainers, `pixi.toml` is the dependency source of truth and the package
+version is synchronized across release metadata through Pixi tasks:
+
+```bash
+pixi run sync-deps
+pixi run sync-deps-check
+pixi run bump-version 0.1.3 --dry-run
+pixi run bump-version 0.1.3
+```
+
+See the [contribution guide](CONTRIBUTING.md) for the dependency-export
+boundary, synchronized version files, and release checks.
 
 ## Quick start
 
