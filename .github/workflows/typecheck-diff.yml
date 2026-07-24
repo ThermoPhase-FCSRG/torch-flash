@@ -1,0 +1,29 @@
+name: Type Check Diff
+
+on:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: typecheck-diff-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  mypy:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v7
+
+      - name: Install Pixi
+        uses: prefix-dev/setup-pixi@v0
+        with:
+          environments: default
+
+      - name: Run mypy
+        shell: bash
+        run: pixi run -e default typecheck

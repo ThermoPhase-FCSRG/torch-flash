@@ -1,0 +1,197 @@
+name: Tests
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+  pull-requests: write
+
+concurrency:
+  group: tests-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    name: test (${{ matrix.os }}, ${{ matrix.environment }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
+    env:
+      CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
+      PYTHONFAULTHANDLER: "1"
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # Intel dependencies are available on Linux and Windows, but not macOS.
+          - os: ubuntu-latest
+            environment: intel
+          - os: macos-latest
+            environment: test
+          - os: windows-latest
+            environment: intel
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: Install Pixi
+        uses: prefix-dev/setup-pixi@v0
+        with:
+          environments: ${{ matrix.environment }}
+
+      - name: Check repository policy
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          pixi run -e "${{ matrix.environment }}" python scripts/sync_deps.py --check
+          pixi run -e "${{ matrix.environment }}" check-data-rights
+
+      - name: Fetch pinned Whitson contest corpus
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          contest="${RUNNER_TEMP}/Rachford-Rice-Contest"
+          git init "$contest"
+          git -C "$contest" remote add origin https://github.com/WhitsonAS/Rachford-Rice-Contest.git
+          git -C "$contest" fetch --depth 1 origin 503b92f1b2847c4459326841f538739bcb9d629f
+          git -C "$contest" checkout --detach FETCH_HEAD
+          echo "TORCH_FLASH_WHITSON_DATA=${contest}" >> "$GITHUB_ENV"
+
+      - name: Run tests with coverage
+        run: pixi run -e "${{ matrix.environment }}" test-cov
+
+      - name: Upload coverage artifact
+        if: runner.os == 'Linux'
+        uses: actions/upload-artifact@v7
+        with:
+          name: coverage-xml
+          path: coverage.xml
+
+      - name: Fetch PR base branch
+        if: runner.os == 'Linux' && github.event_name == 'pull_request'
+        shell: bash
+        run: |
+          git fetch origin \
+            "${{ github.base_ref }}:refs/remotes/origin/${{ github.base_ref }}"
+
+      - name: Check diff coverage threshold
+        id: diff_cover
+        if: runner.os == 'Linux' && github.event_name == 'pull_request'
+        continue-on-error: true
+        shell: bash
+        run: |
+          python -m pip install --disable-pip-version-check diff-cover
+          diff-cover coverage.xml \
+            --compare-branch "origin/${{ github.base_ref }}" \
+            --fail-under=99 | tee diff-cover.txt
+
+      - name: Summarize coverage
+        id: coverage_summary
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          python - <<'PY'
+          import os
+          import pathlib
+          import re
+          import xml.etree.ElementTree as ET
+
+          overall = 100.0 * float(ET.parse("coverage.xml").getroot().attrib["line-rate"])
+          diff_text = ""
+          diff_path = pathlib.Path("diff-cover.txt")
+          if diff_path.exists():
+              diff_text = diff_path.read_text(encoding="utf-8")
+          match = re.search(r"(?m)^(?:Diff )?Coverage:\s+([0-9.]+)%$", diff_text)
+          diff = match.group(1) if match else "n/a"
+
+          with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as fh:
+              fh.write(f"overall={overall:.2f}\n")
+              fh.write(f"diff={diff}\n")
+          PY
+
+      - name: Comment coverage on PR
+        if: >
+          runner.os == 'Linux' &&
+          github.event_name == 'pull_request' &&
+          github.event.pull_request.head.repo.full_name == github.repository
+        uses: actions/github-script@v9
+        env:
+          OVERALL_COVERAGE: ${{ steps.coverage_summary.outputs.overall }}
+          DIFF_COVERAGE: ${{ steps.coverage_summary.outputs.diff }}
+          DIFF_STATUS: ${{ steps.diff_cover.outcome }}
+        with:
+          script: |
+            const fs = require('fs');
+            const marker = '<!-- torch-flash-coverage-report -->';
+            const diffText = fs.existsSync('diff-cover.txt')
+              ? fs.readFileSync('diff-cover.txt', 'utf8').trim()
+              : 'diff-cover did not run.';
+            const result = process.env.DIFF_STATUS === 'success' ? 'passed' : 'failed';
+            const icon = process.env.DIFF_STATUS === 'success' ? '✅' : '❌';
+            const body = `${marker}
+            ## Coverage
+            - Overall line coverage on Ubuntu: \`${process.env.OVERALL_COVERAGE}%\`
+            - Diff coverage: \`${process.env.DIFF_COVERAGE}%\`
+            - Required diff coverage: \`99%\`
+            - Result: ${icon} ${result}
+
+            <details><summary>diff-cover output</summary>
+
+            \`\`\`text
+            ${diffText}
+            \`\`\`
+            </details>`;
+
+            const { owner, repo } = context.repo;
+            const issue_number = context.issue.number;
+            const comments = await github.paginate(github.rest.issues.listComments, {
+              owner,
+              repo,
+              issue_number,
+            });
+            const previous = comments.find(
+              (comment) =>
+                comment.user.type === 'Bot' &&
+                comment.body &&
+                comment.body.includes(marker),
+            );
+
+            if (previous) {
+              await github.rest.issues.updateComment({
+                owner,
+                repo,
+                comment_id: previous.id,
+                body,
+              });
+            } else {
+              await github.rest.issues.createComment({
+                owner,
+                repo,
+                issue_number,
+                body,
+              });
+            }
+
+      - name: Upload coverage to Codecov
+        if: runner.os == 'Linux' && env.CODECOV_TOKEN != ''
+        uses: codecov/codecov-action@v7
+        with:
+          files: coverage.xml
+          fail_ci_if_error: false
+          token: ${{ env.CODECOV_TOKEN }}
+          verbose: true
+
+      - name: Enforce diff coverage threshold
+        if: runner.os == 'Linux' && github.event_name == 'pull_request' && steps.diff_cover.outcome == 'failure'
+        shell: bash
+        run: |
+          echo "Diff coverage is below the required 99% threshold."
+          exit 1

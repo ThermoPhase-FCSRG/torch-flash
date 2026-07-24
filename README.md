@@ -31,7 +31,9 @@
 
 # torch-flash
 
-[![CI](https://github.com/volpatto/torch-flash/actions/workflows/ci.yml/badge.svg)](https://github.com/volpatto/torch-flash/actions/workflows/ci.yml)
+[![Tests](https://github.com/volpatto/torch-flash/actions/workflows/tests.yml/badge.svg)](https://github.com/volpatto/torch-flash/actions/workflows/tests.yml)
+[![Coverage](https://codecov.io/gh/volpatto/torch-flash/branch/main/graph/badge.svg)](https://codecov.io/gh/volpatto/torch-flash)
+[![Supported OS](https://img.shields.io/badge/OS-Linux%20%7C%20macOS%20%7C%20Windows-blue)](https://github.com/volpatto/torch-flash/actions/workflows/tests.yml)
 [![Docs](https://github.com/volpatto/torch-flash/actions/workflows/docs.yml/badge.svg)](https://volpatto.github.io/torch-flash/)
 [![PyPI](https://img.shields.io/pypi/v/torch-flash.svg)](https://pypi.org/project/torch-flash/)
 [![Python](https://img.shields.io/pypi/pyversions/torch-flash.svg)](https://pypi.org/project/torch-flash/)
