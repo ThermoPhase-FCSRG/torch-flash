@@ -42,10 +42,12 @@
 # %%
 from __future__ import annotations
 
+import gc
 import os
 import platform
 import time
 from collections.abc import Callable
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 
 import matplotlib.pyplot as plt
@@ -58,9 +60,13 @@ from matplotlib.colors import BoundaryNorm, ListedColormap
 
 import torch_flash
 from torch_flash import (
+    BatchedStabilityResult,
+    BatchedTwoPhaseFlashResult,
     ChemicalState,
     ComponentSet,
     SCNDistribution,
+    batched_tangent_plane_stability,
+    batched_two_phase_flash,
     component_set,
     identify_phase,
     li_pseudo_critical_temperature,
@@ -76,14 +82,24 @@ from torch_flash.eos import CubicEOS
 from torch_flash.initialization import wilson_k_values
 
 torch.set_default_dtype(torch.float64)
+PYTORCH_THREADS = int(os.environ.get("TORCH_FLASH_PHASE_ID_THREADS", "1"))
+if PYTORCH_THREADS < 1:
+    raise ValueError("TORCH_FLASH_PHASE_ID_THREADS must be positive")
+torch.set_num_threads(PYTORCH_THREADS)
 ipython = get_ipython()
 if ipython is not None:
     ipython.run_line_magic("matplotlib", "inline")
 plt.style.use("seaborn-v0_8-whitegrid")
 
-GRID_POINTS = int(os.environ.get("TORCH_FLASH_PHASE_ID_GRID_POINTS", "33"))
+GRID_POINTS = int(os.environ.get("TORCH_FLASH_PHASE_ID_GRID_POINTS", "100"))
 if GRID_POINTS < 3:
     raise ValueError("TORCH_FLASH_PHASE_ID_GRID_POINTS must be at least 3")
+GRID_CHUNK_SIZE = int(os.environ.get("TORCH_FLASH_PHASE_ID_GRID_CHUNK_SIZE", "2048"))
+if GRID_CHUNK_SIZE < 1:
+    raise ValueError("TORCH_FLASH_PHASE_ID_GRID_CHUNK_SIZE must be positive")
+FALLBACK_WORKERS = int(os.environ.get("TORCH_FLASH_PHASE_ID_FALLBACK_WORKERS", "1"))
+if FALLBACK_WORKERS < 1:
+    raise ValueError("TORCH_FLASH_PHASE_ID_FALLBACK_WORKERS must be positive")
 
 reproducibility = pd.Series(
     {
@@ -93,14 +109,19 @@ reproducibility = pd.Series(
         "platform": platform.platform(),
         "dtype": str(torch.get_default_dtype()),
         "grid points per axis": GRID_POINTS,
-        "PyTorch threads": torch.get_num_threads(),
+        "grid flash chunk size": GRID_CHUNK_SIZE,
+        "random Gibbs fallback starts": int(
+            os.environ.get("TORCH_FLASH_PHASE_ID_RANDOM_FALLBACK_STARTS", "8")
+        ),
+        "scalar fallback workers": FALLBACK_WORKERS,
+        "PyTorch intra-op threads": torch.get_num_threads(),
     },
     name="value",
 )
 display(reproducibility.to_frame())
 print(
     "Set TORCH_FLASH_PHASE_ID_GRID_POINTS=9 for the fast smoke profile or 500 "
-    "for the paper's nominal illustrative-grid resolution. The default is 33 x 33."
+    "for the paper's nominal illustrative-grid resolution. The default is 100 x 100."
 )
 
 # %% [markdown]
@@ -567,6 +588,14 @@ figure6_reconstruction_audit = pd.Series(
             "low-temperature three-phase strip"
         ),
         "calibration class": "visual paper-figure reconstruction; not experimental validation",
+        "identifiability limit": (
+            "the paper omits the ECLIPSE lump critical properties and complete BIC table; "
+            "this one-parameter reconstruction is not unique"
+        ),
+        "excluded target": (
+            "the thin higher-temperature/low-pressure LLV branch was not used to add or "
+            "tune further unknown parameters"
+        ),
         "holdout validation": "none; unpublished ECLIPSE EOS/BIC table remains unavailable",
     },
     name="value",
@@ -657,8 +686,15 @@ assert binary_invariant_audit["maximum log-fugacity residual"] <= 1.0e-11
 # The paper performs a multiphase flash at every feed and then applies the
 # selected phase-identification criterion to every returned phase. The
 # repository's public `multiphase_flash` API deliberately fixes the requested
-# phase count, so this study uses a separate vectorized Gibbs minimization for
-# phase discovery:
+# phase count. This study therefore uses a hierarchical grid flash:
+#
+# 1. vectorized Michelsen tangent-plane iterations screen every cell;
+# 2. unstable cells are solved together with `batched_two_phase_flash`;
+# 3. the returned phases are screened again; and
+# 4. failed two-phase solves and child-phase instabilities enter the strict
+#    Gibbs minimization below.
+#
+# The sparse fallback minimizes
 #
 # \[
 # \min_{\{n_{pi}\}}\sum_{p,i}n_{pi}
@@ -668,23 +704,31 @@ assert binary_invariant_audit["maximum log-fugacity residual"] <= 1.0e-11
 # \]
 #
 # This parameterization enforces nonnegative phase/component amounts and
-# material balance identically. PyTorch autograd supplies every optimization
-# gradient. Volatility, component-rich, and a fixed library of 32 randomized
-# three-phase starts are optimized at **every grid cell** in one batched tensor
-# calculation. The lowest-Gibbs candidate seeds an autodiff-Newton PT flash
-# that simultaneously enforces phase normalization, material balance, and
-# equality of every component fugacity. Duplicate or vanishing phases are
-# removed only after refinement, and each result must pass explicit residual
-# gates before it can be colored. A cell that fails the fast Newton path is
-# retried with strict per-state LBFGS; the timing table reports the fallback
-# count rather than hiding that work. Finally, any one-phase cell bracketed by
-# multiphase neighbors is independently reflashed from the best four starts;
-# the audit repeats until no new bracketed cell appears. A cell is replaced
+# material balance identically. PyTorch autograd supplies the Gibbs gradients
+# and the equal-fugacity Newton Jacobians. Volatility, component-rich, and a
+# fixed library of randomized three-phase starts are optimized only for the
+# difficult subset. Duplicate or vanishing phases are removed only after
+# refinement, and every retained result must pass explicit fugacity,
+# material-balance, and Gibbs-reduction gates before it can be colored.
+# One-phase cells bracketed by multiphase neighbors are independently
+# reflashed until the topology audit reaches a fixed point. A cell is replaced
 # only when the independent solve finds a lower-Gibbs split that passes the
 # same residual gates; visual topology never overrides the thermodynamic
 # objective.
 # This is a study-level phase-discovery calculation, not a new public flash
 # API.
+#
+# The forward-only stability screens run under `torch.no_grad`; Gibbs
+# minimization and the two- and three-phase Newton refinements retain PyTorch
+# autodiff. Independent cells are evaluated as tensor batches rather than as
+# Python worker jobs. On the recorded Apple-silicon host, one PyTorch intra-op
+# thread was faster for these small per-state algebraic systems than 4 or 10
+# threads, and a scalar `ThreadPoolExecutor` fallback was slower; both choices
+# remain explicit environment controls. MPS is not used because this reference
+# calculation requires float64, which the installed MPS backend rejects.
+# `torch.compile` accelerated a warmed 2048-state fugacity kernel but its cold
+# compilation cost exceeded a complete 50 by 50 case, so eager execution is
+# the reproducible default for this one-pass study.
 
 # %%
 @dataclass(frozen=True)
@@ -710,13 +754,93 @@ class GridEquilibrium:
 
 
 MAX_PHASES = 3
-RANDOM_ALLOCATION_STARTS = 32
+RANDOM_ALLOCATION_STARTS = int(
+    os.environ.get("TORCH_FLASH_PHASE_ID_RANDOM_FALLBACK_STARTS", "8")
+)
+if RANDOM_ALLOCATION_STARTS < 0:
+    raise ValueError("TORCH_FLASH_PHASE_ID_RANDOM_FALLBACK_STARTS must be nonnegative")
 PHASE_FRACTION_TOLERANCE = 1.0e-4
 PHASE_COMPOSITION_MERGE_TOLERANCE = 2.0e-3
 GIBBS_REDUCTION_TOLERANCE = 2.0e-7
 FUGACITY_RESIDUAL_TOLERANCE = 1.0e-8
 FLASH_NEWTON_TOLERANCE = 1.0e-11
 INDEPENDENT_REFLASH_STARTS = 4
+BATCHED_STABILITY_ITERATIONS = 40
+BATCHED_FLASH_SUBSTITUTION_ITERATIONS = 30
+BATCHED_FLASH_NEWTON_ITERATIONS = 8
+GIBBS_FALLBACK_ADAM_ITERATIONS = 80
+BATCHED_THREE_PHASE_NEWTON_ITERATIONS = 48
+
+
+def _batched_stability_in_chunks(
+    model: object,
+    temperatures: torch.Tensor,
+    pressures: torch.Tensor,
+    compositions: torch.Tensor,
+) -> BatchedStabilityResult:
+    """Run vectorized stability screening with a bounded peak batch size."""
+    results = []
+    for start in range(0, temperatures.numel(), GRID_CHUNK_SIZE):
+        stop = min(start + GRID_CHUNK_SIZE, temperatures.numel())
+        with torch.no_grad():
+            results.append(
+                batched_tangent_plane_stability(
+                    model,
+                    ChemicalState(
+                        temperatures[start:stop],
+                        pressures[start:stop],
+                        compositions[start:stop],
+                    ),
+                    tolerance=1.0e-7,
+                    max_iterations=BATCHED_STABILITY_ITERATIONS,
+                )
+            )
+    return BatchedStabilityResult(
+        torch.cat(tuple(result.stable for result in results)),
+        torch.cat(tuple(result.minimum_tpd for result in results)),
+        torch.cat(tuple(result.trial_composition for result in results)),
+        max(result.iterations for result in results),
+        torch.cat(tuple(result.converged for result in results)),
+        torch.cat(tuple(result.residual_norm for result in results)),
+    )
+
+
+def _batched_two_phase_in_chunks(
+    model: object,
+    temperatures: torch.Tensor,
+    pressures: torch.Tensor,
+    compositions: torch.Tensor,
+    initial_k_values: torch.Tensor,
+) -> BatchedTwoPhaseFlashResult:
+    """Run independent two-phase flashes with a bounded autodiff batch."""
+    results = []
+    for start in range(0, temperatures.numel(), GRID_CHUNK_SIZE):
+        stop = min(start + GRID_CHUNK_SIZE, temperatures.numel())
+        results.append(
+            batched_two_phase_flash(
+                model,
+                ChemicalState(
+                    temperatures[start:stop],
+                    pressures[start:stop],
+                    compositions[start:stop],
+                ),
+                initial_k_values=initial_k_values[start:stop],
+                phase_roots=("stable", "stable"),
+                tolerance=FUGACITY_RESIDUAL_TOLERANCE,
+                substitution_iterations=BATCHED_FLASH_SUBSTITUTION_ITERATIONS,
+                newton_iterations=BATCHED_FLASH_NEWTON_ITERATIONS,
+            )
+        )
+    return BatchedTwoPhaseFlashResult(
+        torch.cat(tuple(result.vapor_fraction for result in results)),
+        torch.cat(tuple(result.liquid_fraction for result in results)),
+        torch.cat(tuple(result.liquid_composition for result in results)),
+        torch.cat(tuple(result.vapor_composition for result in results)),
+        torch.cat(tuple(result.k_values for result in results)),
+        max(result.iterations for result in results),
+        torch.cat(tuple(result.converged for result in results)),
+        torch.cat(tuple(result.residual_norm for result in results)),
+    )
 
 
 def _grid_states(case: PaperCase) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
@@ -897,7 +1021,7 @@ def _refine_state_allocation(
         return gibbs[0, 0], fractions[0, 0], compositions[0, 0]
 
     def closure() -> torch.Tensor:
-        optimizer.zero_grad()
+        optimizer.zero_grad(set_to_none=True)
         gibbs, _, _ = quantities()
         gibbs.backward()
         return gibbs
@@ -955,6 +1079,189 @@ def _flash_quantities(
     phase_moles = fractions[:, None] * compositions
     gibbs = torch.sum(phase_moles * chemical_potentials)
     return residual, fractions, compositions, gibbs
+
+
+def _batched_three_phase_quantities(
+    model: object,
+    temperatures: torch.Tensor,
+    pressures: torch.Tensor,
+    feeds: torch.Tensor,
+    variables: torch.Tensor,
+) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
+    """Evaluate independent three-phase PT residuals in one tensor batch."""
+    state_count, component_count = feeds.shape
+    log_k_size = 2 * component_count
+    log_k = variables[:, :log_k_size].reshape(state_count, 2, component_count)
+    fraction_coordinates = variables[:, log_k_size:]
+    fractions = torch.softmax(
+        torch.cat(
+            (
+                variables.new_zeros((state_count, 1)),
+                fraction_coordinates,
+            ),
+            dim=-1,
+        ),
+        dim=-1,
+    )
+    ratios = torch.cat(
+        (
+            torch.ones_like(log_k[:, :1]),
+            torch.exp(log_k),
+        ),
+        dim=1,
+    )
+    denominator = torch.sum(fractions[..., None] * ratios, dim=1)
+    raw_compositions = ratios * feeds[:, None, :] / denominator[:, None, :]
+    compositions = raw_compositions / raw_compositions.sum(dim=-1, keepdim=True)
+    chemical_potentials = torch.log(compositions) + model.log_fugacity_coefficients(
+        temperatures[:, None],
+        pressures[:, None],
+        compositions,
+        "stable",
+    )
+    fugacity_residuals = (
+        chemical_potentials[:, 1:] - chemical_potentials[:, :1]
+    ).reshape(state_count, -1)
+    normalization_residuals = raw_compositions[:, 1:].sum(dim=-1) - 1.0
+    residual = torch.cat(
+        (
+            fugacity_residuals,
+            normalization_residuals,
+        ),
+        dim=-1,
+    )
+    phase_moles = fractions[..., None] * compositions
+    gibbs = torch.sum(phase_moles * chemical_potentials, dim=(-1, -2))
+    return residual, fractions, compositions, gibbs
+
+
+def _batched_refine_three_phase(
+    model: object,
+    temperatures: torch.Tensor,
+    pressures: torch.Tensor,
+    feeds: torch.Tensor,
+    initial_fractions: torch.Tensor,
+    initial_compositions: torch.Tensor,
+) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
+    """Polish independent three-phase seeds with block-diagonal autodiff Newton."""
+    component_count = feeds.shape[-1]
+    log_k = torch.log(
+        torch.clamp_min(
+            initial_compositions[:, 1:] / initial_compositions[:, :1],
+            1.0e-30,
+        )
+    ).reshape(feeds.shape[0], -1)
+    fraction_coordinates = torch.log(
+        torch.clamp_min(
+            initial_fractions[:, 1:] / initial_fractions[:, :1],
+            1.0e-30,
+        )
+    )
+    variables = torch.cat((log_k, fraction_coordinates), dim=-1)
+    variable_count = variables.shape[-1]
+    log_k_size = 2 * component_count
+    identity = torch.eye(
+        variable_count,
+        dtype=variables.dtype,
+        device=variables.device,
+    )
+
+    for _ in range(BATCHED_THREE_PHASE_NEWTON_ITERATIONS):
+        current = variables.detach().requires_grad_(True)
+        residual, _, _, _ = _batched_three_phase_quantities(
+            model,
+            temperatures,
+            pressures,
+            feeds,
+            current,
+        )
+        norm = residual.detach().abs().amax(dim=-1)
+        active = norm > FLASH_NEWTON_TOLERANCE
+        if not bool(active.any()):
+            variables = current.detach()
+            break
+        jacobian_rows = tuple(
+            torch.autograd.grad(
+                residual[:, residual_index].sum(),
+                current,
+                retain_graph=residual_index + 1 < variable_count,
+            )[0]
+            for residual_index in range(variable_count)
+        )
+        jacobian = torch.stack(jacobian_rows, dim=-2)
+        direction, info = torch.linalg.solve_ex(
+            jacobian + 1.0e-10 * identity,
+            -residual[..., None],
+        )
+        direction = direction.squeeze(-1)
+        direction = torch.where(
+            (info == 0)[:, None] & torch.isfinite(direction),
+            direction,
+            -0.1 * residual,
+        )
+        direction_norm = torch.linalg.vector_norm(direction, dim=-1)
+        direction = (
+            direction
+            * torch.clamp_max(
+                8.0 / torch.clamp_min(direction_norm, 1.0),
+                1.0,
+            )[:, None]
+        )
+
+        accepted = ~active
+        next_variables = current.detach()
+        factor = torch.ones_like(norm)
+        for _ in range(16):
+            candidate = current.detach() + factor[:, None] * direction.detach()
+            candidate = torch.cat(
+                (
+                    torch.clamp(candidate[:, :log_k_size], -200.0, 200.0),
+                    torch.clamp(candidate[:, log_k_size:], -50.0, 50.0),
+                ),
+                dim=-1,
+            )
+            candidate_norm = (
+                _batched_three_phase_quantities(
+                    model,
+                    temperatures,
+                    pressures,
+                    feeds,
+                    candidate,
+                )[0]
+                .detach()
+                .abs()
+                .amax(dim=-1)
+            )
+            improved = (
+                active
+                & ~accepted
+                & torch.isfinite(candidate_norm)
+                & (candidate_norm < norm)
+            )
+            next_variables = torch.where(
+                improved[:, None],
+                candidate,
+                next_variables,
+            )
+            accepted = accepted | improved
+            if bool(accepted.all()):
+                break
+            factor = torch.where(accepted, factor, 0.5 * factor)
+        variables = next_variables
+
+    residual, fractions, compositions, gibbs = _batched_three_phase_quantities(
+        model,
+        temperatures,
+        pressures,
+        feeds,
+        variables,
+    )
+    return (
+        fractions,
+        compositions,
+        gibbs,
+        residual.abs().amax(dim=-1),
+    )
 
 
 def _refine_phase_equilibrium(
@@ -1349,8 +1656,8 @@ def _independent_multistart_reflash(
     return best_result
 
 
-def discover_grid_equilibrium(case: PaperCase) -> GridEquilibrium:
-    """Minimize total Gibbs energy and certify every retained phase split."""
+def discover_grid_equilibrium_oracle(case: PaperCase) -> GridEquilibrium:
+    """Apply the full-grid multistart Gibbs calculation as a correctness oracle."""
     temperatures, pressures, feeds = _grid_states(case)
     state_count, component_count = feeds.shape
     started = time.perf_counter()
@@ -1397,7 +1704,7 @@ def discover_grid_equilibrium(case: PaperCase) -> GridEquilibrium:
     )
 
     def closure() -> torch.Tensor:
-        optimizer.zero_grad()
+        optimizer.zero_grad(set_to_none=True)
         candidate_gibbs, _, _ = _allocation_quantities(
             case.model,
             temperatures,
@@ -1612,6 +1919,709 @@ def discover_grid_equilibrium(case: PaperCase) -> GridEquilibrium:
     )
 
 
+def _gibbs_fallback_grid_states(
+    case: PaperCase,
+    temperatures: torch.Tensor,
+    pressures: torch.Tensor,
+    feeds: torch.Tensor,
+    state_indices: list[int],
+    one_phase_gibbs: torch.Tensor,
+    current_gibbs: torch.Tensor,
+    current_converged: torch.Tensor,
+    seed_logits: dict[int, torch.Tensor] | None = None,
+) -> dict[int, tuple[torch.Tensor, torch.Tensor, torch.Tensor]]:
+    """Discover up to three phases for a sparse difficult-state subset."""
+    if not state_indices:
+        return {}
+    indices = torch.tensor(
+        sorted(set(state_indices)),
+        dtype=torch.long,
+        device=feeds.device,
+    )
+    subset_temperature = temperatures[indices]
+    subset_pressure = pressures[indices]
+    subset_feed = feeds[indices]
+    initial_logits = _allocation_initial_logits(
+        case.model,
+        subset_temperature,
+        subset_pressure,
+        subset_feed,
+    )
+    if seed_logits:
+        targeted = initial_logits[:, 0].clone()
+        for local_index, global_index_tensor in enumerate(indices):
+            global_index = int(global_index_tensor)
+            if global_index in seed_logits:
+                targeted[local_index] = seed_logits[global_index]
+        initial_logits = torch.cat((initial_logits, targeted[:, None]), dim=1)
+    logits = torch.nn.Parameter(initial_logits)
+    optimizer = torch.optim.Adam(
+        (logits,),
+        lr=0.08,
+    )
+    for _ in range(GIBBS_FALLBACK_ADAM_ITERATIONS):
+        optimizer.zero_grad(set_to_none=True)
+        candidate_gibbs, _, _ = _allocation_quantities(
+            case.model,
+            subset_temperature,
+            subset_pressure,
+            subset_feed,
+            logits,
+        )
+        loss = candidate_gibbs.sum()
+        loss.backward()
+        optimizer.step()
+    with torch.no_grad():
+        (
+            candidate_gibbs,
+            candidate_fractions,
+            candidate_compositions,
+        ) = _allocation_quantities(
+            case.model,
+            subset_temperature,
+            subset_pressure,
+            subset_feed,
+            logits,
+        )
+        best_start = candidate_gibbs.argmin(dim=1)
+        subset_index = torch.arange(indices.numel(), device=feeds.device)
+        best_candidate_gibbs = candidate_gibbs[subset_index, best_start]
+        best_logits = logits.detach()[subset_index, best_start]
+        best_fractions = candidate_fractions[subset_index, best_start]
+        best_compositions = candidate_compositions[subset_index, best_start]
+
+    (
+        batched_fractions,
+        batched_compositions,
+        batched_gibbs,
+        batched_newton_residual,
+    ) = _batched_refine_three_phase(
+        case.model,
+        subset_temperature,
+        subset_pressure,
+        subset_feed,
+        best_fractions,
+        best_compositions,
+    )
+    if os.environ.get("TORCH_FLASH_PHASE_ID_DEBUG") == "1":
+        merged_seed_counts = [
+            int(
+                _merge_candidate_phases(
+                    best_fractions[index], best_compositions[index]
+                )[0].numel()
+            )
+            for index in range(indices.numel())
+        ]
+        print(
+            "Batched three-phase Newton:",
+            int((batched_newton_residual <= FUGACITY_RESIDUAL_TOLERANCE).sum()),
+            "/",
+            indices.numel(),
+            "within the fugacity tolerance",
+            "; Adam seed phase counts:",
+            {
+                count: merged_seed_counts.count(count)
+                for count in sorted(set(merged_seed_counts))
+            },
+            flush=True,
+        )
+
+    pair_distance = torch.stack(
+        (
+            torch.abs(batched_compositions[:, 0] - batched_compositions[:, 1]).amax(
+                dim=-1
+            ),
+            torch.abs(batched_compositions[:, 0] - batched_compositions[:, 2]).amax(
+                dim=-1
+            ),
+            torch.abs(batched_compositions[:, 1] - batched_compositions[:, 2]).amax(
+                dim=-1
+            ),
+        ),
+        dim=-1,
+    )
+    batched_balance_residual = torch.abs(
+        torch.sum(batched_fractions[..., None] * batched_compositions, dim=1)
+        - subset_feed
+    ).amax(dim=-1)
+    batched_reduction = one_phase_gibbs[indices] - batched_gibbs
+    invariant_results: dict[
+        int,
+        tuple[torch.Tensor, torch.Tensor, torch.Tensor],
+    ] = {}
+    invariant_split = torch.zeros_like(batched_newton_residual, dtype=torch.bool)
+    if case.model is binary_model:
+        for local_index, global_index_tensor in enumerate(indices):
+            result = _binary_invariant_split(
+                case,
+                subset_pressure[local_index],
+                subset_feed[local_index],
+            )
+            if result is not None:
+                fractions, compositions = result
+                invariant_split[local_index] = True
+                invariant_results[int(global_index_tensor)] = (
+                    fractions,
+                    compositions,
+                    _candidate_gibbs_energy(
+                        case.model,
+                        subset_temperature[local_index],
+                        subset_pressure[local_index],
+                        fractions,
+                        compositions,
+                    ),
+                )
+
+    direct_three_phase = (
+        (batched_newton_residual <= FUGACITY_RESIDUAL_TOLERANCE)
+        & (batched_balance_residual <= 5.0e-11)
+        & (batched_fractions.amin(dim=-1) > PHASE_FRACTION_TOLERANCE)
+        & (pair_distance.amin(dim=-1) > PHASE_COMPOSITION_MERGE_TOLERANCE)
+        & (batched_reduction > GIBBS_REDUCTION_TOLERANCE)
+        & torch.isfinite(batched_gibbs)
+        & torch.isfinite(batched_compositions).all(dim=(-1, -2))
+        & ~invariant_split
+    )
+    promising_candidate = (
+        best_candidate_gibbs < current_gibbs[indices] - GIBBS_REDUCTION_TOLERANCE
+    )
+    requires_failure_resolution = ~current_converged[indices]
+    resolved_without_scalar = direct_three_phase | invariant_split
+    scalar_refinement = ~resolved_without_scalar & (
+        promising_candidate | requires_failure_resolution
+    )
+    if os.environ.get("TORCH_FLASH_PHASE_ID_DEBUG") == "1":
+        print(
+            "Fallback candidates:",
+            int(resolved_without_scalar.sum()),
+            "accepted in batch,",
+            int(scalar_refinement.sum()),
+            "sent to scalar refinement,",
+            int((~resolved_without_scalar & ~scalar_refinement).sum()),
+            "rejected without a lower Gibbs candidate",
+            flush=True,
+        )
+    direct_results = {
+        int(indices[local_index]): (
+            batched_fractions[local_index].detach(),
+            batched_compositions[local_index].detach(),
+            batched_gibbs[local_index].detach(),
+        )
+        for local_index in torch.nonzero(direct_three_phase).flatten().tolist()
+    }
+    direct_results.update(invariant_results)
+    alternative_two_phase = torch.zeros_like(direct_three_phase)
+    alternative_results: dict[
+        int,
+        tuple[torch.Tensor, torch.Tensor, torch.Tensor],
+    ] = {}
+    alternative_local_indices = torch.nonzero(scalar_refinement).flatten()
+    if alternative_local_indices.numel():
+        two_phase_seed_compositions = []
+        for local_index in alternative_local_indices.tolist():
+            seed_fractions, seed_compositions = _merge_candidate_phases(
+                best_fractions[local_index],
+                best_compositions[local_index],
+            )
+            if seed_fractions.numel() == MAX_PHASES:
+                distances = torch.stack(
+                    (
+                        torch.abs(seed_compositions[0] - seed_compositions[1]).amax(),
+                        torch.abs(seed_compositions[0] - seed_compositions[2]).amax(),
+                        torch.abs(seed_compositions[1] - seed_compositions[2]).amax(),
+                    )
+                )
+                first, second = ((0, 1), (0, 2), (1, 2))[int(distances.argmin())]
+                retained = 3 - first - second
+                merged_fraction = seed_fractions[first] + seed_fractions[second]
+                merged_composition = (
+                    seed_fractions[first] * seed_compositions[first]
+                    + seed_fractions[second] * seed_compositions[second]
+                ) / merged_fraction
+                seed_fractions = torch.stack(
+                    (
+                        merged_fraction,
+                        seed_fractions[retained],
+                    )
+                )
+                seed_compositions = torch.stack(
+                    (
+                        merged_composition,
+                        seed_compositions[retained],
+                    )
+                )
+            if seed_fractions.numel() != 2:
+                two_phase_seed_compositions.append(
+                    torch.stack((subset_feed[local_index], subset_feed[local_index]))
+                )
+            else:
+                two_phase_seed_compositions.append(seed_compositions)
+
+        two_phase_seed = torch.stack(two_phase_seed_compositions)
+        trial_k = two_phase_seed[:, 1] / torch.clamp_min(two_phase_seed[:, 0], 1.0e-30)
+        straddles = (trial_k.amin(dim=-1) < 1.0) & (trial_k.amax(dim=-1) > 1.0)
+        if bool(straddles.any()):
+            trial_local = alternative_local_indices[straddles]
+            alternative_flash = _batched_two_phase_in_chunks(
+                case.model,
+                subset_temperature[trial_local],
+                subset_pressure[trial_local],
+                subset_feed[trial_local],
+                trial_k[straddles],
+            )
+            alternative_fractions = torch.stack(
+                (
+                    alternative_flash.liquid_fraction,
+                    alternative_flash.vapor_fraction,
+                ),
+                dim=-1,
+            )
+            alternative_compositions = torch.stack(
+                (
+                    alternative_flash.liquid_composition,
+                    alternative_flash.vapor_composition,
+                ),
+                dim=1,
+            )
+            with torch.no_grad():
+                alternative_log_phi = case.model.log_fugacity_coefficients(
+                    subset_temperature[trial_local, None],
+                    subset_pressure[trial_local, None],
+                    alternative_compositions,
+                    "stable",
+                )
+                alternative_phase_gibbs = torch.sum(
+                    alternative_compositions
+                    * (torch.log(alternative_compositions) + alternative_log_phi),
+                    dim=-1,
+                )
+                alternative_gibbs = torch.sum(
+                    alternative_fractions * alternative_phase_gibbs,
+                    dim=-1,
+                )
+                alternative_balance = torch.abs(
+                    torch.sum(
+                        alternative_fractions[..., None] * alternative_compositions,
+                        dim=1,
+                    )
+                    - subset_feed[trial_local]
+                ).amax(dim=-1)
+                alternative_distance = torch.abs(
+                    alternative_compositions[:, 0] - alternative_compositions[:, 1]
+                ).amax(dim=-1)
+                acceptable = (
+                    alternative_flash.converged
+                    & (alternative_balance <= 5.0e-11)
+                    & (alternative_fractions.amin(dim=-1) > PHASE_FRACTION_TOLERANCE)
+                    & (alternative_distance > PHASE_COMPOSITION_MERGE_TOLERANCE)
+                    & (
+                        (
+                            alternative_gibbs
+                            < current_gibbs[indices[trial_local]]
+                            - GIBBS_REDUCTION_TOLERANCE
+                        )
+                        | requires_failure_resolution[trial_local]
+                    )
+                )
+            for candidate_index in torch.nonzero(acceptable).flatten().tolist():
+                local_index = int(trial_local[candidate_index])
+                global_index = int(indices[local_index])
+                alternative_two_phase[local_index] = True
+                alternative_results[global_index] = (
+                    alternative_fractions[candidate_index].detach(),
+                    alternative_compositions[candidate_index].detach(),
+                    alternative_gibbs[candidate_index].detach(),
+                )
+    direct_results.update(alternative_results)
+
+    def solve_candidate(
+        item: tuple[int, torch.Tensor],
+    ) -> tuple[int, tuple[torch.Tensor, torch.Tensor, torch.Tensor] | None]:
+        local_index, global_index_tensor = item
+        global_index = int(global_index_tensor)
+        invariant_split = _binary_invariant_split(
+            case,
+            subset_pressure[local_index],
+            subset_feed[local_index],
+        )
+        if invariant_split is not None:
+            fractions, compositions = invariant_split
+        else:
+            fractions, compositions = _merge_candidate_phases(
+                batched_fractions[local_index],
+                batched_compositions[local_index],
+            )
+        fractions, balance_residual, equilibrium_residual = _candidate_diagnostics(
+            case.model,
+            subset_temperature[local_index],
+            subset_pressure[local_index],
+            subset_feed[local_index],
+            fractions,
+            compositions,
+        )
+        if bool(
+            (equilibrium_residual > FUGACITY_RESIDUAL_TOLERANCE)
+            | (balance_residual > 5.0e-11)
+        ):
+            _, fractions, compositions = _refine_and_reduce_candidate(
+                case.model,
+                subset_temperature[local_index],
+                subset_pressure[local_index],
+                subset_feed[local_index],
+                best_logits[local_index],
+            )
+            fractions, balance_residual, equilibrium_residual = _candidate_diagnostics(
+                case.model,
+                subset_temperature[local_index],
+                subset_pressure[local_index],
+                subset_feed[local_index],
+                fractions,
+                compositions,
+            )
+        if bool(
+            (equilibrium_residual > FUGACITY_RESIDUAL_TOLERANCE)
+            | (balance_residual > 5.0e-11)
+        ):
+            _, fractions, compositions = _refine_and_reduce_candidate_robust(
+                case.model,
+                subset_temperature[local_index],
+                subset_pressure[local_index],
+                subset_feed[local_index],
+                best_logits[local_index],
+            )
+            fractions, balance_residual, equilibrium_residual = _candidate_diagnostics(
+                case.model,
+                subset_temperature[local_index],
+                subset_pressure[local_index],
+                subset_feed[local_index],
+                fractions,
+                compositions,
+            )
+        split_gibbs = _candidate_gibbs_energy(
+            case.model,
+            subset_temperature[local_index],
+            subset_pressure[local_index],
+            fractions,
+            compositions,
+        )
+        reduction = one_phase_gibbs[global_index] - split_gibbs
+        valid = bool(
+            (equilibrium_residual <= FUGACITY_RESIDUAL_TOLERANCE)
+            & (balance_residual <= 5.0e-11)
+        )
+        if valid and (
+            fractions.numel() == 1 or bool(reduction > GIBBS_REDUCTION_TOLERANCE)
+        ):
+            return global_index, (fractions, compositions, split_gibbs)
+        return global_index, None
+
+    items = [
+        (local_index, global_index)
+        for local_index, global_index in enumerate(indices)
+        if bool(scalar_refinement[local_index] & ~alternative_two_phase[local_index])
+    ]
+    if not items:
+        return direct_results
+    if FALLBACK_WORKERS == 1 or len(items) == 1:
+        solved = list(map(solve_candidate, items))
+    else:
+        with ThreadPoolExecutor(
+            max_workers=min(FALLBACK_WORKERS, len(items)),
+            thread_name_prefix="torch-flash-grid",
+        ) as executor:
+            solved = list(executor.map(solve_candidate, items))
+    direct_results.update(
+        {global_index: result for global_index, result in solved if result is not None}
+    )
+    return direct_results
+
+
+def discover_grid_equilibrium(case: PaperCase) -> GridEquilibrium:
+    """Flash a grid with batched stability/two-phase work and sparse Gibbs fallback."""
+    temperatures, pressures, feeds = _grid_states(case)
+    state_count, component_count = feeds.shape
+    started = time.perf_counter()
+    if component_count == 1:
+        return discover_grid_equilibrium_oracle(case)
+
+    with torch.no_grad():
+        one_phase_log_phi = case.model.log_fugacity_coefficients(
+            temperatures,
+            pressures,
+            feeds,
+            "stable",
+        )
+        one_phase_gibbs = torch.sum(
+            feeds * (torch.log(feeds) + one_phase_log_phi),
+            dim=-1,
+        )
+    padded_fractions = temperatures.new_zeros((state_count, MAX_PHASES))
+    padded_fractions[:, 0] = 1.0
+    padded_compositions = temperatures.new_full(
+        (state_count, MAX_PHASES, component_count),
+        torch.nan,
+    )
+    padded_compositions[:, 0, :] = feeds
+    phase_counts = torch.ones(
+        state_count,
+        dtype=torch.int64,
+        device=feeds.device,
+    )
+    gibbs_reduction = temperatures.new_zeros(state_count)
+    fugacity_residual = temperatures.new_zeros(state_count)
+    material_balance_residual = temperatures.new_zeros(state_count)
+    converged = torch.ones(
+        state_count,
+        dtype=torch.bool,
+        device=feeds.device,
+    )
+
+    stability = _batched_stability_in_chunks(
+        case.model,
+        temperatures,
+        pressures,
+        feeds,
+    )
+    unstable_indices = torch.nonzero(
+        stability.minimum_tpd < -1.0e-7,
+    ).flatten()
+    difficult_indices: set[int] = set()
+    fallback_seed_logits: dict[int, torch.Tensor] = {}
+    active_split_indices = temperatures.new_empty((0,), dtype=torch.long)
+
+    if unstable_indices.numel():
+        converged[unstable_indices] = False
+        initial_k = stability.trial_composition[unstable_indices] / torch.clamp_min(
+            feeds[unstable_indices],
+            1.0e-30,
+        )
+        two_phase = _batched_two_phase_in_chunks(
+            case.model,
+            temperatures[unstable_indices],
+            pressures[unstable_indices],
+            feeds[unstable_indices],
+            initial_k,
+        )
+        converged_two_phase = two_phase.converged
+        failed_local = torch.nonzero(~converged_two_phase).flatten()
+        difficult_indices.update(int(index) for index in unstable_indices[failed_local])
+
+        if bool(converged_two_phase.any()):
+            local = torch.nonzero(converged_two_phase).flatten()
+            global_indices = unstable_indices[local]
+            fractions = torch.stack(
+                (
+                    two_phase.liquid_fraction[local],
+                    two_phase.vapor_fraction[local],
+                ),
+                dim=-1,
+            )
+            compositions = torch.stack(
+                (
+                    two_phase.liquid_composition[local],
+                    two_phase.vapor_composition[local],
+                ),
+                dim=1,
+            )
+            with torch.no_grad():
+                phase_log_phi = case.model.log_fugacity_coefficients(
+                    temperatures[global_indices, None],
+                    pressures[global_indices, None],
+                    compositions,
+                    "stable",
+                )
+                phase_gibbs = torch.sum(
+                    compositions * (torch.log(compositions) + phase_log_phi),
+                    dim=-1,
+                )
+                split_gibbs = torch.sum(fractions * phase_gibbs, dim=-1)
+            reduction = one_phase_gibbs[global_indices] - split_gibbs
+            balance = torch.sum(fractions[..., None] * compositions, dim=1)
+            balance_residual = torch.abs(
+                balance - feeds[global_indices],
+            ).amax(dim=-1)
+            composition_distance = torch.abs(
+                compositions[:, 0] - compositions[:, 1],
+            ).amax(dim=-1)
+            active = (
+                (fractions.amin(dim=-1) > PHASE_FRACTION_TOLERANCE)
+                & (composition_distance > PHASE_COMPOSITION_MERGE_TOLERANCE)
+                & (reduction > GIBBS_REDUCTION_TOLERANCE)
+                & (balance_residual <= 5.0e-11)
+            )
+            converged[global_indices] = True
+            fugacity_residual[global_indices] = two_phase.residual_norm[local]
+            material_balance_residual[global_indices] = balance_residual
+            active_local = torch.nonzero(active).flatten()
+            active_split_indices = global_indices[active_local]
+            if active_split_indices.numel():
+                active_fractions = fractions[active_local]
+                active_compositions = compositions[active_local]
+                padded_fractions[active_split_indices, :2] = active_fractions
+                padded_compositions[active_split_indices, :2] = active_compositions
+                phase_counts[active_split_indices] = 2
+                gibbs_reduction[active_split_indices] = reduction[active_local]
+
+                phase_feed = torch.cat(
+                    (
+                        active_compositions[:, 0],
+                        active_compositions[:, 1],
+                    ),
+                    dim=0,
+                )
+                phase_temperature = temperatures[active_split_indices].repeat(2)
+                phase_pressure = pressures[active_split_indices].repeat(2)
+                phase_stability = _batched_stability_in_chunks(
+                    case.model,
+                    phase_temperature,
+                    phase_pressure,
+                    phase_feed,
+                )
+                child_tpd = phase_stability.minimum_tpd.reshape(2, -1)
+                child_composition = phase_stability.trial_composition.reshape(
+                    2,
+                    -1,
+                    component_count,
+                )
+                child_unstable = (child_tpd < -1.0e-7).any(dim=0)
+                child_candidates = torch.nonzero(child_unstable).flatten()
+                difficult_indices.update(
+                    int(index) for index in active_split_indices[child_candidates]
+                )
+                for child_index_tensor in child_candidates:
+                    child_index = int(child_index_tensor)
+                    unstable_phase = int(torch.argmin(child_tpd[:, child_index]))
+                    seed_fractions = torch.cat(
+                        (
+                            0.95 * active_fractions[child_index],
+                            active_fractions.new_tensor([0.05]),
+                        )
+                    )
+                    seed_compositions = torch.cat(
+                        (
+                            active_compositions[child_index],
+                            child_composition[unstable_phase, child_index][None, :],
+                        )
+                    )
+                    fallback_seed_logits[int(active_split_indices[child_index])] = (
+                        _logits_from_phases(
+                            seed_fractions,
+                            seed_compositions,
+                        )
+                    )
+
+    if case.model is binary_model:
+        binary_invariant_indices = [
+            state_index
+            for state_index in range(state_count)
+            if _binary_invariant_split(
+                case,
+                pressures[state_index],
+                feeds[state_index],
+            )
+            is not None
+        ]
+        difficult_indices.update(binary_invariant_indices)
+        converged[binary_invariant_indices] = False
+
+    batched_search_seconds = time.perf_counter() - started
+    refinement_started = time.perf_counter()
+    replacements = _gibbs_fallback_grid_states(
+        case,
+        temperatures,
+        pressures,
+        feeds,
+        list(difficult_indices),
+        one_phase_gibbs,
+        one_phase_gibbs - gibbs_reduction,
+        converged,
+        fallback_seed_logits,
+    )
+
+    def install_replacements(
+        current: dict[int, tuple[torch.Tensor, torch.Tensor, torch.Tensor]],
+    ) -> int:
+        installed = 0
+        for state_index, (fractions, compositions, split_gibbs) in current.items():
+            fractions, balance_residual, equilibrium_residual = _candidate_diagnostics(
+                case.model,
+                temperatures[state_index],
+                pressures[state_index],
+                feeds[state_index],
+                fractions,
+                compositions,
+            )
+            reduction = one_phase_gibbs[state_index] - split_gibbs
+            existing_gibbs = one_phase_gibbs[state_index] - gibbs_reduction[state_index]
+            lower_gibbs = bool(split_gibbs < existing_gibbs - GIBBS_REDUCTION_TOLERANCE)
+            resolves_failure = not bool(converged[state_index])
+            if not (lower_gibbs or resolves_failure):
+                continue
+            count = fractions.numel()
+            padded_fractions[state_index] = 0.0
+            padded_compositions[state_index] = torch.nan
+            padded_fractions[state_index, :count] = fractions
+            padded_compositions[state_index, :count] = compositions
+            phase_counts[state_index] = count
+            gibbs_reduction[state_index] = torch.clamp_min(reduction, 0.0)
+            fugacity_residual[state_index] = equilibrium_residual
+            material_balance_residual[state_index] = balance_residual
+            converged[state_index] = bool(
+                (equilibrium_residual <= FUGACITY_RESIDUAL_TOLERANCE)
+                & (balance_residual <= 5.0e-11)
+            )
+            installed += 1
+        return installed
+
+    fallback_replacements = install_replacements(replacements)
+    audited_indices: set[int] = set()
+    audit_replacements = 0
+    while True:
+        audit_indices = [
+            index
+            for index in _isolated_single_phase_indices(
+                phase_counts,
+                case.vertical_bar.numel(),
+                case.horizontal.numel(),
+            )
+            if index not in audited_indices
+        ]
+        if not audit_indices:
+            break
+        audited_indices.update(audit_indices)
+        audit_results = _gibbs_fallback_grid_states(
+            case,
+            temperatures,
+            pressures,
+            feeds,
+            audit_indices,
+            one_phase_gibbs,
+            one_phase_gibbs - gibbs_reduction,
+            converged,
+        )
+        audit_replacements += install_replacements(audit_results)
+
+    refinement_seconds = time.perf_counter() - refinement_started
+    return GridEquilibrium(
+        temperatures,
+        pressures,
+        feeds,
+        padded_fractions,
+        padded_compositions,
+        phase_counts,
+        gibbs_reduction,
+        fugacity_residual,
+        material_balance_residual,
+        converged,
+        time.perf_counter() - started,
+        batched_search_seconds,
+        refinement_seconds,
+        len(difficult_indices),
+        len(audited_indices),
+        fallback_replacements + audit_replacements,
+    )
+
+
 def vapor_positive_scores(model: object, state: ChemicalState) -> dict[str, float]:
     """Evaluate all methods with positive values consistently meaning vapor."""
     pseudo_critical = li_pseudo_critical_temperature(model, state.composition)
@@ -1723,6 +2733,7 @@ case_results: dict[str, dict[str, np.ndarray]] = {}
 case_failures: dict[str, pd.DataFrame] = {}
 timing_rows = []
 for case in CASES:
+    print(f"Flashing {case.name} ({GRID_POINTS} x {GRID_POINTS})...", flush=True)
     equilibrium = discover_grid_equilibrium(case)
     regions, failures, identification_elapsed = identify_equilibrium_grid(
         case,
@@ -1757,6 +2768,7 @@ for case in CASES:
             "three-phase cells": int(torch.sum(equilibrium.phase_counts == 3)),
         }
     )
+    gc.collect()
 
 timing_table = pd.DataFrame(timing_rows)
 display(timing_table)
@@ -2021,17 +3033,20 @@ assert abs(float(interaction_gradient[0, 1])) > 0.0
 #   the five identification criteria.
 # - The five maps recover the paper's defining topology and method-specific
 #   differences: the methane compressibility dome, binary LV/LL divider,
-#   North Ward Estes three-phase band, synthetic-fluid envelope, and the
-#   reservoir-fluid low-temperature LLV/LL strips.
+#   North Ward Estes three-phase band, synthetic-fluid envelope, and the main
+#   reservoir-fluid envelope with its low-temperature LLV/LL strip.
 # - The derivative methods use second-order PyTorch autodiff and retain a
 #   gradient to trainable EoS interactions.
 # - The North Ward Estes case derives missing critical volumes consistently
 #   from PR. The ECLIPSE table omits the complete EOS/BIC input; Figure 6 is
 #   therefore labeled as the transparent
 #   `bennett-figure6-reconstruction-v1`, not as the unpublished ECLIPSE
-#   parameterization.
+#   parameterization. Its thin higher-temperature/low-pressure LLV branch is
+#   not reproduced by this reconstruction on the 100 by 100 grid. No
+#   additional temperature-dependent or lump-specific interactions are
+#   inferred from the raster.
 # - These results are **verification of the implemented diagnostics**, not
-#   validation against experimental phase labels. The saved 33 by 33 maps
+#   validation against experimental phase labels. The saved 100 by 100 maps
 #   resolve the topology; they are not pixel-wise validation of the paper's 500 by 500
 #   raster.
 #
