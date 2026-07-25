@@ -344,11 +344,11 @@ validation is more important than for a single pair-specific `kij`.
 
 ## Transport
 
-The Pedersen corresponding-states viscosity implementation maps a mixture to
-the McCarty/Hanley methane reference correlation. It is a petroleum-fluid
-engineering correlation, not a universal transport model. Dense methane
-fractional-power terms use mass density in kg/L, which is numerically equal to
-g/cm3. The mixture model originates with
+`corresponding_states_viscosity` implements the Pedersen corresponding-states
+method and maps a mixture to the McCarty/Hanley methane reference
+correlation. It is a petroleum-fluid engineering correlation, not a universal
+transport model. Dense methane fractional-power terms use mass density in
+kg/L, which is numerically equal to g/cm3. The mixture model originates with
 [Pedersen et al. (1984)](https://doi.org/10.1016/0009-2509%2884%2987009-8);
 the implemented constants and unit convention follow
 [Pedersen et al. (2024), section 10.1.1](https://doi.org/10.1201/9780429457418).

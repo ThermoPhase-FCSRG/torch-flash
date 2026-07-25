@@ -13,7 +13,29 @@ def wilson_k_values(
     temperature: Tensor,
     pressure: Tensor,
 ) -> Tensor:
-    """Return Wilson's dilute-solution equilibrium-ratio estimate."""
+    """Evaluate Wilson initial vapor-to-liquid equilibrium ratios.
+
+    Parameters
+    ----------
+    components
+        Ordered critical temperatures, critical pressures, and acentric
+        factors.
+    temperature
+        Temperature in K with arbitrary leading batch dimensions.
+    pressure
+        Positive pressure in Pa, broadcast-compatible with ``temperature``.
+
+    Returns
+    -------
+    Tensor
+        Positive dimensionless K-value estimates with shape
+        ``batch_shape + (ncomponents,)``.
+
+    Notes
+    -----
+    These are initialization estimates, not converged equilibrium ratios and
+    not a phase-stability criterion.
+    """
     return (
         components.critical_pressure
         / pressure[..., None]
@@ -23,3 +45,6 @@ def wilson_k_values(
             * (1.0 - components.critical_temperature / temperature[..., None])
         )
     )
+
+
+__all__ = ["wilson_k_values"]

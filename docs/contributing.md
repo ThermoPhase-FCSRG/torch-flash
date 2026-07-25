@@ -26,8 +26,31 @@ pixi run format-check
 pixi run typecheck
 pixi run test-cov
 pixi run sync-deps-check
+pixi run api-docs-check
 pixi run -e docs mkdocs build --strict
 ```
+
+## Public API documentation
+
+The [API Reference](api.md) is generated from the signatures, type
+annotations, and NumPy-style docstrings under `src/torch_flash`; do not copy
+signatures into Markdown by hand. A public addition is not complete until its
+source docstring states:
+
+- parameter meaning, SI units, tensor shape, dtype/device behavior, and
+  batching where applicable;
+- return fields and their ordering;
+- raised exceptions and emitted warnings;
+- convergence criteria and residual meaning for iterative calculations; and
+- scientific scope or conditioning limitations that affect interpretation.
+
+Run `pixi run api-docs-check` to verify that every callable exported by the
+documented modules has a docstring and the required API sections.
+
+Add a domain page under `docs/api/` only when introducing a new public module,
+then include it in the API table and `mkdocs.yml` navigation. The strict docs
+build fails on unresolved API objects, malformed NumPy docstring sections,
+and broken internal links.
 
 ## Dependency and release metadata
 

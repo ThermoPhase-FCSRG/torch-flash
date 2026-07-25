@@ -128,16 +128,40 @@ class UNIFAC(nn.Module):
 
     @property
     def molecular_relative_volume(self) -> Tensor:
-        """Return component molecular volume parameters :math:`r_i`."""
+        """Return component molecular relative-volume parameters.
+
+        Returns
+        -------
+        Tensor
+            Dimensionless ``r_i`` obtained from subgroup counts and ``R_k``.
+        """
         return self.group_counts @ self.relative_volume
 
     @property
     def molecular_relative_surface_area(self) -> Tensor:
-        """Return component molecular surface parameters :math:`q_i`."""
+        """Return component molecular relative-surface parameters.
+
+        Returns
+        -------
+        Tensor
+            Dimensionless ``q_i`` obtained from subgroup counts and ``Q_k``.
+        """
         return self.group_counts @ self.relative_surface_area
 
     def interaction_factors(self, temperature: Tensor) -> Tensor:
-        r"""Return :math:`\Psi_{mn}=\exp(-a_{mn}/T)`."""
+        r"""Evaluate directed main-group interaction factors.
+
+        Parameters
+        ----------
+        temperature
+            Positive temperature in K.
+
+        Returns
+        -------
+        Tensor
+            Dimensionless :math:`\Psi_{mn}=\exp(-a_{mn}/T)` with trailing
+            main-group axes.
+        """
         if not torch.compiler.is_compiling() and bool((temperature <= 0.0).any()):
             raise ValueError("temperature must be positive")
         interaction = self.interaction - torch.diag_embed(torch.diagonal(self.interaction))
@@ -156,7 +180,18 @@ class UNIFAC(nn.Module):
         self,
         composition: Tensor,
     ) -> Tensor:
-        r"""Return the original Flory-Huggins/Staverman-Guggenheim term."""
+        r"""Evaluate the original UNIFAC combinatorial contribution.
+
+        Parameters
+        ----------
+        composition
+            Mole fractions on the final component axis.
+
+        Returns
+        -------
+        Tensor
+            Component contributions to dimensionless ``ln(gamma_i)``.
+        """
         x = normalize_composition(composition)
         if x.shape[-1] != self.group_counts.shape[0]:
             raise ValueError("UNIFAC composition size must match the component group matrix")
@@ -196,7 +231,20 @@ class UNIFAC(nn.Module):
         temperature: Tensor,
         composition: Tensor,
     ) -> Tensor:
-        r"""Return the solution-of-groups residual contribution."""
+        r"""Evaluate the original UNIFAC residual group contribution.
+
+        Parameters
+        ----------
+        temperature
+            Positive temperature in K.
+        composition
+            Mole fractions on the final component axis.
+
+        Returns
+        -------
+        Tensor
+            Component residual contributions to ``ln(gamma_i)``.
+        """
         temperature, x = self._state(temperature, composition)
         group_abundance = torch.einsum("...i,ik->...k", x, self.group_counts)
         mixture_surface = self.relative_surface_area * group_abundance
@@ -227,14 +275,40 @@ class UNIFAC(nn.Module):
         )
 
     def log_activity_coefficients(self, temperature: Tensor, composition: Tensor) -> Tensor:
-        """Return ``log(gamma)`` for original UNIFAC."""
+        """Return original-UNIFAC component log activity coefficients.
+
+        Parameters
+        ----------
+        temperature
+            Positive temperature in K.
+        composition
+            Mole fractions on the final component axis.
+
+        Returns
+        -------
+        Tensor
+            Sum of combinatorial and residual ``ln(gamma_i)`` contributions.
+        """
         _, x = self._state(temperature, composition)
         return self.combinatorial_log_activity_coefficients(x) + (
             self.residual_log_activity_coefficients(temperature, x)
         )
 
     def excess_gibbs_rt(self, temperature: Tensor, composition: Tensor) -> Tensor:
-        """Return dimensionless molar excess Gibbs energy, ``gE/(RT)``."""
+        """Return dimensionless original-UNIFAC excess Gibbs energy.
+
+        Parameters
+        ----------
+        temperature
+            Positive temperature in K.
+        composition
+            Mole fractions on the final component axis.
+
+        Returns
+        -------
+        Tensor
+            ``sum_i x_i ln(gamma_i) = g^E/(RT)``.
+        """
         _, x = self._state(temperature, composition)
         return torch.sum(x * self.log_activity_coefficients(temperature, x), dim=-1)
 
@@ -453,6 +527,38 @@ def unifac_model(
 ) -> UNIFAC:
     """Construct original UNIFAC from cached YAML or explicit parameters.
 
+    Parameters
+    ----------
+    parameter_set
+        Original-UNIFAC parameter source.
+    names
+        Optional component names selecting bundled audited fragmentations.
+    group_assignments
+        Optional explicit subgroup counts, one mapping per component.
+    dtype, device
+        Tensor placement.
+    trainable
+        Register the directed main-group interaction matrix as a trainable
+        parameter.
+
+    Returns
+    -------
+    UNIFAC
+        Original-UNIFAC model containing only the groups required by the
+        selected components.
+
+    Raises
+    ------
+    KeyError
+        If a component or subgroup is absent.
+    ValueError
+        If names and assignments are inconsistent.
+    ParameterDatabaseError
+        If the parameter set is not original UNIFAC or lacks required directed
+        group interactions.
+
+    Notes
+    -----
     ``names`` select bundled, audited component fragmentations.  Arbitrary
     molecules use ``group_assignments``, where each mapping may be keyed by
     subgroup key, published subgroup number, or an unambiguous subgroup name.
@@ -486,6 +592,29 @@ def unifac_groups_from_identifiers(
 ) -> tuple[dict[int, float], ...]:
     """Fragment molecules with the optional MIT-licensed ``ugropy`` package.
 
+    Parameters
+    ----------
+    identifiers
+        Molecular SMILES strings or names.
+    identifier_type
+        ``"smiles"`` or ``"name"``.
+
+    Returns
+    -------
+    tuple
+        One mapping of published original-UNIFAC subgroup number to occurrence
+        count per identifier.
+
+    Raises
+    ------
+    ImportError
+        If the optional ``groups`` dependency is not installed.
+    ValueError
+        If the identifier type is unsupported or fragmentation is ambiguous or
+        unavailable.
+
+    Notes
+    -----
     SMILES inputs are recommended for reproducibility.  Name lookup delegates
     to PubChem and therefore requires network access and may change outside
     ``torch-flash``.  Fragmentation is discrete; inspect every returned map

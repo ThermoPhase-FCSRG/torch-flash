@@ -17,7 +17,13 @@ from .phase_identification import identify_phase_from_properties
 
 
 class StateModel(Protocol):
-    """Minimal homogeneous-state model interface."""
+    """Protocol required for pressure-specified homogeneous-state properties.
+
+    Implementations must accept component mole fractions on the final tensor
+    axis, preserve compatible leading batch dimensions, and return results on
+    the caller's dtype and device. Root selection is a homogeneous-state
+    choice and must not implicitly perform phase-equilibrium calculations.
+    """
 
     def select_z(
         self,
@@ -48,7 +54,12 @@ class StateModel(Protocol):
 
 
 class HelmholtzStateModel(StateModel, Protocol):
-    """Homogeneous-state model with an extensive residual Helmholtz function."""
+    """State model exposing an extensive residual Helmholtz-energy route.
+
+    The additional function is evaluated at fixed temperature, total physical
+    volume, and component mole numbers. Its extensivity enables chemical
+    potentials and fugacities to be recovered by automatic differentiation.
+    """
 
     def residual_helmholtz_rt(
         self,
@@ -78,6 +89,68 @@ class ThermodynamicDerivatives:
     ``ln(f_i / p_standard)``. Chemical-potential derivatives have J/mol per
     coordinate units; the reduced variants differentiate ``mu_i / (R*T)``.
     Molar-volume derivatives have m3/mol per coordinate units.
+
+    Attributes
+    ----------
+    dfugacity_coefficient_dlogits
+        Jacobian of dimensionless ``phi_i`` with respect to unconstrained
+        softmax logits.
+    dfugacity_coefficient_dindependent_composition
+        Jacobian of ``phi_i`` with respect to the first ``n-1`` mole fractions.
+    dfugacity_coefficient_dtemperature, dfugacity_coefficient_dpressure
+        Fixed-composition derivatives of ``phi_i`` in 1/K and 1/Pa.
+    dfugacity_coefficient_dmoles
+        Unit-total-mole-basis derivative of ``phi_i`` with respect to moles.
+    dlog_fugacity_coefficient_dlogits
+        Jacobian of ``ln(phi_i)`` with respect to logits.
+    dlog_fugacity_coefficient_dindependent_composition
+        Jacobian of ``ln(phi_i)`` with respect to independent mole fractions.
+    dlog_fugacity_coefficient_dtemperature, dlog_fugacity_coefficient_dpressure
+        Fixed-composition derivatives of ``ln(phi_i)``.
+    dlog_fugacity_coefficient_dmoles
+        Unit-basis mole-number derivative of ``ln(phi_i)``.
+    dfugacity_dlogits, dfugacity_dindependent_composition
+        Fugacity Jacobians in Pa with respect to the two composition
+        coordinate systems.
+    dfugacity_dtemperature, dfugacity_dpressure, dfugacity_dmoles
+        Fugacity derivatives in Pa/K, dimensionless Pa/Pa, and Pa/mol on the
+        documented one-mole basis.
+    dlog_fugacity_dlogits, dlog_fugacity_dindependent_composition
+        Jacobians of dimensionless ``ln(f_i / p_standard)``.
+    dlog_fugacity_dtemperature, dlog_fugacity_dpressure, dlog_fugacity_dmoles
+        Temperature, pressure, and unit-basis mole-number derivatives of
+        dimensionless log fugacity.
+    dchemical_potential_dlogits, dchemical_potential_dindependent_composition
+        Chemical-potential Jacobians in J/mol per composition coordinate.
+    dchemical_potential_dtemperature, dchemical_potential_dpressure
+        Fixed-composition derivatives in J/(mol K) and J/(mol Pa).
+    dchemical_potential_dmoles
+        Unit-basis mole-number Jacobian in J/mol2.
+    dreduced_chemical_potential_dlogits
+        Jacobian of ``mu_i/(RT)`` with respect to logits.
+    dreduced_chemical_potential_dindependent_composition
+        Jacobian of ``mu_i/(RT)`` with respect to independent mole fractions.
+    dreduced_chemical_potential_dtemperature
+        Fixed-composition derivative of ``mu_i/(RT)`` in 1/K.
+    dreduced_chemical_potential_dpressure
+        Fixed-composition derivative of ``mu_i/(RT)`` in 1/Pa.
+    dreduced_chemical_potential_dmoles
+        Unit-basis mole-number Jacobian of ``mu_i/(RT)``.
+    dmolar_volume_dlogits, dmolar_volume_dindependent_composition
+        Molar-volume Jacobians in m3/mol per composition coordinate.
+    dmolar_volume_dtemperature, dmolar_volume_dpressure
+        Fixed-composition derivatives in m3/(mol K) and m3/(mol Pa).
+    dmolar_volume_dmoles
+        Unit-basis mole-number derivative in m3/mol2.
+    dgibbs_dtemperature, dgibbs_dpressure
+        Fixed-composition total molar Gibbs derivatives in J/(mol K) and
+        J/(mol Pa).
+
+    Notes
+    -----
+    Composition Jacobians place the property/component output axis before the
+    coordinate axis. Scalar temperature and pressure derivatives retain only
+    the property/component output shape.
     """
 
     dfugacity_coefficient_dlogits: Tensor
@@ -180,6 +253,29 @@ def log_fugacities_tv(
 ) -> Tensor:
     """Return ``ln(f_i/p_standard)`` from an explicit ``T-V-n`` state.
 
+    Parameters
+    ----------
+    model
+        Model exposing an extensive residual Helmholtz energy.
+    temperature
+        Scalar positive temperature in K.
+    volume
+        Scalar positive total physical volume in m3.
+    moles
+        Strictly positive component amounts in mol.
+
+    Returns
+    -------
+    Tensor
+        Dimensionless component ``ln(f_i / 1 bar)`` values.
+
+    Raises
+    ------
+    ValueError
+        If state shapes or positivity/finite-value requirements are violated.
+
+    Notes
+    -----
     ``volume`` is the total physical volume in m3 and ``moles`` are component
     amounts in mol. The identity
 
@@ -215,7 +311,32 @@ def fugacities_tv(
     volume: Tensor,
     moles: Tensor,
 ) -> Tensor:
-    """Return component fugacities in Pa from an explicit ``T-V-n`` state."""
+    """Return component fugacities from an explicit ``T-V-n`` state.
+
+    Parameters
+    ----------
+    model
+        Model exposing an extensive residual Helmholtz energy.
+    temperature
+        Scalar positive temperature in K.
+    volume
+        Scalar positive total physical volume in m3.
+    moles
+        Strictly positive component amounts in mol with shape
+        ``(ncomponents,)``.
+
+    Returns
+    -------
+    Tensor
+        Component fugacities in Pa, obtained by exponentiating
+        :func:`log_fugacities_tv`.
+
+    Raises
+    ------
+    ValueError
+        If the state is not scalar/vector shaped or contains nonpositive or
+        nonfinite inputs.
+    """
     return STANDARD_PRESSURE * torch.exp(log_fugacities_tv(model, temperature, volume, moles))
 
 
@@ -229,6 +350,27 @@ def phase_properties(
 ) -> PhaseProperties:
     """Evaluate a homogeneous state, without any equilibrium calculation.
 
+    Parameters
+    ----------
+    model
+        Homogeneous-state model.
+    state
+        Temperature in K, pressure in Pa, and mole fractions.
+    phase
+        Liquid, vapor, or stable-root request.
+    caloric
+        Evaluate scalar-state residual enthalpy and entropy when possible.
+    standard_state
+        Optional component standard chemical potentials.
+
+    Returns
+    -------
+    PhaseProperties
+        Homogeneous properties, reference-aware chemical potentials, residual
+        free energies, and physical phase-identification diagnostics.
+
+    Notes
+    -----
     Fugacities are returned in Pa and logarithmic fugacities are
     ``ln(f_i / p_standard)`` with ``p_standard = 1 bar``. Chemical potentials
     and total free energies use a zero ideal-gas standard chemical potential
@@ -326,7 +468,42 @@ def state_derivatives(
     *,
     standard_state: StandardState | None = None,
 ) -> ThermodynamicDerivatives:
-    """Autodifferentiate TP state properties in several composition coordinates."""
+    """Differentiate homogeneous TP properties with PyTorch autodiff.
+
+    Parameters
+    ----------
+    model
+        Homogeneous-state model to differentiate.
+    state
+        One scalar temperature-pressure state. Temperature is in K, pressure
+        in Pa, and composition is a strictly positive mole-fraction vector.
+    phase
+        Root-selection request held fixed throughout every derivative.
+    standard_state
+        Optional component standard chemical potentials. When omitted,
+        chemical potentials contain only the ideal-mixing/fugacity departure
+        relative to 1 bar.
+
+    Returns
+    -------
+    ThermodynamicDerivatives
+        Jacobians with respect to unconstrained logits, ``n-1`` independent
+        mole fractions, unit-basis mole numbers, temperature, and pressure.
+        Field units and coordinate conventions are documented on the result
+        class.
+
+    Raises
+    ------
+    ValueError
+        If temperature or pressure is not scalar, composition is not a vector,
+        or a mole fraction is zero or negative.
+
+    Notes
+    -----
+    The phase root is not differentiated through a root-switching event.
+    Derivatives near coalescing roots or the composition-simplex boundary can
+    be ill-conditioned even when the underlying property value is finite.
+    """
     if state.temperature.ndim != 0 or state.pressure.ndim != 0:
         raise ValueError("state_derivatives currently accepts one scalar T-P state")
     if state.composition.ndim != 1:

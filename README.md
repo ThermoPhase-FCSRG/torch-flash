@@ -131,7 +131,7 @@ deterministic-execution policies are set before model construction; see
   ([Michelsen, 1982](https://doi.org/10.1016/0378-3812%2882%2985001-2)).
 - Model-neutral pseudo-component splitting, characterization, lumping, and
   model-specific property adapters.
-- Differentiable LBC and Pedersen corresponding-states viscosity models.
+- Differentiable LBC and corresponding-states viscosity models.
 - Trainable interaction parameters and Helmholtz coefficients for
   reparameterization against user data.
 
@@ -186,11 +186,13 @@ distribution.
 ## Documentation
 
 - [Rendered documentation](https://thermophase-fcsrg.github.io/torch-flash/)
+- [Getting started](docs/getting-started.md)
+- [Theoretical background](docs/theory/index.md)
 - [Model scope and numerical assumptions](docs/model-scope.md)
 - [Python API](docs/api.md)
 - [Parameter and component databases](docs/parameters.md)
 - [Runtime configuration](docs/runtime.md)
-- [Performance guidance and benchmarks](docs/performance.md)
+- [High-performance PyTorch setup and benchmarks](docs/performance.md)
 - [Verification and validation evidence](docs/validation.md)
 - [Scientific references and data provenance](docs/references.md)
 - [Licensing and redistribution policy](docs/licensing.md)

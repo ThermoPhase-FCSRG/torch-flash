@@ -29,7 +29,34 @@ def binary_interaction(
     parameter_set: ParameterSource,
     eos: PetroleumEOS = "PR",
 ) -> Tensor:
-    """Return a symmetric ``kij`` matrix from YAML model parameters."""
+    """Select a petroleum cubic-EOS binary-interaction matrix.
+
+    Parameters
+    ----------
+    components
+        Ordered component set defining matrix axes, dtype, and device.
+    parameter_set
+        Bundled identifier, YAML path, mapping, or loaded petroleum
+        binary-interaction parameter set.
+    eos
+        Select the source's Peng--Robinson (``"PR"``) or
+        Soave--Redlich--Kwong (``"SRK"``) table.
+
+    Returns
+    -------
+    Tensor
+        Symmetric dimensionless ``kij`` matrix with zero diagonal and shape
+        ``(ncomponents, ncomponents)``.
+
+    Raises
+    ------
+    ValueError
+        If ``eos`` is unsupported.
+    KeyError
+        If a requested component is outside the parameter inventory.
+    ParameterDatabaseError
+        If the source model identity or table structure is invalid.
+    """
     if eos not in ("PR", "SRK"):
         raise ValueError("eos must be 'PR' or 'SRK'")
     loaded = load_model_parameters(parameter_set)
@@ -105,6 +132,20 @@ def whitson_binary_interaction(
 ) -> Tensor:
     """Return Whitson and Brule (2000), Table A-3, ``kij`` values.
 
+    Parameters
+    ----------
+    components
+        Ordered component set defining output axes.
+    eos
+        Source table, ``"PR"`` or ``"SRK"``.
+
+    Returns
+    -------
+    Tensor
+        Symmetric dimensionless interaction matrix.
+
+    Notes
+    -----
     The source's C7+ values are applied from n-heptane through n-decane. The
     printed H2S/C7+ value is not silently extrapolated by carbon number.
     """
@@ -117,6 +158,20 @@ def pedersen_binary_interaction(
 ) -> Tensor:
     """Return Pedersen et al. (2024), Table 4.2, ``kij`` values.
 
+    Parameters
+    ----------
+    components
+        Ordered component set defining output axes.
+    eos
+        Source table, ``"PR"`` or ``"SRK"``.
+
+    Returns
+    -------
+    Tensor
+        Symmetric dimensionless interaction matrix.
+
+    Notes
+    -----
     This is a distinct parameterization from Whitson's Table A-3. The source's
     aggregate C7+ entries are used for n-heptane through n-decane.
     """

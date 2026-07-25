@@ -5,6 +5,7 @@ import torch
 
 from torch_flash import (
     component_set,
+    corresponding_states_viscosity,
     lbc_pseudocomponent_critical_volume,
     lbc_viscosity,
 )
@@ -13,7 +14,6 @@ from torch_flash.transport.viscosity import (
     methane_bwr_density,
     methane_bwr_pressure,
     methane_viscosity,
-    pedersen_viscosity,
 )
 
 
@@ -55,11 +55,11 @@ def test_methane_density_liquid_branch_and_autodiff():
     assert torch.isfinite(gradient)
 
 
-def test_pedersen_pure_methane_identity_and_mixture():
+def test_corresponding_states_pure_methane_identity_and_mixture():
     temperature = torch.tensor(300.0, dtype=torch.float64)
     pressure = torch.tensor(1.0e7, dtype=torch.float64)
     methane = component_set(("methane",))
-    mixture_value = pedersen_viscosity(
+    mixture_value = corresponding_states_viscosity(
         temperature,
         pressure,
         torch.tensor([1.0], dtype=torch.float64),
@@ -72,7 +72,7 @@ def test_pedersen_pure_methane_identity_and_mixture():
     torch.testing.assert_close(mixture_value, direct, rtol=5.0e-14, atol=0.0)
 
     components = component_set(("methane", "n_decane"))
-    heavy = pedersen_viscosity(
+    heavy = corresponding_states_viscosity(
         temperature,
         pressure,
         torch.tensor([0.7, 0.3], dtype=torch.float64),
@@ -93,14 +93,14 @@ def test_transport_validation(monkeypatch):
             phase="solid",
         )
     with pytest.raises(ValueError, match="composition vector"):
-        pedersen_viscosity(
+        corresponding_states_viscosity(
             torch.tensor(300.0),
             torch.tensor(1.0e5),
             torch.tensor([[1.0]]),
             component_set(("methane",)),
         )
     with pytest.raises(ValueError, match="sizes"):
-        pedersen_viscosity(
+        corresponding_states_viscosity(
             torch.tensor(300.0),
             torch.tensor(1.0e5),
             torch.tensor([0.5, 0.5]),

@@ -89,7 +89,52 @@ def tangent_plane_stability(
     tolerance: float = 1.0e-9,
     max_iterations: int = 40,
 ) -> StabilityResult:
-    """Minimize normalized tangent-plane distance from several trial phases."""
+    """Assess local phase stability by minimizing tangent-plane distance.
+
+    The feed composition is evaluated as the reference state, and each trial
+    composition is optimized in independent log-ratio coordinates. A negative
+    normalized tangent-plane distance (TPD) identifies a composition that can
+    lower the Gibbs energy. Multiple starting points are therefore important:
+    the optimization is local and a single stationary point is not a global
+    stability proof.
+
+    Parameters
+    ----------
+    model
+        Homogeneous-state model providing log fugacity coefficients.
+    state
+        Feed state. Temperature is in K, pressure is in Pa, and
+        ``state.composition`` must be a one-dimensional mole-fraction vector.
+    reference_phase
+        Root requested when evaluating the feed fugacity coefficients.
+        Trial phases are evaluated with the model's ``"stable"`` root.
+    initial_compositions
+        Optional trial mole-fraction vectors. Values are made positive and
+        normalized before optimization. When omitted, the feed, Wilson-based
+        vapor/liquid trials when available, and component-rich trials are used.
+    tolerance
+        Maximum absolute gradient component used by each local minimization.
+        The stability decision allows a numerical margin of ``10 * tolerance``.
+    max_iterations
+        Maximum Newton/globalization iterations for each starting point.
+
+    Returns
+    -------
+    StabilityResult
+        Lowest TPD found, its trial composition, local-solver diagnostics, and
+        the resulting stability classification.
+
+    Raises
+    ------
+    ValueError
+        If the feed composition is batched rather than one-dimensional.
+
+    Notes
+    -----
+    ``StabilityResult.converged`` describes the local minimization associated
+    with the reported minimum. Callers should not interpret a non-converged
+    nonnegative TPD as conclusive evidence of stability.
+    """
     if state.composition.ndim != 1:
         raise ValueError("stability analysis currently accepts one composition vector")
     z = state.composition

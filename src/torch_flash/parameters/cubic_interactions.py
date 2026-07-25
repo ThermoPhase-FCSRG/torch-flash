@@ -16,7 +16,22 @@ from torch_flash.exceptions import ParameterDatabaseError
 
 @dataclass(frozen=True)
 class CubicInteractionParameters:
-    """Symmetric dimensionless ``kij`` and ``lij`` matrices."""
+    """Validated cubic attraction and covolume interaction matrices.
+
+    Attributes
+    ----------
+    kij
+        Symmetric dimensionless attraction-interaction matrix.
+    lij
+        Symmetric dimensionless cross-covolume-interaction matrix.
+    parameter_set
+        Identifier of the parameter set from which the matrices were selected.
+
+    Notes
+    -----
+    Both matrices have zero diagonals and axes ordered exactly as the
+    :class:`~torch_flash.components.ComponentSet` supplied to the loader.
+    """
 
     kij: Tensor
     lij: Tensor
@@ -63,6 +78,29 @@ def cubic_interaction_parameters(
 ) -> CubicInteractionParameters:
     """Load general van der Waals one-fluid ``kij`` and ``lij`` matrices.
 
+    Parameters
+    ----------
+    components
+        Ordered component set defining output matrix axes, dtype, and device.
+    source
+        Bundled identifier, YAML path, mapping, or loaded binary-interaction
+        parameter set.
+
+    Returns
+    -------
+    CubicInteractionParameters
+        Symmetric matrices on the component set's dtype and device.
+
+    Raises
+    ------
+    KeyError
+        If the parameter inventory does not support a requested component.
+    ParameterDatabaseError
+        If model identity, units, defaults, component order, or pair records
+        are invalid.
+
+    Notes
+    -----
     The YAML payload declares ``component_order``, optional numeric
     ``defaults``, and unordered ``first|second`` pair records. Missing pair
     fields use the declared defaults, which are zero when omitted.

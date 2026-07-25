@@ -1,8 +1,179 @@
-# Performance
+# High-performance setup
 
 `torch-flash` is optimized for differentiable and batched thermodynamic work.
 It does not claim to beat compiled Fortran/C++ libraries on a one-off scalar
 state.
+
+## Setup workflow
+
+Native `torch-flash` models use PyTorch tensors and therefore inherit the
+execution device, batching, automatic differentiation, and compilation
+capabilities of the installed PyTorch build. Acceleration is not enabled by a
+separate `torch-flash` backend switch.
+
+### Select the environment
+
+For CPU execution, the default installation is sufficient:
+
+```bash
+python -m pip install torch-flash
+```
+
+For a repository-managed NVIDIA GPU environment:
+
+```bash
+pixi install -e gpu
+pixi run -e gpu python your_calculation.py
+```
+
+For pip installations, first select a PyTorch build compatible with the
+machine and accelerator using the
+[official PyTorch installation selector](https://pytorch.org/get-started/locally/),
+then install the optional supporting packages if they are required by the
+application:
+
+```bash
+python -m pip install "torch-flash[gpu]"
+```
+
+The `gpu` extra adds `nvmath-python` and `torch-sla`; it does not replace
+PyTorch, install a GPU driver, move existing tensors, or automatically route a
+calculation through those packages. Native CUDA execution only requires a
+working accelerator-enabled PyTorch installation. Confirm the actual runtime
+before benchmarking:
+
+```python
+import torch
+
+print(torch.__version__)
+print(torch.cuda.is_available())
+print(torch.cuda.get_device_name() if torch.cuda.is_available() else "CPU")
+```
+
+### Configure once, then construct
+
+Call `configure()` before creating components, models, state tensors, or
+worker-process workloads. Float64 is the reference precision for equilibrium,
+derivative, and near-critical calculations:
+
+```python
+import torch
+
+from torch_flash import configure
+from torch_flash.eos import gerg2008
+
+runtime = configure(
+    device="cpu",        # use "gpu" to require a compatible accelerator
+    dtype=torch.float64,
+    num_threads=8,
+    deterministic=False,
+)
+model = gerg2008(("hydrogen", "methane"))
+```
+
+On CPU, benchmark `num_threads` with the deployed batch shape; the physical
+core count is not automatically the fastest setting. Configure each spawned
+worker separately and avoid oversubscribing cores by combining many worker
+processes with many PyTorch threads. On an accelerator, construct model and
+input tensors on the final device and keep subsequent calculations there.
+Repeated host/device transfers, `.cpu()`, `.numpy()`, and `.item()` calls
+synchronize execution and can dominate small thermodynamic kernels.
+
+### Batch independent states
+
+Leading tensor dimensions represent independent states for the kernels that
+document batching support. Prefer one tensor call over a Python loop:
+
+```python
+temperature = torch.linspace(300.0, 400.0, 1010, **runtime.tensor_options)
+pressure = torch.linspace(1.0e4, 100.0e6, 1010, **runtime.tensor_options)
+hydrogen = torch.linspace(0.1, 0.9, 1010, **runtime.tensor_options)
+composition = torch.stack((hydrogen, 1.0 - hydrogen), dim=-1)
+
+volume = model.molar_volume(temperature, pressure, composition, "vapor")
+```
+
+Use `batched_two_phase_flash` only for independent states already known to be
+two-phase and satisfying its documented initialization contract. Full
+stability analysis, phase-envelope continuation, and branch-following remain
+scientifically different workloads and may require sequential decisions.
+
+### Compile a stable repeated kernel
+
+Compile tensor kernels that are called repeatedly with stable shapes. Keep an
+eager result as the correctness reference, and measure compilation separately
+from warmed execution:
+
+```python
+def pressure_kernel(current_temperature, current_volume, current_composition):
+    return model.pressure(
+        current_temperature,
+        current_volume,
+        current_composition,
+    )
+
+
+eager_pressure = pressure_kernel(temperature, volume, composition)
+compiled_pressure = torch.compile(pressure_kernel, fullgraph=True)
+
+# First call includes tracing and compilation.
+compiled_result = compiled_pressure(temperature, volume, composition)
+torch.testing.assert_close(compiled_result, eager_pressure)
+
+# Time repeated calls only after this warm-up.
+compiled_pressure(temperature, volume, composition)
+```
+
+[`torch.compile`](https://docs.pytorch.org/docs/stable/generated/torch.compile.html)
+uses TorchInductor by default. Graph breaks, changing shapes, and one-off calls
+can erase its benefit. Validate untrusted inputs eagerly before sending them to
+a compiled hot loop because compiled thermodynamic kernels assume the
+documented input contract.
+
+Use the default `fullgraph=False` when first compiling an application-level
+workflow. Use `fullgraph=True` as an audit when a selected tensor kernel is
+expected to form one graph. PyTorch's
+[compile programming model](https://docs.pytorch.org/docs/stable/user_guide/torch_compiler/compile/programming_model.html)
+documents guards, graph breaks, and recompilation.
+
+For forward-only property evaluation where no derivatives or parameter
+gradients will be requested, benchmark `torch.inference_mode()`. Do not use it
+around fitting, sensitivity, or differentiable flash calculations.
+
+### Measure the real workload
+
+Record cold construction/compilation separately from warmed latency. Use
+representative batch shapes, dtype, device, thread count, derivative order,
+and phase region. PyTorch's
+[`torch.utils.benchmark`](https://docs.pytorch.org/docs/stable/benchmark_utils.html)
+performs warm-up and accelerator synchronization; manual CUDA timings must
+synchronize before reading the clock. Always report pressure, fugacity,
+material-balance, and convergence residuals with timing.
+
+CUDA execution is asynchronous, so an unsynchronized wall clock can stop
+before the kernel has completed. Use CUDA events or synchronize around the
+measured region, following PyTorch's
+[CUDA semantics](https://docs.pytorch.org/docs/stable/notes/cuda.html#asynchronous-execution):
+
+```python
+start = torch.cuda.Event(enable_timing=True)
+end = torch.cuda.Event(enable_timing=True)
+
+start.record()
+compiled_pressure(temperature, volume, composition)
+end.record()
+torch.cuda.synchronize(runtime.device)
+print(f"{start.elapsed_time(end):.3f} ms")
+```
+
+The practical order of optimization is:
+
+1. verify the model, phase branch, dtype, and residuals;
+2. remove scalar Python loops by batching independent states;
+3. reuse model and tensor allocations;
+4. tune CPU threads or keep a sufficiently large workload device-resident;
+5. compile the repeated tensor kernel; and
+6. profile again before considering a more complex backend.
 
 ## Execution paths
 
@@ -19,41 +190,6 @@ state.
   gradient, one exact Newton correction restores the implicit derivative.
 - Composition validation remains strict in eager calls. Compiled graphs assume
   that documented input contract so the numerical normalization can be fused.
-
-## Recommended use
-
-```python
-import torch
-
-from torch_flash import configure
-from torch_flash.eos import gerg2008
-
-runtime = configure(device="cpu", dtype=torch.float64, num_threads=8)
-model = gerg2008(("hydrogen", "methane"))
-
-temperature = torch.linspace(300.0, 400.0, 1010, **runtime.tensor_options)
-pressure = torch.linspace(1.0e4, 100.0e6, 1010, **runtime.tensor_options)
-hydrogen = torch.linspace(0.1, 0.9, 1010, **runtime.tensor_options)
-composition = torch.stack((hydrogen, 1.0 - hydrogen), dim=-1)
-
-volume = model.molar_volume(temperature, pressure, composition, "vapor")
-
-compiled_pressure = torch.compile(
-    lambda current_temperature, current_volume, current_composition: model.pressure(
-        current_temperature,
-        current_volume,
-        current_composition,
-    ),
-    fullgraph=True,
-)
-compiled_pressure(temperature, volume, composition)
-```
-
-Compile a repeated homogeneous kernel, not a one-off call.
-[`torch.compile`](https://docs.pytorch.org/docs/stable/generated/torch.compile.html)
-uses TorchInductor by default and its first call can take seconds. Validate
-untrusted compositions with an eager call before passing them to a compiled
-hot loop.
 
 Set CPU intra-operation threads with `configure(num_threads=...)` before
 thermodynamic work. More threads help sufficiently large batches, but small

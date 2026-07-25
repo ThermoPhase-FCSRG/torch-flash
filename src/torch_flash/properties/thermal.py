@@ -40,6 +40,29 @@ class ThermalProperties:
     All quantities are molar SI except the Joule-Thomson coefficient (K/Pa)
     and speed of sound (m/s). ``reduced_*`` free energies are dimensionless
     molar quantities divided by ``R*T``.
+
+    Attributes
+    ----------
+    molar_enthalpy, molar_internal_energy
+        Total energies in J/mol.
+    molar_entropy
+        Total entropy in J/(mol K).
+    molar_helmholtz_energy, molar_gibbs_energy
+        Total free energies in J/mol.
+    reduced_helmholtz_energy, reduced_gibbs_energy
+        Dimensionless total free energies divided by ``RT``.
+    reduced_residual_helmholtz_energy, reduced_residual_gibbs_energy
+        Dimensionless EOS departure free energies.
+    isobaric_heat_capacity, isochoric_heat_capacity
+        ``C_p`` and ``C_v`` in J/(mol K).
+    joule_thomson_coefficient
+        Isenthalpic pressure response in K/Pa.
+    speed_of_sound
+        Speed in m/s, or ``None`` when molar mass is unavailable.
+    residual_enthalpy
+        EOS departure enthalpy in J/mol.
+    residual_entropy
+        EOS departure entropy in J/(mol K).
     """
 
     molar_enthalpy: Tensor
@@ -149,6 +172,40 @@ def thermal_properties(
 ) -> ThermalProperties:
     """Evaluate Pedersen Chapter 8 properties at a specified state.
 
+    Parameters
+    ----------
+    model
+        Homogeneous-state model.
+    state
+        One scalar TP state with temperature in K, pressure in Pa, and one
+        composition vector.
+    standard_state
+        Component ideal-gas heat capacity, enthalpy, and entropy functions.
+    phase
+        Root-selection request held fixed during differentiation.
+    reference_pressure
+        Positive ideal-gas entropy reference pressure in Pa.
+    molar_mass
+        Optional scalar mixture or component molar masses in kg/mol. When
+        omitted, the model's ``molar_mass`` attribute is used if available.
+
+    Returns
+    -------
+    ThermalProperties
+        Caloric energies, response functions, residual terms, and optional
+        speed of sound in SI units.
+
+    Raises
+    ------
+    ValueError
+        If state shapes, reference pressure, standard-state component count,
+        or molar-mass data are invalid.
+    InvalidStateError
+        If response functions violate positive heat-capacity or mechanical
+        stability requirements.
+
+    Notes
+    -----
     No phase-equilibrium calculation is performed. The requested phase root
     remains fixed while differentiating. A volume-translated cubic receives
     Pedersen's ``P*DeltaV`` enthalpy correction (Eq. 8.12).

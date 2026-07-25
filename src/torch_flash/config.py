@@ -52,12 +52,24 @@ class RuntimeConfig:
 
     @property
     def accelerated(self) -> bool:
-        """Whether tensors are configured for a non-CPU accelerator."""
+        """Report whether the configured default device is an accelerator.
+
+        Returns
+        -------
+        bool
+            ``True`` for CUDA, XPU, or MPS devices and ``False`` for CPU.
+        """
         return bool(self.device.type != "cpu")
 
     @property
     def tensor_options(self) -> dict[str, torch.dtype | torch.device]:
-        """Return keyword arguments for PyTorch tensor factory functions."""
+        """Return configured tensor-factory keyword arguments.
+
+        Returns
+        -------
+        dict
+            Mapping containing ``dtype`` and ``device``.
+        """
         return {"dtype": self.dtype, "device": self.device}
 
     def tensor(
@@ -68,7 +80,22 @@ class RuntimeConfig:
         device: torch.device | str | None = None,
         requires_grad: bool = False,
     ) -> Tensor:
-        """Construct a copied tensor using this runtime policy by default."""
+        """Construct a copied tensor using this runtime policy.
+
+        Parameters
+        ----------
+        data
+            Any value accepted by :func:`torch.tensor`.
+        dtype, device
+            Per-call overrides for configured defaults.
+        requires_grad
+            Whether autograd records operations on the new tensor.
+
+        Returns
+        -------
+        Tensor
+            Newly allocated tensor.
+        """
         return torch.tensor(
             data,
             dtype=self.dtype if dtype is None else dtype,
@@ -83,7 +110,20 @@ class RuntimeConfig:
         dtype: torch.dtype | None = None,
         device: torch.device | str | None = None,
     ) -> Tensor:
-        """Convert data using this runtime policy without unnecessary copies."""
+        """Convert data using this runtime policy without unnecessary copies.
+
+        Parameters
+        ----------
+        data
+            Any value accepted by :func:`torch.as_tensor`.
+        dtype, device
+            Per-call overrides for configured defaults.
+
+        Returns
+        -------
+        Tensor
+            Converted tensor, sharing storage when PyTorch permits.
+        """
         return torch.as_tensor(
             data,
             dtype=self.dtype if dtype is None else dtype,
@@ -162,7 +202,15 @@ def _resolve_device(
 
 
 def get_config() -> RuntimeConfig:
-    """Return the current immutable torch-flash runtime configuration."""
+    """Return a current immutable runtime-policy snapshot.
+
+    Returns
+    -------
+    RuntimeConfig
+        Configured device/dtype plus live PyTorch thread and deterministic
+        settings. Mutating process-wide PyTorch settings outside torch-flash
+        is reflected in the returned snapshot.
+    """
     with _CONFIG_LOCK:
         return replace(
             _CONFIG,
@@ -198,6 +246,40 @@ def configure(
     process-wide. In particular, ``num_interop_threads`` can be changed only
     once and before inter-operation parallel work starts; PyTorch's failure is
     reported with an actionable error.
+
+    Parameters
+    ----------
+    device:
+        Explicit PyTorch device, ``"auto"`` for accelerator-then-CPU
+        selection, ``"gpu"`` to require an accelerator, or ``None`` to retain
+        the current setting.
+    dtype:
+        ``torch.float64`` or ``torch.float32``. ``None`` retains the current
+        dtype.
+    num_threads:
+        Positive CPU intra-operation thread count.
+    num_interop_threads:
+        Positive CPU inter-operation thread count. PyTorch permits changing
+        it only once before parallel work begins.
+    deterministic:
+        Enable or disable PyTorch deterministic algorithms.
+    deterministic_warn_only:
+        Warn instead of raising when a deterministic implementation is
+        unavailable. Requires ``deterministic=True``.
+
+    Returns
+    -------
+    RuntimeConfig
+        New immutable runtime-policy snapshot.
+
+    Raises
+    ------
+    ValueError
+        If a dtype, device type, thread count, or deterministic option is
+        invalid.
+    RuntimeError
+        If the requested device/dtype is unavailable or PyTorch can no longer
+        change inter-operation threads.
     """
     global _CONFIG
 
@@ -269,7 +351,18 @@ def resolve_tensor_options(
     dtype: torch.dtype | None,
     device: torch.device | str | None,
 ) -> tuple[torch.dtype, torch.device | str]:
-    """Resolve optional factory arguments against the current runtime policy."""
+    """Resolve optional tensor options against current runtime configuration.
+
+    Parameters
+    ----------
+    dtype, device
+        Explicit options or ``None`` to use configured defaults.
+
+    Returns
+    -------
+    tuple
+        Resolved dtype and device suitable for PyTorch tensor factories.
+    """
     current = get_config()
     return (
         current.dtype if dtype is None else dtype,

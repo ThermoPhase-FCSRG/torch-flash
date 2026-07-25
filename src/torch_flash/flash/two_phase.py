@@ -48,7 +48,64 @@ def two_phase_flash(
     max_iterations: int = 100,
     raise_on_failure: bool = False,
 ) -> FlashResult:
-    """Solve an isothermal two-phase flash by hybrid substitution/Newton steps."""
+    """Solve a scalar isothermal-isobaric two-phase flash.
+
+    The solver optionally applies Michelsen tangent-plane stability analysis,
+    solves the material balance with the safeguarded Rachford--Rice solver,
+    and enforces equality of component fugacities using successive
+    substitution followed by autodiff-assembled Newton steps.
+
+    Parameters
+    ----------
+    model
+        Homogeneous-state model providing phase fugacity coefficients and
+        properties.
+    state
+        Feed state with temperature in K, pressure in Pa, and one
+        mole-fraction vector of shape ``(ncomponents,)``.
+    initial_k_values
+        Positive initial vapor-to-liquid equilibrium ratios with shape
+        ``(ncomponents,)``. Wilson estimates are used when omitted, which
+        requires critical constants and acentric factors on ``model``.
+    check_stability
+        Run tangent-plane stability analysis before attempting a split. A
+        stable feed returns a one-phase result.
+    tolerance
+        Convergence threshold for the maximum absolute log-fugacity residual.
+    max_iterations
+        Maximum phase-equilibrium iterations after initialization.
+    raise_on_failure
+        Raise ``RuntimeError`` instead of emitting ``ConvergenceWarning`` when
+        the phase-equilibrium iterations do not converge.
+
+    Returns
+    -------
+    FlashResult
+        Phase fractions, identified phase properties, convergence status,
+        iteration count, and residual diagnostics. For a two-phase result,
+        fractions are ordered liquid then vapor before phase identification.
+
+    Raises
+    ------
+    ValueError
+        If the composition is batched, suitable initial K values cannot be
+        constructed, or no finite two-phase material-balance root is found.
+    RuntimeError
+        If convergence fails and ``raise_on_failure`` is true.
+
+    Warns
+    -----
+    ConvergenceWarning
+        If the requested split does not converge and ``raise_on_failure`` is
+        false. The returned result is explicitly marked non-converged.
+
+    Notes
+    -----
+    The reported equilibrium residual is
+    ``max_i |log(K_i) - (log(phi_i^L) - log(phi_i^V))|``. A converged
+    Rachford--Rice solve is necessary but is not by itself evidence of phase
+    equilibrium.
+    """
     if state.composition.ndim != 1:
         raise ValueError("two_phase_flash currently accepts one composition vector")
     z = state.composition

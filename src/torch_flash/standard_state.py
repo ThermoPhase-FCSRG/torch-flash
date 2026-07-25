@@ -23,7 +23,17 @@ from torch_flash.exceptions import ParameterDatabaseError
 
 
 class StandardState(Protocol):
-    """Protocol for component standard chemical potentials."""
+    """Protocol for component standard chemical potentials.
+
+    Implementations return one value per modeled component, retain leading
+    temperature batch dimensions, and use the same dtype and device as the
+    input temperature.
+
+    Methods
+    -------
+    chemical_potential
+        Return component standard chemical potentials in J/mol.
+    """
 
     def chemical_potential(self, temperature: Tensor) -> Tensor:
         """Return component standard chemical potentials in J/mol."""
@@ -37,6 +47,21 @@ class IdealGasPolynomial(nn.Module):
     Pedersen's Eq. 8.4; five columns support the Poling data bank. Reference
     enthalpies and entropies make the otherwise arbitrary caloric datum
     explicit and allow the coefficients to be fitted with PyTorch.
+
+    Parameters
+    ----------
+    heat_capacity_coefficients
+        Matrix of coefficients in ascending temperature power, with one row
+        per component and SI units that make the evaluated heat capacity
+        J/(mol K).
+    reference_enthalpy
+        Component enthalpies in J/mol at ``reference_temperature``.
+    reference_entropy
+        Component standard-pressure entropies in J/(mol K) at the reference.
+    reference_temperature
+        Positive caloric reference temperature in K.
+    trainable
+        Register heat-capacity coefficients as trainable parameters.
     """
 
     heat_capacity_coefficients: Tensor
@@ -72,7 +97,18 @@ class IdealGasPolynomial(nn.Module):
         self.register_buffer("reference_entropy", reference_entropy.clone())
 
     def heat_capacity(self, temperature: Tensor) -> Tensor:
-        """Return ideal-gas component heat capacities in J/(mol K)."""
+        """Evaluate component ideal-gas heat capacities.
+
+        Parameters
+        ----------
+        temperature
+            Temperature in K with arbitrary leading batch dimensions.
+
+        Returns
+        -------
+        Tensor
+            Heat capacities in J/(mol K), with a final component axis.
+        """
         powers = torch.arange(
             self.heat_capacity_coefficients.shape[1],
             dtype=temperature.dtype,
@@ -84,7 +120,18 @@ class IdealGasPolynomial(nn.Module):
         )
 
     def enthalpy(self, temperature: Tensor) -> Tensor:
-        """Return ideal-gas component enthalpies in J/mol."""
+        """Integrate component ideal-gas enthalpies from the reference state.
+
+        Parameters
+        ----------
+        temperature
+            Temperature in K.
+
+        Returns
+        -------
+        Tensor
+            Component enthalpies in J/mol with a final component axis.
+        """
         powers = torch.arange(
             1,
             self.heat_capacity_coefficients.shape[1] + 1,
@@ -100,7 +147,18 @@ class IdealGasPolynomial(nn.Module):
         return self.reference_enthalpy + torch.sum(integral, dim=-1)
 
     def entropy(self, temperature: Tensor) -> Tensor:
-        """Return ideal-gas component entropy at standard pressure in J/(mol K)."""
+        """Integrate component ideal-gas entropies at standard pressure.
+
+        Parameters
+        ----------
+        temperature
+            Positive temperature in K.
+
+        Returns
+        -------
+        Tensor
+            Component standard-state entropies in J/(mol K).
+        """
         reference = temperature.new_tensor(self.reference_temperature)
         coefficients = self.heat_capacity_coefficients
         leading = coefficients[:, 0] * torch.log(temperature[..., None] / reference)
@@ -118,7 +176,18 @@ class IdealGasPolynomial(nn.Module):
         return self.reference_entropy + leading + torch.sum(remaining, dim=-1)
 
     def chemical_potential(self, temperature: Tensor) -> Tensor:
-        """Return ideal-gas standard chemical potentials in J/mol."""
+        """Return ideal-gas standard chemical potentials.
+
+        Parameters
+        ----------
+        temperature
+            Temperature in K.
+
+        Returns
+        -------
+        Tensor
+            ``h_i - T s_i`` in J/mol with a final component axis.
+        """
         return self.enthalpy(temperature) - temperature[..., None] * self.entropy(temperature)
 
 
@@ -131,7 +200,37 @@ def ideal_gas_polynomial(
     reference_temperature: float | None = None,
     trainable: bool = False,
 ) -> IdealGasPolynomial:
-    """Construct an ideal-gas polynomial from YAML or explicit parameters."""
+    """Construct an ideal-gas polynomial from versioned parameters.
+
+    Parameters
+    ----------
+    names
+        Component names in the desired output order. Aliases are canonicalized
+        through the component database.
+    parameter_set
+        Bundled identifier, YAML path, mapping, or loaded standard-state
+        parameter set.
+    dtype, device
+        Tensor placement. Omitted values use the configured runtime defaults.
+    reference_temperature
+        Caloric reference temperature in K. When omitted, the parameter set's
+        default is required.
+    trainable
+        Register heat-capacity coefficients as trainable parameters. Reference
+        enthalpies and entropies remain buffers.
+
+    Returns
+    -------
+    IdealGasPolynomial
+        Standard-state module ordered according to ``names``.
+
+    Raises
+    ------
+    ParameterDatabaseError
+        If the source has the wrong model kind or malformed/missing entries.
+    KeyError
+        If a requested component is absent from the parameter set.
+    """
     dtype, device = resolve_tensor_options(dtype, device)
     loaded = load_model_parameters(parameter_set)
     if loaded.model_kind != "standard_state":
@@ -198,6 +297,29 @@ def poling_ideal_gas(
 ) -> IdealGasPolynomial:
     """Construct a named Poling ideal-gas standard state.
 
+    Parameters
+    ----------
+    names
+        Component names in desired tensor order.
+    dtype, device
+        Tensor placement.
+    reference_temperature
+        Caloric reference temperature in K.
+    trainable
+        Register heat-capacity coefficients as trainable parameters.
+
+    Returns
+    -------
+    IdealGasPolynomial
+        Poling coefficient model for the selected components.
+
+    Raises
+    ------
+    KeyError
+        If a selected component has no frozen Poling coefficient record.
+
+    Notes
+    -----
     The tabulated fits cover 50-1000 K for gases through propane and
     200-1000 K for C4-C10. Argon and helium are the monatomic ideal-gas
     limits. This function deliberately does not extrapolate or clip

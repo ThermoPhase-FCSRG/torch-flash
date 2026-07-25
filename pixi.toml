@@ -64,6 +64,7 @@ thermopack = ">=2.2"
 [feature.docs.dependencies]
 mkdocs = ">=1.6,<2"
 mkdocs-material = ">=9.5"
+ruff = ">=0.11"
 
 [feature.docs.pypi-dependencies]
 mkdocstrings = { version = ">=0.27", extras = ["python"] }
@@ -113,6 +114,7 @@ local-docs = "mkdocs serve"
 bump-version = "python scripts/bump_version.py"
 sync-deps = "python scripts/sync_deps.py"
 sync-deps-check = "python scripts/sync_deps.py --check"
+api-docs-check = "python scripts/check_api_docs.py"
 
 [environments]
 default = { features = ["core", "dev", "test"], solve-group = "core" }

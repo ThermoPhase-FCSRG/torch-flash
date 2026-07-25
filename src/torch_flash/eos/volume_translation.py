@@ -44,6 +44,17 @@ class VolumeTranslation:
     ``reference_shift`` is in m3/mol, ``temperature_slope`` in
     m3/(mol K), and ``reference_temperature`` in K.  A published positive
     Péneloux ``c`` therefore appears as a negative ``reference_shift``.
+
+    Attributes
+    ----------
+    reference_shift
+        Per-component additive shift in m3/mol at ``reference_temperature``.
+    temperature_slope
+        Per-component linear slope in m3/(mol K).
+    reference_temperature
+        Positive reference temperature in K.
+    source
+        Parameter or fitting provenance identifier.
     """
 
     reference_shift: Tensor
@@ -75,11 +86,35 @@ class VolumeTranslation:
 
     @classmethod
     def constant(cls, shift: Tensor, *, source: str = "custom") -> VolumeTranslation:
-        """Construct a temperature-independent additive translation."""
+        """Construct a temperature-independent additive translation.
+
+        Parameters
+        ----------
+        shift
+            Per-component additive shifts in m3/mol.
+        source
+            Human-readable provenance identifier.
+
+        Returns
+        -------
+        VolumeTranslation
+            Translation with zero temperature slope.
+        """
         return cls(shift, torch.zeros_like(shift), source=source)
 
     def at_temperature(self, temperature: Tensor) -> Tensor:
-        """Return each component's additive shift at ``temperature``."""
+        """Evaluate component additive shifts at temperature.
+
+        Parameters
+        ----------
+        temperature
+            Temperature in K with arbitrary leading batch dimensions.
+
+        Returns
+        -------
+        Tensor
+            Shifts in m3/mol with a final component axis.
+        """
         return (
             self.reference_shift
             + (temperature[..., None] - self.reference_temperature) * self.temperature_slope
@@ -91,7 +126,18 @@ class VolumeTranslation:
         dtype: torch.dtype | None = None,
         device: torch.device | str | None = None,
     ) -> VolumeTranslation:
-        """Move translation coefficients to a common dtype and device."""
+        """Copy translation coefficients to a dtype and device.
+
+        Parameters
+        ----------
+        dtype, device
+            Optional PyTorch destination options.
+
+        Returns
+        -------
+        VolumeTranslation
+            New immutable translation preserving metadata.
+        """
         return VolumeTranslation(
             self.reference_shift.to(dtype=dtype, device=device),
             self.temperature_slope.to(dtype=dtype, device=device),
@@ -134,7 +180,26 @@ def rackett_compressibility_factor(
     *,
     source: ParameterSource = _PEDERSEN_SOURCE,
 ) -> Tensor:
-    """Return ``Z_RA = 0.29056 - 0.08775 omega`` from Pedersen Eq. 4.47."""
+    """Evaluate the Rackett compressibility-factor correlation.
+
+    Parameters
+    ----------
+    acentric_factor
+        Dimensionless component acentric factors.
+    source
+        Volume-translation parameter source providing intercept and slope.
+
+    Returns
+    -------
+    Tensor
+        Dimensionless Rackett factors with the same shape, dtype, and device
+        as ``acentric_factor``.
+
+    Notes
+    -----
+    The bundled Pedersen set evaluates ``Z_RA = 0.29056 - 0.08775 omega``
+    (Pedersen et al., Eq. 4.47).
+    """
     parameters = _parameter_mapping(source, "Pedersen-Peneloux")
     rackett = _mapping(parameters, "rackett", str(source))
     intercept = _number(rackett, "intercept", str(source))
@@ -151,6 +216,24 @@ def pedersen_peneloux_translation(
 ) -> VolumeTranslation:
     """Return the Pedersen light-component SRK/PR Péneloux translation.
 
+    Parameters
+    ----------
+    components
+        Ordered critical constants and acentric factors.
+    eos
+        Cubic family, ``"srk"`` or ``"pr"``.
+    rackett_factor
+        Optional per-component dimensionless Rackett factors.
+    source
+        Pedersen volume-translation parameter source.
+
+    Returns
+    -------
+    VolumeTranslation
+        Temperature-independent additive shifts in m3/mol.
+
+    Notes
+    -----
     SRK uses Pedersen Eq. 4.46 and PR uses the Jhaveri-Youngren Eq. 4.49.
     These correlations were fitted for nonhydrocarbons and hydrocarbons
     lighter than C7; heavier fractions should use density matching or a
@@ -191,6 +274,29 @@ def whitson_volume_translation(
 ) -> VolumeTranslation:
     """Return Whitson Tables 4.2-4.3 translations.
 
+    Parameters
+    ----------
+    components
+        Ordered component set.
+    eos
+        Cubic family, ``"srk"`` or ``"pr"``.
+    heavy_families
+        Family assignments for components without tabulated shift factors.
+    source
+        Whitson volume-translation parameter source.
+
+    Returns
+    -------
+    VolumeTranslation
+        Temperature-independent additive shifts in m3/mol.
+
+    Raises
+    ------
+    ValueError
+        If an untabulated component lacks a heavy-family assignment.
+
+    Notes
+    -----
     Named light components and normal paraffins through n-decane use the
     tabulated ``s_i = c_i/b_i`` values.  Any other component requires a family
     entry and uses ``s_i = 1 - A0/M_i**A1`` with ``M`` in g/mol.
@@ -235,6 +341,30 @@ def density_matched_translation(
 ) -> VolumeTranslation:
     """Match a reference density with an additive component translation.
 
+    Parameters
+    ----------
+    eos_molar_volume
+        Parent-EOS pure-component molar volumes in m3/mol.
+    molar_mass
+        Component molar masses in kg/mol.
+    mass_density
+        Target pure-component mass densities in kg/m3.
+    source
+        Provenance label stored on the returned translation.
+
+    Returns
+    -------
+    VolumeTranslation
+        Constant shifts ``M/rho - v_eos`` in m3/mol.
+
+    Raises
+    ------
+    ValueError
+        If input vectors differ in shape or contain nonfinite/nonpositive
+        values.
+
+    Notes
+    -----
     All inputs use SI units.  The returned shift is
     ``M/rho - v_eos``, while the equivalent published Péneloux coefficient is
     its negative.
@@ -264,6 +394,33 @@ def pedersen_temperature_dependent_translation(
 ) -> VolumeTranslation:
     """Fit Pedersen's linear C7+ translation using Eqs. 5.7-5.9.
 
+    Parameters
+    ----------
+    model
+        Untranslated parent cubic EOS.
+    reference_density
+        One pure-component reference density per component in kg/m3.
+    pressure
+        Positive matching pressure in Pa.
+    source
+        Pedersen temperature-dependent parameter source.
+
+    Returns
+    -------
+    VolumeTranslation
+        Reference shifts in m3/mol and slopes in m3/(mol K).
+
+    Raises
+    ------
+    ValueError
+        If density/pressure inputs are invalid or ``model`` already has a
+        translation.
+    InvalidStateError
+        If the correlation target temperature is not subcritical for every
+        component.
+
+    Notes
+    -----
     ``reference_density`` is in kg/m3 at 288.15 K by default.  The ASTM
     correlation supplies the target density at 353.15 K, and the parent cubic
     EoS supplies the unshifted liquid volumes at both temperatures.
