@@ -50,6 +50,7 @@ def test_jaubert_hv_bac5_tables_are_complete(not_cleared_data: Path):
     assert rows[-1]["source_doi"] == "10.1002/jctb.5010180402"
 
 
+@pytest.mark.serial
 @pytest.mark.parametrize(
     (
         "system",
@@ -155,6 +156,7 @@ def test_bundled_hv_models_improve_complete_temperature_holdouts(
     assert hv[2] < maximum_vapor_mae
 
 
+@pytest.mark.serial
 def test_n_butane_water_hv_improves_fixed_tp_holdouts(not_cleared_data: Path):
     """Validate the rounded dilute table without inverting it as ``P(T, x)``."""
     system = ("n_butane", "water")
@@ -279,6 +281,7 @@ def _density_rows(system: tuple[str, str]) -> list[dict[str, str]]:
         ]
 
 
+@pytest.mark.serial
 @pytest.mark.parametrize(
     ("system", "maximum_aard_percent"),
     [
@@ -313,6 +316,7 @@ def test_eoscg_hydrogen_binary_density_against_experiment(
     assert aard < maximum_aard_percent
 
 
+@pytest.mark.serial
 def test_eoscg_co2_methane_fixed_tp_vle_against_experiment(
     not_cleared_data: Path,
 ):

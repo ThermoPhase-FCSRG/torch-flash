@@ -572,6 +572,7 @@ def test_huron_vidal_fixed_tp_branches_match_all_thermopack_states():
     assert max(vapor_errors) < 4.0e-8
 
 
+@pytest.mark.serial
 def test_huron_vidal_full_pedersen_table_against_reference_data(
     not_cleared_data: Path,
 ):

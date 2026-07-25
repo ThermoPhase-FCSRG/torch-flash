@@ -90,6 +90,7 @@ def _north_ward_estes_state() -> ChemicalState:
     )
 
 
+@pytest.mark.serial
 def test_grid_flash_recovers_published_north_ward_estes_three_phase_state():
     model = _north_ward_estes_model()
     state = _north_ward_estes_state()
@@ -157,6 +158,7 @@ def test_grid_flash_recovers_published_north_ward_estes_three_phase_state():
     assert sum(identification.method_elapsed_seconds) <= identification.elapsed_seconds
 
 
+@pytest.mark.serial
 def test_binary_invariant_autodiff_newton_and_grid_lever_rule():
     model = _binary_model()
     invariant = solve_binary_three_phase_invariant(

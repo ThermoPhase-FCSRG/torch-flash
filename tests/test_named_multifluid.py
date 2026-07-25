@@ -163,6 +163,7 @@ def test_gerg_matches_independent_teqp_regression_values():
     )
 
 
+@pytest.mark.serial
 def test_gerg_ch4_co2_envelope_continuation_rejects_trivial_branch():
     model = gerg2008(("methane", "carbon_dioxide"))
     temperatures = torch.tensor([230.0, 225.0, 220.0], dtype=DTYPE)
@@ -303,6 +304,7 @@ def test_gerg_accepts_custom_co2_water_departure_database_and_gradients():
     assert torch.count_nonzero(departure_gradient.abs() > 1.0e-12) == 10
 
 
+@pytest.mark.serial
 def test_gerg_batched_kernels_roots_and_compiled_graph_match_scalar_calls():
     model = gerg2008(("hydrogen", "methane"))
     temperatures = torch.tensor([280.0, 320.0, 360.0], dtype=DTYPE)
@@ -569,6 +571,7 @@ def test_eoscg_pure_residual_terms_match_coolprop(component, temperature, densit
     )
 
 
+@pytest.mark.serial
 def test_eoscg_mdea_matches_all_experimental_density_points():
     model = eoscg2021(("mdea",))
     errors = []
@@ -590,6 +593,7 @@ def test_eoscg_mdea_matches_all_experimental_density_points():
     assert max(errors) < 0.13
 
 
+@pytest.mark.serial
 def test_eoscg_mdea_matches_all_experimental_speed_of_sound_points():
     model = eoscg2021(("mdea",))
     composition = torch.ones(1, dtype=DTYPE)

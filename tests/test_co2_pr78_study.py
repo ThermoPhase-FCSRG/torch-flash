@@ -210,6 +210,7 @@ def test_translated_pr78_tp_tv_fugacity_and_free_energy_consistency():
     )
 
 
+@pytest.mark.serial
 def test_binary_critical_point_matches_frozen_thermopack_reference():
     model = _thermopack_pr78_model()
     result = binary_critical_point(
@@ -276,6 +277,7 @@ def test_batched_two_phase_flash_matches_scalar_grid():
         )
 
 
+@pytest.mark.serial
 def test_log_k_continuation_reaches_retrograde_cricondentherm():
     model = _thermopack_pr78_model()
     z = torch.tensor([0.9, 0.1], dtype=torch.float64)
@@ -309,6 +311,7 @@ def test_log_k_continuation_reaches_retrograde_cricondentherm():
     assert float(temperatures[-1]) < float(temperatures[maximum])
 
 
+@pytest.mark.serial
 def test_accelerated_envelope_matches_legacy_continuation():
     model = _thermopack_pr78_model()
     z = torch.tensor([0.9, 0.1], dtype=torch.float64)

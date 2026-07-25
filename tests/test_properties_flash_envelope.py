@@ -441,6 +441,7 @@ def test_state_derivative_shape_errors(binary_model):
         )
 
 
+@pytest.mark.serial
 def test_tangent_plane_stability_stable_and_unstable(binary_model, two_phase_state):
     unstable = tangent_plane_stability(binary_model, two_phase_state)
     assert not unstable.stable

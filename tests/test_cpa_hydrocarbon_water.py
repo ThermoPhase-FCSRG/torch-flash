@@ -3,6 +3,7 @@ from __future__ import annotations
 import csv
 from pathlib import Path
 
+import pytest
 import torch
 
 from torch_flash import binary_phase_equilibrium_point, cpa_yan_2009
@@ -10,6 +11,7 @@ from torch_flash import binary_phase_equilibrium_point, cpa_yan_2009
 DTYPE = torch.float64
 
 
+@pytest.mark.serial
 def test_cpa_light_hydrocarbon_water_against_four_experimental_systems(
     not_cleared_data: Path,
 ):

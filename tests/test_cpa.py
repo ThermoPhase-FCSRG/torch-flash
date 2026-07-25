@@ -132,6 +132,7 @@ def test_cpa_batched_association_matches_scalar_states_and_gradients():
     assert torch.isfinite(volumes.grad).all()
 
 
+@pytest.mark.serial
 def test_cpa_paper_azeotrope_regression():
     kij = torch.tensor([[0.0, -0.11], [-0.11, 0.0]], dtype=torch.float64)
     model = cpa_folas_2005(("ethanol", "water"), kij=kij)
@@ -150,6 +151,7 @@ def test_cpa_paper_azeotrope_regression():
     assert float(point.incipient_composition[0]) == pytest.approx(0.91, abs=0.02)
 
 
+@pytest.mark.serial
 @pytest.mark.parametrize(
     ("components", "temperature", "initial_x", "initial_pressure_bar", "kij"),
     [

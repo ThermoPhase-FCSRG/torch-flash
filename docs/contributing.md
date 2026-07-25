@@ -30,6 +30,13 @@ pixi run api-docs-check
 pixi run -e docs mkdocs build --strict
 ```
 
+`pixi run test-parallel` runs ordinary tests with `pytest-xdist`, stops all
+workers, and then runs tests marked `serial` in a separate non-xdist session.
+Use the marker for tests whose PyTorch workload would substantially
+oversubscribe the CPU or whose process-global behavior is unsafe alongside
+other tests. `pixi run test-cov` uses the same isolation and combines branch
+coverage from both sessions.
+
 ## Public API documentation
 
 The [API Reference](api.md) is generated from the signatures, type
