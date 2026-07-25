@@ -78,6 +78,15 @@ directories. In particular:
   temperature-dependent-interaction plots. These systems contributed to the
   original parameter fit, so this is calibration-domain validation rather
   than an independent blind test.
+- `verification/29_bennett_phase_identification_methods` flashes every grid
+  feed and applies all five homogeneous-state criteria to every returned
+  equilibrium phase for the five fluid cases reported by Bennett and Schmidt.
+  It records the directly available inputs and explicit pseudo-component
+  assumptions, enforces fugacity and material-balance residual gates, plots
+  every method on matched 33 by 33 grids, reports batched-search/refinement
+  timings, and verifies a higher-order gradient through a trainable binary
+  interaction. The maps compare diagnostic phase labels; phase count still
+  comes from the preceding equilibrium calculation.
 
 The fitted GERG variants in these two studies are not parameter sets published
 as GERG-2008. They are deliberately local sensitivity demonstrations. The

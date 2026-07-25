@@ -10,8 +10,21 @@ from torch import Tensor
 
 PhaseKind = Literal["liquid", "vapor", "stable"]
 PhaseIdentityKind = Literal["liquid", "vapor", "unknown"]
-PhaseIdentificationMethod = Literal[
+PhaseIdentificationCriterion = Literal[
+    "li-pseudo-critical-temperature",
     "pedersen-volume-to-covolume",
+    "perschke-negative-flash",
+    "pasad-isothermal-compressibility-derivative",
+    "bennett-thermal-expansion-derivative",
+    "venkatarathnam-oellrich-phase-identification-parameter",
+]
+PhaseIdentificationMethod = Literal[
+    "li-pseudo-critical-temperature",
+    "pedersen-volume-to-covolume",
+    "perschke-negative-flash",
+    "pasad-isothermal-compressibility-derivative",
+    "bennett-thermal-expansion-derivative",
+    "venkatarathnam-oellrich-phase-identification-parameter",
     "density-ordering",
     "unavailable",
 ]
@@ -107,11 +120,16 @@ class PhaseIdentification:
     """Likely physical identity of a homogeneous phase.
 
     ``kind`` is deliberately separate from the EoS root requested through
-    :class:`PhaseProperties`. For the Pedersen cubic-EoS criterion,
-    ``criterion_value`` is ``V/b`` and ``threshold`` is normally 1.75. For
-    density ordering, they are the phase molar volume and the geometric-mean
-    separator between the two least-dense phases. The Boolean ``ambiguous``
-    marks values within the configured relative band around the separator.
+    :class:`PhaseProperties`. ``criterion_value`` and ``threshold`` retain the
+    native quantity used by the selected method: ``T/Tc`` and one for Li's
+    pseudo-critical-temperature rule, ``V/b`` and normally 1.75 for Pedersen's
+    rule, ``G(0.5)`` and zero for Perschke's negative-flash rule, or the
+    relevant temperature derivative and zero for either derivative rule, or
+    the dimensionless Venkatarathnam-Oellrich phase-identification parameter
+    and one. For density ordering, they are the phase molar volume and the
+    geometric-mean separator between the two least-dense phases. The Boolean
+    ``ambiguous`` marks values within the configured numerical band around the
+    separator.
 
     Phase identification is a naming diagnostic; it does not change the
     equilibrium calculation or any thermodynamic property.
@@ -274,6 +292,36 @@ class BatchedTwoPhaseFlashResult:
     liquid_composition: Tensor
     vapor_composition: Tensor
     k_values: Tensor
+    iterations: int
+    converged: Tensor
+    residual_norm: Tensor
+
+
+@dataclass(frozen=True)
+class BatchedStabilityResult:
+    """Tangent-plane stability results for independent homogeneous states.
+
+    Attributes
+    ----------
+    stable:
+        Boolean stability decision for each input state.
+    minimum_tpd:
+        Lowest dimensionless tangent-plane distance found per state.
+    trial_composition:
+        Composition associated with ``minimum_tpd``.
+    iterations:
+        Shared number of successive-substitution passes executed.
+    converged:
+        Whether the selected stationary-point iteration met its residual
+        tolerance for each state.
+    residual_norm:
+        Maximum absolute log trial-mole update at the selected stationary
+        point.
+    """
+
+    stable: Tensor
+    minimum_tpd: Tensor
+    trial_composition: Tensor
     iterations: int
     converged: Tensor
     residual_norm: Tensor

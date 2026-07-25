@@ -78,6 +78,7 @@ addopts = "-ra --strict-config --strict-markers"
 testpaths = ["tests"]
 markers = [
   "external: requires an optional external thermodynamic package",
+  "serial: resource-intensive or process-global test that must run without concurrent tests",
   "slow: exhaustive scientific or numerical regression test",
 ]
 

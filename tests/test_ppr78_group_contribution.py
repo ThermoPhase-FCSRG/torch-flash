@@ -440,6 +440,7 @@ def test_ppr78_mixing_validates_tensor_contracts():
         mixing.kij(torch.tensor(300.0), torch.tensor([1.0, -1.0]), torch.ones(2))
 
 
+@pytest.mark.serial
 def test_ppr78_improves_all_selected_methane_n_decane_experimental_isotherms(
     not_cleared_data: Path,
 ):

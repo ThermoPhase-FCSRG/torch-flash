@@ -1,42 +1,99 @@
-"""Physical phase identification for homogeneous and flashed states.
+"""Physical phase-identification diagnostics for homogeneous and flashed states.
 
-Pedersen, Christensen, and Shaikh, *Phase Behavior of Petroleum Reservoir
-Fluids*, 3rd ed. (2024), section 6.6, recommend ``V/b = 1.75`` as a practical
-liquid/gas separator for the SRK and PR equations. This module implements that
-criterion without confusing an EoS root label with physical phase identity.
-For models without a cubic covolume, a multiphase result can only use the
-weaker density-ordering convention described in the same section.
+The five comparison criteria follow Bennett and Schmidt, *Energy & Fuels* 31
+(2017), 3370-3379, doi:10.1021/acs.energyfuels.6b02316. The dimensionless
+pressure-derivative criterion follows Venkatarathnam and Oellrich, *Fluid
+Phase Equilibria* 301 (2011), 225-233,
+doi:10.1016/j.fluid.2010.12.001. Root selection, physical phase
+identification, and the equilibrium phase count remain separate concepts.
 """
 
 from __future__ import annotations
 
-from dataclasses import replace
+import math
+from dataclasses import dataclass, replace
 from typing import Any, cast
 
 import torch
 from torch import Tensor
 
+from torch_flash.components import ComponentSet
 from torch_flash.constants import R
+from torch_flash.initialization import wilson_k_values
 from torch_flash.types import (
     ChemicalState,
     PhaseIdentification,
+    PhaseIdentificationCriterion,
     PhaseIdentityKind,
     PhaseKind,
     PhaseProperties,
+    normalize_composition,
 )
 
+DEFAULT_PHASE_IDENTIFICATION_METHOD: PhaseIdentificationCriterion = "pedersen-volume-to-covolume"
 DEFAULT_VOLUME_TO_COVOLUME_THRESHOLD = 1.75
+DEFAULT_PSEUDO_CRITICAL_TEMPERATURE_FACTOR = 1.0
 DEFAULT_AMBIGUITY_RELATIVE_TOLERANCE = 0.05
 
 
+class _PhaseIdentificationParameterSingularityError(ValueError):
+    """Signal that the pressure-derivative ratio is not numerically defined."""
+
+
+@dataclass(frozen=True)
+class PhaseResponseDerivatives:
+    """Autodiff response functions used by the two derivative criteria.
+
+    Attributes
+    ----------
+    molar_volume
+        Homogeneous physical molar volume in m3/mol.
+    isothermal_compressibility
+        ``kappa = -(1/V)(dV/dP)_T`` in 1/Pa.
+    thermal_expansion_coefficient
+        ``alpha = (1/V)(dV/dT)_P`` in 1/K.
+    isothermal_compressibility_temperature_derivative
+        ``(d kappa/dT)_P`` in 1/(Pa K).
+    thermal_expansion_temperature_derivative
+        ``(d alpha/dT)_P`` in 1/K^2.
+
+    Notes
+    -----
+    The derivatives are assembled from first and second PyTorch autodiff
+    derivatives of the model's explicit ``P(T, V, x)`` function. The supplied
+    homogeneous root is evaluated once per state; no finite-difference step is
+    used. Matching leading state batches are supported.
+    """
+
+    molar_volume: Tensor
+    isothermal_compressibility: Tensor
+    thermal_expansion_coefficient: Tensor
+    isothermal_compressibility_temperature_derivative: Tensor
+    thermal_expansion_temperature_derivative: Tensor
+
+
+@dataclass(frozen=True)
+class _PhaseResponseDetails:
+    values: PhaseResponseDerivatives
+    compressibility_derivative_scale: Tensor
+    expansion_derivative_scale: Tensor
+
+
 def _validate_options(threshold: float, ambiguity_relative_tolerance: float) -> None:
-    if not torch.isfinite(torch.tensor(threshold)) or threshold <= 0.0:
+    if not math.isfinite(threshold) or threshold <= 0.0:
         raise ValueError("volume-to-covolume threshold must be finite and positive")
-    if (
-        not torch.isfinite(torch.tensor(ambiguity_relative_tolerance))
-        or ambiguity_relative_tolerance < 0.0
-    ):
+    if not math.isfinite(ambiguity_relative_tolerance) or ambiguity_relative_tolerance < 0.0:
         raise ValueError("ambiguity relative tolerance must be finite and non-negative")
+
+
+def _validate_positive_factor(value: float) -> None:
+    if not math.isfinite(value) or value <= 0.0:
+        raise ValueError("pseudo-critical-temperature factor must be finite and positive")
+
+
+def _validate_pip_denominator_tolerance(value: float | None) -> None:
+    if value is not None and (not math.isfinite(value) or value < 0.0):
+        raise ValueError("PIP denominator relative tolerance must be finite and non-negative")
 
 
 def _unavailable_identification() -> PhaseIdentification:
@@ -47,6 +104,11 @@ def _unavailable_identification() -> PhaseIdentification:
         threshold=None,
         ambiguous=True,
     )
+
+
+def _model_tensor(model: object, name: str) -> Tensor | None:
+    value = getattr(model, name, None)
+    return value if isinstance(value, Tensor) else None
 
 
 def _covolume(model: object, state: ChemicalState) -> Tensor | None:
@@ -60,9 +122,66 @@ def _covolume(model: object, state: ChemicalState) -> Tensor | None:
             state.composition,
         ),
     )
-    if not bool(torch.isfinite(covolume).all()) or bool((covolume <= 0.0).any()):
+    if not bool(torch.isfinite(covolume).all().detach()) or bool((covolume <= 0.0).any().detach()):
         raise ValueError("model mixture covolume must be finite and positive")
     return covolume
+
+
+def li_pseudo_critical_temperature(
+    model: object,
+    composition: Tensor,
+    *,
+    factor: float = DEFAULT_PSEUDO_CRITICAL_TEMPERATURE_FACTOR,
+    critical_volume: Tensor | None = None,
+) -> Tensor:
+    """Return Li's volume-weighted pseudo-critical temperature.
+
+    Parameters
+    ----------
+    model
+        Model exposing per-component critical temperatures and, unless
+        supplied explicitly, critical molar volumes.
+    composition
+        Mole fractions with components on the final axis.
+    factor
+        Dimensionless tuning factor ``r1``. Bennett and Schmidt use one.
+    critical_volume
+        Optional per-component critical molar volumes in m3/mol.
+
+    Returns
+    -------
+    Tensor
+        Pseudo-critical temperature in K with the composition batch shape.
+
+    Notes
+    -----
+    This implements ``Tc = r1*sum(xj*Vcj*Tcj)/sum(xj*Vcj)``. A phase is
+    labeled vapor when its actual temperature exceeds this value.
+    """
+    _validate_positive_factor(factor)
+    critical_temperature = _model_tensor(model, "critical_temperature")
+    if critical_temperature is None:
+        raise TypeError("pseudo-critical-temperature model lacks critical temperatures")
+    volume = _model_tensor(model, "critical_volume") if critical_volume is None else critical_volume
+    if volume is None:
+        raise TypeError("pseudo-critical-temperature method requires critical volumes")
+    if (
+        critical_temperature.ndim != 1
+        or volume.ndim != 1
+        or critical_temperature.shape != volume.shape
+    ):
+        raise ValueError("critical temperatures and volumes must be equal-length vectors")
+    if not bool(torch.isfinite(critical_temperature).all().detach()) or bool(
+        (critical_temperature <= 0.0).any().detach()
+    ):
+        raise ValueError("critical temperatures must be finite and positive")
+    if not bool(torch.isfinite(volume).all().detach()) or bool((volume <= 0.0).any().detach()):
+        raise ValueError("critical volumes must be finite and positive")
+    x = normalize_composition(composition)
+    if x.shape[-1] != critical_temperature.numel():
+        raise ValueError("composition and critical-property component counts differ")
+    weights = x * volume
+    return factor * torch.sum(weights * critical_temperature, dim=-1) / weights.sum(dim=-1)
 
 
 def volume_to_covolume_ratio(
@@ -97,8 +216,7 @@ def volume_to_covolume_ratio(
     -----
     Leading batch dimensions are supported. Cubic volume translations are
     excluded because Pedersen's criterion uses the volume entering the cubic
-    repulsive term. A model without ``mixture_parameters`` has no defined
-    covolume and raises ``TypeError``.
+    repulsive term.
     """
     select_z: Any = getattr(model, "select_z", None)
     if not callable(select_z):
@@ -117,9 +235,505 @@ def volume_to_covolume_ratio(
     )
     equation_of_state_volume = compressibility_factor * R * state.temperature / state.pressure
     ratio = equation_of_state_volume / covolume
-    if not bool(torch.isfinite(ratio).all()) or bool((ratio <= 0.0).any()):
+    if not bool(torch.isfinite(ratio).all().detach()) or bool((ratio <= 0.0).any().detach()):
         raise ValueError("volume-to-covolume ratio must be finite and positive")
     return ratio
+
+
+def negative_flash_residual(model: object, state: ChemicalState) -> Tensor:
+    r"""Evaluate Perschke's dimensionless negative-flash residual.
+
+    Parameters
+    ----------
+    model
+        Component parameter source exposing critical temperature in K,
+        critical pressure in Pa, and acentric factor tensors. These are the
+        quantities used by the Wilson equilibrium-ratio estimate.
+    state
+        Temperature in K, pressure in Pa, and normalized composition.
+        Matching leading state batches are supported; components occupy the
+        final composition axis.
+
+    Returns
+    -------
+    Tensor
+        Perschke's dimensionless residual
+
+        .. math::
+
+            G(0.5)=\sum_i
+            \frac{x_i(K_i^{\mathrm{Wilson}}-1)}
+                 {1+0.5(K_i^{\mathrm{Wilson}}-1)}
+
+        with the leading state shape. Positive values are vapor-like and
+        negative values are liquid-like under this diagnostic. The tensor
+        retains its PyTorch graph to differentiable state inputs and component
+        parameters used by the Wilson estimate.
+
+    Raises
+    ------
+    TypeError
+        If any required critical-temperature, critical-pressure, or
+        acentric-factor tensor is unavailable.
+
+    Notes
+    -----
+    This function evaluates a homogeneous-state diagnostic only. It does not
+    perform a negative flash, select an EoS root, establish phase stability,
+    or determine the number of equilibrium phases.
+    """
+    required = ("critical_temperature", "critical_pressure", "acentric_factor")
+    if not all(isinstance(getattr(model, name, None), Tensor) for name in required):
+        raise TypeError("negative-flash method requires critical constants and acentric factors")
+    components = cast(ComponentSet, model)
+    k_values = wilson_k_values(components, state.temperature, state.pressure)
+    terms = state.composition * (k_values - 1.0) / (1.0 + 0.5 * (k_values - 1.0))
+    return terms.sum(dim=-1)
+
+
+def _negative_flash_scale(model: object, state: ChemicalState) -> Tensor:
+    components = cast(ComponentSet, model)
+    k_values = wilson_k_values(components, state.temperature, state.pressure)
+    terms = state.composition * (k_values - 1.0) / (1.0 + 0.5 * (k_values - 1.0))
+    return terms.abs().sum(dim=-1)
+
+
+def phase_identification_parameter(
+    model: object,
+    state: ChemicalState,
+    phase: PhaseKind = "stable",
+    *,
+    denominator_relative_tolerance: float | None = None,
+) -> Tensor:
+    r"""Evaluate the Venkatarathnam-Oellrich phase-identification parameter.
+
+    The dimensionless parameter is
+
+    .. math::
+
+        \Pi = V\left[
+        \frac{(\partial^2 P/\partial V\partial T)_x}
+             {(\partial P/\partial T)_{V,x}}
+        -
+        \frac{(\partial^2 P/\partial V^2)_{T,x}}
+             {(\partial P/\partial V)_{T,x}}
+        \right].
+
+    Venkatarathnam and Oellrich classify a mechanically stable homogeneous
+    state as liquid or liquid-like when ``Pi > 1`` and vapor-like when
+    ``Pi <= 1``. The method labels a supplied homogeneous state; it does not
+    select an EoS root, perform a stability test, or determine the equilibrium
+    phase count.
+
+    Parameters
+    ----------
+    model
+        Homogeneous-state model implementing ``pressure(T, V, x)`` and
+        ``molar_volume(T, P, x, phase)`` with PyTorch tensor operations.
+        ``pressure`` must return pressure in Pa for physical molar volume in
+        m3/mol.
+    state
+        Temperature in K, pressure in Pa, and normalized composition. Matching
+        leading state batches are supported; components occupy the final
+        composition axis.
+    phase
+        Homogeneous EoS root used only to obtain the evaluation volume. The
+        default ``"stable"`` selects the admissible root of lowest residual
+        Gibbs energy; it does not perform a flash.
+    denominator_relative_tolerance
+        Optional non-negative singularity threshold. ``|P_T|`` is compared
+        with this value times ``|P/T|`` and ``|P_V|`` with this value times
+        ``|P/V|``. When omitted, the threshold is the square root of machine
+        epsilon for the state's dtype. Set zero only for controlled numerical
+        experiments that require exact-zero guards.
+
+    Returns
+    -------
+    Tensor
+        Dimensionless ``Pi`` with the leading state shape. A scalar state
+        returns a scalar tensor. The result remains connected through the
+        first and second pressure derivatives, the selected molar volume, the
+        state tensors, and any trainable model parameters.
+
+    Raises
+    ------
+    TypeError
+        If the model does not expose differentiable ``pressure`` and
+        ``molar_volume`` methods.
+    ValueError
+        If the state shapes are inconsistent, any molar volume or pressure
+        derivative is nonfinite, any volume is nonpositive, ``P_V >= 0``
+        indicates a mechanically unstable root, a scaled denominator is
+        singular, or the relative tolerance is invalid. For a batch, invalid
+        state checks reject the complete batch so callers can isolate or
+        subdivide it explicitly.
+
+    Notes
+    -----
+    Nested ``torch.func.jvp`` calls evaluate the first and second directional
+    derivatives of the batched explicit pressure. Because each output state
+    depends only on the matching input state, all-one temperature or volume
+    tangents recover the independent Jacobian diagonals without constructing
+    a dense cross-state Jacobian. No finite-difference step or cubic-specific
+    derivative formula is used.
+
+    The paper describes an additional high-temperature inversion correction
+    for isolated superheated states. It also states that this correction is
+    unnecessary when identifying saturated split phases after a converged
+    flash. This function returns the local parameter itself and does not
+    perform a remote temperature root search.
+    """
+    _validate_pip_denominator_tolerance(denominator_relative_tolerance)
+    state_shape = state.temperature.shape
+    if state.pressure.shape != state_shape or state.composition.shape[:-1] != state_shape:
+        raise ValueError("phase-identification parameter state shapes are inconsistent")
+    pressure_function: Any = getattr(model, "pressure", None)
+    volume_function: Any = getattr(model, "molar_volume", None)
+    if not callable(pressure_function) or not callable(volume_function):
+        raise TypeError("phase-identification parameter requires pressure and molar_volume methods")
+    volume = cast(
+        Tensor,
+        volume_function(
+            state.temperature,
+            state.pressure,
+            state.composition,
+            phase,
+        ),
+    )
+    if (
+        volume.shape != state_shape
+        or not bool(torch.isfinite(volume).all().detach())
+        or bool((volume <= 0.0).any().detach())
+    ):
+        raise ValueError(
+            "phase-identification molar volume must match the state shape and be finite positive"
+        )
+    composition = state.composition
+
+    def pressure_at_temperature_volume(
+        temperature: Tensor,
+        molar_volume: Tensor,
+    ) -> Tensor:
+        return cast(
+            Tensor,
+            pressure_function(
+                temperature,
+                molar_volume,
+                composition,
+            ),
+        )
+
+    temperature_direction = torch.ones_like(state.temperature)
+    volume_direction = torch.ones_like(volume)
+    zero_temperature = torch.zeros_like(state.temperature)
+    zero_volume = torch.zeros_like(volume)
+
+    def pressure_volume_at_temperature_volume(
+        temperature: Tensor,
+        molar_volume: Tensor,
+    ) -> Tensor:
+        return cast(
+            Tensor,
+            torch.func.jvp(
+                pressure_at_temperature_volume,
+                (temperature, molar_volume),
+                (zero_temperature, volume_direction),
+            )[1],
+        )
+
+    pressure_temperature = torch.func.jvp(
+        pressure_at_temperature_volume,
+        (state.temperature, volume),
+        (temperature_direction, zero_volume),
+    )[1]
+    pressure_volume = pressure_volume_at_temperature_volume(
+        state.temperature,
+        volume,
+    )
+    pressure_volume_temperature = torch.func.jvp(
+        pressure_volume_at_temperature_volume,
+        (state.temperature, volume),
+        (temperature_direction, zero_volume),
+    )[1]
+    pressure_volume_second = torch.func.jvp(
+        pressure_volume_at_temperature_volume,
+        (state.temperature, volume),
+        (zero_temperature, volume_direction),
+    )[1]
+    derivatives = torch.stack(
+        (
+            pressure_temperature,
+            pressure_volume,
+            pressure_volume_temperature,
+            pressure_volume_second,
+        )
+    )
+    if not bool(torch.isfinite(derivatives).all().detach()):
+        raise ValueError("phase-identification pressure derivatives are nonfinite")
+    if bool((pressure_volume >= 0.0).any().detach()):
+        raise _PhaseIdentificationParameterSingularityError(
+            "phase-identification parameter requires a mechanically stable P_V < 0 root"
+        )
+
+    relative_tolerance = (
+        math.sqrt(torch.finfo(volume.dtype).eps)
+        if denominator_relative_tolerance is None
+        else denominator_relative_tolerance
+    )
+    pressure_temperature_scale = torch.abs(state.pressure / state.temperature)
+    pressure_volume_scale = torch.abs(state.pressure / volume)
+    if bool(
+        (torch.abs(pressure_temperature) <= relative_tolerance * pressure_temperature_scale)
+        .any()
+        .detach()
+    ) or bool(
+        (torch.abs(pressure_volume) <= relative_tolerance * pressure_volume_scale).any().detach()
+    ):
+        raise _PhaseIdentificationParameterSingularityError(
+            "phase-identification parameter has a scaled singular P_T or P_V denominator"
+        )
+    return cast(
+        Tensor,
+        volume
+        * (
+            pressure_volume_temperature / pressure_temperature
+            - pressure_volume_second / pressure_volume
+        ),
+    )
+
+
+def _phase_response_details(
+    model: object,
+    state: ChemicalState,
+    phase: PhaseKind,
+    *,
+    molar_volume: Tensor | None = None,
+) -> _PhaseResponseDetails:
+    state_shape = state.temperature.shape
+    if state.pressure.shape != state_shape or state.composition.shape[:-1] != state_shape:
+        raise ValueError("phase-response state shapes are inconsistent")
+    pressure_function: Any = getattr(model, "pressure", None)
+    volume_function: Any = getattr(model, "molar_volume", None)
+    if not callable(pressure_function) or not callable(volume_function):
+        raise TypeError("phase-response derivatives require pressure and molar_volume methods")
+    volume = (
+        cast(
+            Tensor,
+            volume_function(
+                state.temperature,
+                state.pressure,
+                state.composition,
+                phase,
+            ),
+        )
+        if molar_volume is None
+        else molar_volume
+    )
+    if (
+        volume.shape != state_shape
+        or not bool(torch.isfinite(volume).all().detach())
+        or bool((volume <= 0.0).any().detach())
+    ):
+        raise ValueError("phase molar volume must match the state shape and be finite positive")
+    composition = state.composition
+    temperature_direction = torch.ones_like(state.temperature)
+    volume_direction = torch.ones_like(volume)
+    zero_temperature = torch.zeros_like(state.temperature)
+    zero_volume = torch.zeros_like(volume)
+
+    def pressure_at_tv(temperature: Tensor, current_volume: Tensor) -> Tensor:
+        return cast(Tensor, pressure_function(temperature, current_volume, composition))
+
+    def pressure_temperature_at_tv(
+        temperature: Tensor,
+        current_volume: Tensor,
+    ) -> Tensor:
+        return cast(
+            Tensor,
+            torch.func.jvp(
+                pressure_at_tv,
+                (temperature, current_volume),
+                (temperature_direction, zero_volume),
+            )[1],
+        )
+
+    def pressure_volume_at_tv(
+        temperature: Tensor,
+        current_volume: Tensor,
+    ) -> Tensor:
+        return cast(
+            Tensor,
+            torch.func.jvp(
+                pressure_at_tv,
+                (temperature, current_volume),
+                (zero_temperature, volume_direction),
+            )[1],
+        )
+
+    def response_at_tv(temperature: Tensor, current_volume: Tensor) -> Tensor:
+        pressure_temperature = pressure_temperature_at_tv(
+            temperature,
+            current_volume,
+        )
+        pressure_volume = pressure_volume_at_tv(
+            temperature,
+            current_volume,
+        )
+        volume_temperature = -pressure_temperature / pressure_volume
+        compressibility = -1.0 / (current_volume * pressure_volume)
+        expansion = volume_temperature / current_volume
+        return torch.stack(
+            (
+                compressibility,
+                expansion,
+                volume_temperature,
+                pressure_volume,
+            ),
+            dim=-1,
+        )
+
+    response = response_at_tv(state.temperature, volume)
+    if not bool(torch.isfinite(response).all().detach()):
+        raise ValueError("phase-response autodiff produced nonfinite values")
+    if bool((response[..., 3] >= 0.0).any().detach()):
+        raise ValueError("phase-response derivatives require a mechanically stable root")
+    response_temperature = cast(
+        Tensor,
+        torch.func.jvp(
+            response_at_tv,
+            (state.temperature, volume),
+            (temperature_direction, zero_volume),
+        )[1],
+    )
+    response_volume = cast(
+        Tensor,
+        torch.func.jvp(
+            response_at_tv,
+            (state.temperature, volume),
+            (zero_temperature, volume_direction),
+        )[1],
+    )
+    volume_temperature = response[..., 2]
+    compressibility_terms = torch.stack(
+        (
+            response_temperature[..., 0],
+            response_volume[..., 0] * volume_temperature,
+        ),
+        dim=-1,
+    )
+    expansion_terms = torch.stack(
+        (
+            response_temperature[..., 1],
+            response_volume[..., 1] * volume_temperature,
+        ),
+        dim=-1,
+    )
+    compressibility_derivative = compressibility_terms.sum(dim=-1)
+    expansion_derivative = expansion_terms.sum(dim=-1)
+    derivatives = PhaseResponseDerivatives(
+        molar_volume=volume,
+        isothermal_compressibility=response[..., 0],
+        thermal_expansion_coefficient=response[..., 1],
+        isothermal_compressibility_temperature_derivative=compressibility_derivative,
+        thermal_expansion_temperature_derivative=expansion_derivative,
+    )
+    if not bool(
+        torch.isfinite(
+            torch.stack(
+                (
+                    derivatives.isothermal_compressibility_temperature_derivative,
+                    derivatives.thermal_expansion_temperature_derivative,
+                ),
+                dim=-1,
+            )
+        )
+        .all()
+        .detach()
+    ):
+        raise ValueError("phase-response second derivatives are nonfinite")
+    return _PhaseResponseDetails(
+        derivatives,
+        compressibility_terms.abs().sum(dim=-1),
+        expansion_terms.abs().sum(dim=-1),
+    )
+
+
+def phase_response_derivatives(
+    model: object,
+    state: ChemicalState,
+    phase: PhaseKind = "stable",
+) -> PhaseResponseDerivatives:
+    r"""Evaluate batched homogeneous response functions with PyTorch autodiff.
+
+    Parameters
+    ----------
+    model
+        Homogeneous-state model implementing differentiable
+        ``pressure(T, V, x)`` and ``molar_volume(T, P, x, phase)`` methods.
+        Pressure is in Pa and physical molar volume is in m3/mol.
+    state
+        Temperature in K, pressure in Pa, and normalized composition.
+        Temperature and pressure share the leading state shape; components
+        occupy the final composition axis. Scalar and leading-batch states are
+        both supported.
+    phase
+        Homogeneous EoS root request used to obtain the evaluation volume.
+        Root selection remains separate from the returned physical response.
+
+    Returns
+    -------
+    PhaseResponseDerivatives
+        Molar volume, isothermal compressibility, thermal-expansion
+        coefficient, and their constant-pressure temperature derivatives.
+        Every field has the leading state shape and remains connected to state
+        tensors and trainable model parameters.
+
+    Raises
+    ------
+    TypeError
+        If the model lacks the required pressure or molar-volume operation.
+    ValueError
+        If state or volume shapes are inconsistent, any volume or derivative
+        is nonfinite, any volume is nonpositive, or a selected root has
+        ``P_V >= 0`` and is therefore mechanically unstable.
+
+    Notes
+    -----
+    Nested :func:`torch.func.jvp` calls evaluate the independent first and
+    second pressure-response derivatives. For a leading batch, each output
+    state depends only on the matching input state, so all-one temperature or
+    volume tangents recover the Jacobian diagonals without constructing a
+    dense cross-state Jacobian. The implementation is mathematically
+    equivalent to differentiating each scalar response with
+    :func:`torch.func.grad` and :func:`torch.func.jacrev`, and is tested
+    against that reverse-mode scalar oracle.
+    """
+    return _phase_response_details(model, state, phase).values
+
+
+def _scalar_identification(
+    *,
+    criterion: Tensor,
+    threshold: Tensor,
+    method: PhaseIdentificationCriterion,
+    vapor_if_positive: bool,
+    ambiguity_margin: Tensor,
+    ambiguity_limit: Tensor,
+) -> PhaseIdentification:
+    if criterion.ndim != 0 or threshold.ndim != 0:
+        raise ValueError("phase identification currently accepts one scalar T-P state")
+    if not bool(torch.isfinite(criterion).detach()) or not bool(torch.isfinite(threshold).detach()):
+        raise ValueError("phase-identification criterion and threshold must be finite")
+    positive = bool((criterion > threshold).detach())
+    vapor = positive if vapor_if_positive else not positive
+    kind: PhaseIdentityKind = "vapor" if vapor else "liquid"
+    return PhaseIdentification(
+        kind=kind,
+        method=method,
+        criterion_value=criterion,
+        threshold=threshold,
+        ambiguous=bool((ambiguity_margin.abs() <= ambiguity_limit).detach()),
+    )
 
 
 def _from_state_values(
@@ -133,24 +747,18 @@ def _from_state_values(
     covolume = _covolume(model, state)
     if covolume is None:
         return _unavailable_identification()
-
-    # Cubic volume translations are property corrections, not part of the
-    # repulsive EoS volume used in Pedersen's V/b criterion. Z*RT/P therefore
-    # gives the appropriate unshifted volume for translated cubic models.
     equation_of_state_volume = compressibility_factor * R * state.temperature / state.pressure
     ratio = equation_of_state_volume / covolume
-    if ratio.ndim != 0 or not bool(torch.isfinite(ratio)) or float(ratio.detach()) <= 0.0:
+    if ratio.ndim != 0 or not bool(torch.isfinite(ratio).detach()) or bool((ratio <= 0.0).detach()):
         raise ValueError("volume-to-covolume ratio must be a finite positive scalar")
     threshold_tensor = ratio.new_tensor(threshold)
-    log_margin = torch.log(ratio / threshold_tensor)
-    ambiguity_limit = torch.log1p(ratio.new_tensor(ambiguity_relative_tolerance))
-    kind: PhaseIdentityKind = "liquid" if float(ratio.detach()) < threshold else "vapor"
-    return PhaseIdentification(
-        kind=kind,
-        method="pedersen-volume-to-covolume",
-        criterion_value=ratio,
+    return _scalar_identification(
+        criterion=ratio,
         threshold=threshold_tensor,
-        ambiguous=bool((log_margin.abs() <= ambiguity_limit).detach()),
+        method="pedersen-volume-to-covolume",
+        vapor_if_positive=True,
+        ambiguity_margin=torch.log(ratio / threshold_tensor),
+        ambiguity_limit=torch.log1p(ratio.new_tensor(ambiguity_relative_tolerance)),
     )
 
 
@@ -159,65 +767,192 @@ def identify_phase(
     state: ChemicalState,
     phase: PhaseKind = "stable",
     *,
+    method: PhaseIdentificationCriterion = DEFAULT_PHASE_IDENTIFICATION_METHOD,
     threshold: float = DEFAULT_VOLUME_TO_COVOLUME_THRESHOLD,
+    pseudo_critical_temperature_factor: float = DEFAULT_PSEUDO_CRITICAL_TEMPERATURE_FACTOR,
     ambiguity_relative_tolerance: float = DEFAULT_AMBIGUITY_RELATIVE_TOLERANCE,
+    pip_denominator_relative_tolerance: float | None = None,
 ) -> PhaseIdentification:
-    """Identify a scalar homogeneous state using the Pedersen ``V/b`` rule.
+    """Identify one homogeneous state with a selected literature criterion.
 
     Parameters
     ----------
     model
-        Model implementing root selection and optionally cubic mixture
-        covolume parameters.
+        Homogeneous-state model exposing the properties required by
+        ``method``. The derivative methods require differentiable
+        ``pressure(T, V, x)`` and ``molar_volume(T, P, x, phase)`` methods.
     state
-        One scalar TP state.
+        One scalar temperature in K, scalar pressure in Pa, and one normalized
+        composition vector.
     phase
-        Root-selection request.
+        Homogeneous EoS root-selection request. It is separate from the
+        returned physical identity and does not perform a flash.
+    method
+        Literature criterion used for the label. The default remains
+        Pedersen's ``V/b`` rule for backward compatibility. The
+        Venkatarathnam-Oellrich method compares its dimensionless
+        phase-identification parameter with one.
     threshold
-        Dimensionless ``V/b`` separator.
+        Positive dimensionless ``V/b`` threshold used only by Pedersen's
+        method.
+    pseudo_critical_temperature_factor
+        Positive multiplier in Li's volume-weighted pseudo-critical
+        temperature, used only by that method.
     ambiguity_relative_tolerance
-        Relative band around the separator marked ambiguous.
+        Non-negative relative ambiguity band around the selected separator.
+        The returned liquid/vapor label still follows the exact inequality;
+        this value changes only the ``ambiguous`` flag.
+    pip_denominator_relative_tolerance
+        Optional scaled singularity guard forwarded to
+        :func:`phase_identification_parameter`. It is ignored by the other
+        methods. ``None`` selects the square root of machine epsilon.
 
     Returns
     -------
     PhaseIdentification
-        Physical-identity diagnostic or ``unknown`` when a covolume is
-        unavailable.
+        Physical identity, method, native criterion tensor, decision
+        threshold, and ambiguity flag. A method whose required model
+        properties are unavailable returns ``kind="unknown"``. A singular or
+        mechanically unstable PIP state also returns an ambiguous unknown
+        result rather than an infinite criterion.
 
     Raises
     ------
     ValueError
-        If options or state shapes are invalid.
+        If the state is batched, a numerical option is invalid, the method
+        name is unknown, or an evaluated non-PIP criterion is invalid.
     TypeError
-        If the model does not implement root selection.
+        If a mandatory model operation for the selected available criterion
+        is missing.
 
     Notes
     -----
-    The default threshold of 1.75 is documented by Pedersen et al. for SRK and
-    PR. Models that expose compatible cubic-family ``mixture_parameters`` can
-    use the same machinery, but a non-SRK/PR threshold requires independent
-    validation. If the model does not expose a covolume, ``unknown`` is
-    returned rather than inferring physical identity from the selected root.
+    Every returned criterion tensor remains connected to the PyTorch graph;
+    only the string label and ambiguity flag require a detached scalar
+    decision. Phase identification is post-processing: it neither establishes
+    stability nor changes phase compositions, fractions, or phase count.
     """
     _validate_options(threshold, ambiguity_relative_tolerance)
+    _validate_positive_factor(pseudo_critical_temperature_factor)
+    _validate_pip_denominator_tolerance(pip_denominator_relative_tolerance)
     if state.temperature.ndim != 0 or state.pressure.ndim != 0 or state.composition.ndim != 1:
         raise ValueError("phase identification currently accepts one scalar T-P state")
-    select_z: Any = getattr(model, "select_z", None)
-    if not callable(select_z):
-        raise TypeError("phase-identification model must implement select_z")
-    compressibility_factor = select_z(
-        state.temperature,
-        state.pressure,
-        state.composition,
-        phase,
-    )
-    return _from_state_values(
-        model,
-        state,
-        compressibility_factor,
-        threshold=threshold,
-        ambiguity_relative_tolerance=ambiguity_relative_tolerance,
-    )
+
+    if method == "pedersen-volume-to-covolume":
+        select_z: Any = getattr(model, "select_z", None)
+        if not callable(select_z):
+            raise TypeError("phase-identification model must implement select_z")
+        compressibility_factor = cast(
+            Tensor,
+            select_z(
+                state.temperature,
+                state.pressure,
+                state.composition,
+                phase,
+            ),
+        )
+        return _from_state_values(
+            model,
+            state,
+            compressibility_factor,
+            threshold=threshold,
+            ambiguity_relative_tolerance=ambiguity_relative_tolerance,
+        )
+
+    if method == "li-pseudo-critical-temperature":
+        if (
+            _model_tensor(model, "critical_temperature") is None
+            or _model_tensor(model, "critical_volume") is None
+        ):
+            return _unavailable_identification()
+        pseudo_critical = li_pseudo_critical_temperature(
+            model,
+            state.composition,
+            factor=pseudo_critical_temperature_factor,
+        )
+        ratio = state.temperature / pseudo_critical
+        one = ratio.new_tensor(1.0)
+        return _scalar_identification(
+            criterion=ratio,
+            threshold=one,
+            method=method,
+            vapor_if_positive=True,
+            ambiguity_margin=torch.log(ratio),
+            ambiguity_limit=torch.log1p(ratio.new_tensor(ambiguity_relative_tolerance)),
+        )
+
+    if method == "perschke-negative-flash":
+        required = ("critical_temperature", "critical_pressure", "acentric_factor")
+        if not all(_model_tensor(model, name) is not None for name in required):
+            return _unavailable_identification()
+        residual = negative_flash_residual(model, state)
+        scale = _negative_flash_scale(model, state)
+        zero = residual.new_zeros(())
+        return _scalar_identification(
+            criterion=residual,
+            threshold=zero,
+            method=method,
+            vapor_if_positive=True,
+            ambiguity_margin=residual,
+            ambiguity_limit=scale * ambiguity_relative_tolerance,
+        )
+
+    if method == "venkatarathnam-oellrich-phase-identification-parameter":
+        if not callable(getattr(model, "pressure", None)) or not callable(
+            getattr(model, "molar_volume", None)
+        ):
+            return _unavailable_identification()
+        one = state.temperature.new_tensor(1.0)
+        try:
+            parameter = phase_identification_parameter(
+                model,
+                state,
+                phase,
+                denominator_relative_tolerance=pip_denominator_relative_tolerance,
+            )
+        except _PhaseIdentificationParameterSingularityError:
+            return PhaseIdentification(
+                kind="unknown",
+                method=method,
+                criterion_value=None,
+                threshold=one,
+                ambiguous=True,
+            )
+        return _scalar_identification(
+            criterion=parameter,
+            threshold=one,
+            method=method,
+            vapor_if_positive=False,
+            ambiguity_margin=parameter - one,
+            ambiguity_limit=one * ambiguity_relative_tolerance,
+        )
+
+    if method in (
+        "pasad-isothermal-compressibility-derivative",
+        "bennett-thermal-expansion-derivative",
+    ):
+        if not callable(getattr(model, "pressure", None)) or not callable(
+            getattr(model, "molar_volume", None)
+        ):
+            return _unavailable_identification()
+        response = _phase_response_details(model, state, phase)
+        if method == "pasad-isothermal-compressibility-derivative":
+            criterion = response.values.isothermal_compressibility_temperature_derivative
+            scale = response.compressibility_derivative_scale
+        else:
+            criterion = response.values.thermal_expansion_temperature_derivative
+            scale = response.expansion_derivative_scale
+        zero = criterion.new_zeros(())
+        return _scalar_identification(
+            criterion=criterion,
+            threshold=zero,
+            method=method,
+            vapor_if_positive=False,
+            ambiguity_margin=criterion,
+            ambiguity_limit=scale * ambiguity_relative_tolerance,
+        )
+
+    raise ValueError(f"unknown phase-identification method {method!r}")
 
 
 def identify_phase_from_properties(
@@ -228,27 +963,7 @@ def identify_phase_from_properties(
     threshold: float = DEFAULT_VOLUME_TO_COVOLUME_THRESHOLD,
     ambiguity_relative_tolerance: float = DEFAULT_AMBIGUITY_RELATIVE_TOLERANCE,
 ) -> PhaseIdentification:
-    """Identify a phase while reusing already evaluated state properties.
-
-    Parameters
-    ----------
-    model
-        Model that may expose cubic mixture covolume parameters.
-    state
-        Homogeneous scalar TP state associated with ``properties``.
-    properties
-        Previously evaluated properties supplying the compressibility factor.
-    threshold
-        Dimensionless ``V/b`` separator.
-    ambiguity_relative_tolerance
-        Relative band around ``threshold`` classified as ambiguous.
-
-    Returns
-    -------
-    PhaseIdentification
-        Pedersen ``V/b`` classification, or an unavailable/unknown result for
-        batched states or models without a compatible covolume.
-    """
+    """Apply the default ``V/b`` rule while reusing evaluated properties."""
     _validate_options(threshold, ambiguity_relative_tolerance)
     if state.temperature.ndim != 0 or state.pressure.ndim != 0 or state.composition.ndim != 1:
         return _unavailable_identification()
@@ -266,44 +981,54 @@ def identify_flash_phases(
     *,
     ambiguity_relative_tolerance: float = DEFAULT_AMBIGUITY_RELATIVE_TOLERANCE,
 ) -> tuple[PhaseProperties, ...]:
-    """Fill unavailable multiphase identities by molar-volume ordering.
+    """Fill wholly unavailable multiphase identities by molar-volume ordering.
 
     Parameters
     ----------
     phases
-        Homogeneous phase properties from one flash result.
+        Equilibrium homogeneous-phase properties for one flash result. Every
+        molar volume must be a finite positive scalar when density ordering is
+        required. Existing identifications produced by a named method are
+        treated as authoritative and are not mixed with this fallback.
     ambiguity_relative_tolerance
-        Minimum relative molar-volume separation needed to label the
-        least-dense phase as vapor.
+        Non-negative relative separation required between the largest and
+        second-largest molar volumes. If their ratio is no greater than
+        ``1 + ambiguity_relative_tolerance``, all fallback identities are
+        reported as unknown.
 
     Returns
     -------
-    tuple
-        Phase records with physical-identification diagnostics filled where
-        possible.
+    tuple[PhaseProperties, ...]
+        The original tuple when it is empty, contains one phase, or at least
+        one phase already has an available named-method identification.
+        Otherwise, copies of the supplied properties carry
+        ``method="density-ordering"`` identifications. The unique
+        largest-volume phase is vapor and the remaining phases are liquid when
+        the volume separation is unambiguous.
 
     Raises
     ------
     ValueError
-        If phase volumes are invalid or the ambiguity tolerance is negative.
+        If the ambiguity tolerance is negative or nonfinite, or if fallback
+        ordering is required but any molar volume is batched, nonfinite, or
+        nonpositive.
 
     Notes
     -----
-    Existing ``V/b`` identifications are preserved. If no phase has a cubic
-    covolume diagnostic, the least-dense phase (largest molar volume) is
-    labeled vapor and the remaining phases liquid. Near-equal leading volumes
-    are returned as ambiguous ``unknown`` because density ordering cannot
-    distinguish liquid-liquid equilibrium from a vapor-liquid split.
+    This is a conservative last-resort labeling heuristic for phases already
+    returned by a converged flash. It does not alter compositions or phase
+    fractions, solve equilibrium, distinguish multiple liquid types, or prove
+    that the largest-volume phase is thermodynamically vapor.
     """
     _validate_options(DEFAULT_VOLUME_TO_COVOLUME_THRESHOLD, ambiguity_relative_tolerance)
     if not phases:
         return phases
-    has_covolume_identification = tuple(
+    has_named_identification = tuple(
         phase.phase_identification is not None
         and phase.phase_identification.method != "unavailable"
         for phase in phases
     )
-    if any(has_covolume_identification):
+    if any(has_named_identification):
         return phases
     if len(phases) == 1:
         return phases

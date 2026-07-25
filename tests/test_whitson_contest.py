@@ -10,6 +10,7 @@ import pytest
 from torch_flash.material_balance.rachford_rice import rachford_rice_numpy
 
 
+@pytest.mark.serial
 @pytest.mark.slow
 def test_all_10008_whitson_contest_cases():
     configured = os.environ.get("TORCH_FLASH_WHITSON_DATA")

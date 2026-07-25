@@ -65,7 +65,7 @@ jobs:
           echo "TORCH_FLASH_WHITSON_DATA=${contest}" >> "$GITHUB_ENV"
 
       - name: Run tests with coverage
-        run: pixi run -e "${{ matrix.environment }}" test-cov
+        run: pixi run -e "${{ matrix.environment }}" test-parallel --coverage
 
       - name: Upload coverage artifact
         if: runner.os == 'Linux'
