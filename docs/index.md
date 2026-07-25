@@ -8,7 +8,7 @@
       coupled simulation.
     </p>
     <p class="tp-hero__actions">
-      <a href="runtime/" class="md-button md-button--primary">Configure a calculation</a>
+      <a href="getting-started/" class="md-button md-button--primary">Start a calculation</a>
       <a href="validation/" class="md-button">Explore validation</a>
     </p>
   </div>
@@ -145,6 +145,12 @@ thermal = thermal_properties(
 Version 0.1 is an alpha research release. Read [model scope](model-scope.md)
 before selecting a model and [validation](validation.md) before relying on it
 outside the tested range.
+The [Getting Started guide](getting-started.md) gives complete runnable
+examples for homogeneous properties, automatic derivatives, two-phase flash,
+and fixed-phase-count multiphase flash.
+The [Theoretical Background](theory/index.md) connects chemical equilibrium,
+flash algorithms, fugacity and activity models, property derivatives, and
+heavy-end characterization to the corresponding `torch-flash` APIs.
 The [parameter database guide](parameters.md) documents the versioned YAML
 schemas, canonical component names, SI-unit validation, and custom-parameter
 APIs.
@@ -153,8 +159,9 @@ device/dtype policy, CPU threading, GPU selection, and deterministic execution.
 The [scientific reference and data-provenance index](references.md) identifies
 primary equation, parameter, experimental-data, and software-baseline sources
 separately.
-The [performance guide](performance.md) documents native batching,
-`torch.compile`, CPU-thread selection, GPU precision limits, and benchmark
+The [high-performance setup and benchmark guide](performance.md) documents
+hardware-aware installation, native batching, `torch.compile`, CPU-thread
+selection, device-resident GPU execution, precision limits, and benchmark
 conditions for ThermoPack, teqp, and NeqSim comparisons.
 
 Detailed equation checks, worked-example reproductions, experimental

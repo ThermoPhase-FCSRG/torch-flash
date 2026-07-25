@@ -91,11 +91,21 @@ copyright: torch-flash contributors · ThermoPhase research group · LNCC · UDE
 
 nav:
   - Home: index.md
+  - Getting Started: getting-started.md
+  - Theoretical Background:
+      - Overview: theory/index.md
+      - Chemical Equilibrium Overview: theory/chemical-equilibrium.md
+      - Two-Phase Flash: theory/two-phase-flash.md
+      - Multiphase Flash: theory/multiphase-flash.md
+      - Phase Properties and Their Derivatives: theory/phase-properties-derivatives.md
+      - Activity Models: theory/activity-models.md
+      - Fugacity Models: theory/fugacity-models.md
+      - Characterization and Pseudo-Components: theory/characterization-pseudocomponents.md
   - Guides:
       - Runtime configuration: runtime.md
       - Parameter databases: parameters.md
       - Model scope: model-scope.md
-      - Performance: performance.md
+      - High-performance setup: performance.md
   - Verification & Validation:
       - Overview: validation.md
       - Validation reports:
