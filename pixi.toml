@@ -29,6 +29,7 @@ torch-flash = { path = ".", editable = true }
 pytest = ">=8"
 pytest-cov = ">=5"
 pytest-regressions = ">=2.8"
+pytest-xdist = "*"
 
 [feature.dev.dependencies]
 python-build = ">=1.2"
@@ -101,6 +102,7 @@ format = "ruff format ."
 format-check = "ruff format --check ."
 typecheck = "mypy"
 test = "pytest -q"
+test-parallel = "pytest -q -n auto"
 test-cov = "pytest -q --cov=torch_flash --cov-branch --cov-report=term-missing --cov-report=xml:coverage.xml --cov-fail-under=99"
 test-whitson = "pytest -q -m slow tests/test_whitson_contest.py"
 notebooks-sync = "python scripts/sync_notebooks.py"
