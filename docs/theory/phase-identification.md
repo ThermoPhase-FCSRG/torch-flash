@@ -22,6 +22,193 @@ pressure-derivative parameter of
 The implementation uses SI units and keeps the numerical criterion connected
 to the PyTorch computation graph.
 
+## Equilibrium-first grid algorithm
+
+The grid procedure used before phase identification is a numerical
+continuation strategy, not a new thermodynamic equilibrium condition or a new
+phase-identification criterion. Reusing a previously converged equilibrium as
+an initial estimate is established practice in phase-envelope construction
+and compositional simulation.
+[Michelsen (1980)](https://doi.org/10.1016/0378-3812(80)80001-X) used
+preceding envelope points to initialize continued solutions, then
+[Michelsen (1982, Part II)](https://doi.org/10.1016/0378-3812(82)85002-4)
+formulated isothermal multiphase flashes as alternating stability and
+phase-split calculations with Gibbs-decreasing second-order refinement.
+[Li and Firoozabadi](https://doi.org/10.2118/129844-PA) likewise describe
+stability solutions or the previous simulation timestep as phase-split
+initial estimates. Current open-source flash interfaces also accept a prior
+flash result in place of separate phase-composition and volume guesses, for
+example the
+[Clapeyron.jl flash API](https://clapeyronthermo.github.io/Clapeyron.jl/stable/properties/multi/).
+
+What is specific to `torch-flash` is the batched PyTorch realization, the
+selection of candidates from a two-dimensional grid, and the precise
+acceptance gates below. These are implementation choices within the
+established continuation and Gibbs-minimization framework; no novelty claim is
+made for the algorithm.
+
+### Independent flash at every state
+
+Let grid cell \(k\) contain
+\((T_k,P_k,\mathbf{z}_k)\). The calculation first flashes every cell
+independently:
+
+1. tangent-plane stability screens the feed;
+2. unstable feeds enter a batched two-phase flash;
+3. both returned phases are tested for further instability; and
+4. failed or child-unstable states enter an up-to-three-phase Gibbs search.
+
+The Gibbs search uses unconstrained component-allocation coordinates
+\(q_{pi}\):
+
+\[
+n_{pi}
+=z_i\frac{\exp(q_{pi})}{\sum_s\exp(q_{si})},
+\qquad
+\beta_p=\sum_i n_{pi},
+\qquad
+x_{pi}=\frac{n_{pi}}{\beta_p}.
+\]
+
+Consequently,
+
+\[
+\sum_p n_{pi}=z_i,
+\qquad
+\sum_p\beta_p\mathbf{x}_p=\mathbf{z},
+\]
+
+so nonnegative component material balance is satisfied by construction.
+Autodiff supplies the Gibbs gradients. Distinct positive phases are polished
+with an equal-fugacity Newton solve before they can be installed.
+
+### Gibbs-gated boundary continuation
+
+An independently converged grid can still contain adjacent cells that found
+different stationary Gibbs basins. A small fugacity residual proves that the
+installed split is stationary; it does not prove that no lower basin exists.
+For a two-dimensional grid, `torch-flash` therefore audits:
+
+- lower-phase-count cells enclosed by higher-phase-count cells; and
+- two-phase cells sharing an edge with an accepted three-phase cell.
+
+For target cell \(t\), let \(s\) be the nearest accepted three-phase grid
+cell. Its component-allocation shares are
+
+\[
+a_{pi}^{(s)}
+=
+\frac{\beta_p^{(s)}x_{pi}^{(s)}}
+{\sum_q\beta_q^{(s)}x_{qi}^{(s)}},
+\qquad
+q_{pi}^{(0)}=\ln a_{pi}^{(s)}.
+\]
+
+The target feed is then repartitioned as
+
+\[
+n_{pi}^{(0)}
+=
+z_i^{(t)}
+\frac{\exp(q_{pi}^{(0)})}
+{\sum_q\exp(q_{qi}^{(0)})}.
+\]
+
+This transfers only the source phase-allocation pattern and satisfies the
+target material balance exactly. The source compositions are not copied into
+the result. In particular, multicomponent three-phase compositions are not
+assumed constant along a pressure or composition row.
+
+For three retained phases, the Newton variables are
+
+\[
+\mathbf{y}
+=
+\left(
+\ln\mathbf{K}_2,\,
+\ln\mathbf{K}_3,\,
+\ln\frac{\beta_2}{\beta_1},\,
+\ln\frac{\beta_3}{\beta_1}
+\right),
+\qquad
+K_{pi}=\frac{x_{pi}}{x_{1i}}.
+\]
+
+The residual contains equal reduced chemical potentials,
+
+\[
+r_{pi}^{(\mu)}
+=
+\ln x_{pi}+\ln\phi_i(T,P,\mathbf{x}_p)
+-
+\ln x_{1i}-\ln\phi_i(T,P,\mathbf{x}_1)
+=0,
+\quad p\in\{2,3\},
+\]
+
+together with the two non-reference phase-normalization equations. PyTorch
+autodiff constructs the block-diagonal Newton Jacobian for the complete
+candidate batch.
+
+A target replaces its installed state only if all of the following hold:
+
+\[
+\begin{aligned}
+r_f
+&=
+\max_{p>1,i}\left|r_{pi}^{(\mu)}\right|
+\leq\epsilon_f,\\
+r_z
+&=
+\max_i\left|
+\sum_p\beta_px_{pi}-z_i
+\right|
+\leq\epsilon_z,\\
+\min_p\beta_p
+&>\epsilon_\beta,\\
+\min_{p<q}\lVert\mathbf{x}_p-\mathbf{x}_q\rVert_\infty
+&>\epsilon_x,\\
+g_{\mathrm{candidate}}
+&<
+g_{\mathrm{installed}}-\epsilon_g.
+\end{aligned}
+\]
+
+Here \(g=G/(RT)\). The continuation front advances until no new lower-Gibbs
+neighbor is accepted. A previously rejected cell is retried only when its
+nearest accepted three-phase seed changes. Unresolved candidates retain the
+independent multistart fallback; topology never overrides the thermodynamic
+gates.
+
+For the float64 reference configuration,
+`GridFlashOptions` defaults to
+\(\epsilon_f=10^{-8}\),
+\(\epsilon_z=5\times10^{-11}\),
+\(\epsilon_\beta=10^{-4}\),
+\(\epsilon_x=2\times10^{-3}\), and
+\(\epsilon_g=2\times10^{-7}\).
+These values are numerical configuration, not phase-identification
+thresholds.
+
+### Identification and region assembly
+
+Only after the equilibrium audit reaches this fixed point does
+`identify_grid_phases` evaluate a selected criterion on each retained
+equilibrium composition. The per-phase liquid/vapor labels and equilibrium
+phase count form the region code:
+
+| Equilibrium phases | Identified phases | Region |
+|---:|---|---|
+| 1 | vapor | `V` |
+| 1 | liquid | `L` |
+| 2 | one vapor, one liquid | `LV` |
+| 2 | two liquids | `LL` |
+| 3 | any identified three-phase combination | `three-phase` |
+| any | non-converged or unidentified | `unavailable` |
+
+The plotted map is this discrete region tensor. No image filter, contour
+interpolation, or post-hoc label smoothing is applied.
+
 ## State and derivative convention
 
 Let
@@ -481,30 +668,44 @@ workflow.
 
 ## Comparison on the North Ward Estes injection case
 
-The following project-generated verification result was selected because a
-\(100\times100\) grid resolves the narrow three-phase band while remaining
-inexpensive enough to reproduce. It uses PR78 at \(301.48\ \mathrm{K}\), a
+The following project-generated verification result uses the paper's
+\(500\times500\) grid resolution to resolve the narrow three-phase band. It
+uses PR78 at \(301.48\ \mathrm{K}\), a
 95 mol% CO2 + 5 mol% methane injection gas, and the seven-component North Ward
 Estes oil data reported by
 [Li and Firoozabadi](https://doi.org/10.2118/129844-PA). The plotted axes are
 injected-gas mole fraction and pressure from 50 to 200 bar.
 
-![Six phase-identification methods applied after a flash at every point of the North Ward Estes 100 by 100 grid](../assets/validation/29_phase_identification_north_ward_estes.png)
+![Six phase-identification methods applied after a flash at every point of the North Ward Estes 500 by 500 grid](../assets/validation/29_phase_identification_north_ward_estes.png)
 
-Every one of the 10,000 cells was flashed before applying each diagnostic to
+The LLV boundary is obtained from the equilibrium calculation, not from image
+processing. Independent multistart flashes can occasionally converge to a
+two-phase stationary point while a nearby three-phase Gibbs basin is lower;
+small fugacity and material-balance residuals establish stationarity and
+closure, but do not by themselves prove that the lowest basin was found. The
+grid solver therefore uses each accepted three-phase state as a local
+continuation seed for adjacent two-phase cells and repeats the target-state
+equal-fugacity solve. The candidate is installed only if it lowers the
+existing Gibbs energy and passes the original residual tolerances.
+
+Every one of the 250,000 cells was flashed before applying each diagnostic to
 the returned equilibrium phase compositions. All cells converged; the maximum
-log-fugacity residual was \(9.9995\times10^{-9}\), the maximum
-material-balance residual was \(6.7057\times10^{-14}\), and 141 cells were
-three-phase. The published inputs omit component critical volumes, so
-PR-consistent values were derived only for Li's labeling rule; they do not
-enter the equilibrium flash.
+log-fugacity residual was \(9.9998\times10^{-9}\), the maximum
+material-balance residual was \(3.4839\times10^{-13}\), and 4,066 cells were
+three-phase. The grid flash independently audited 1,217 distinct enclosed or
+three-phase-boundary cells and accepted 850 lower-Gibbs replacements.
+Neighboring equilibria were used only as initial guesses for target-state
+autodiff-Newton solves; no plotted label was smoothed or copied. No
+horizontally or vertically bracketed two-phase cell remained. The published
+inputs omit component critical volumes, so PR-consistent values were derived
+only for Li's labeling rule; they do not enter the equilibrium flash.
 
 The result is particularly informative because the methods agree on the broad
 equilibrium topology but not on every physical label. Across valid cells, the
-mean pairwise region-code agreement was 93.02%, the least-agreeing pair was
-80.01%, and at least one method differed in 20.09% of cells. Pedersen's rule
+mean pairwise region-code agreement was 93.26%, the least-agreeing pair was
+80.27%, and at least one method differed in 19.83% of cells. Pedersen's rule
 produces the visibly largest injection-rich LV region. The \(\Pi\) and
-\((\partial\kappa_T/\partial T)_P\) maps agree in all 10,000 cells, which
+\((\partial\kappa_T/\partial T)_P\) maps agree in all 250,000 cells, which
 independently checks their algebraic equivalence for these mechanically stable
 states.
 
@@ -516,12 +717,12 @@ than other hardware.
 
 | Method | Identification wall time |
 |---|---:|
-| Li pseudo-critical temperature | 1.543 ms |
-| Pedersen \(V/b\) | 10.667 ms |
-| Perschke negative flash | 2.236 ms |
-| Venkatarathnam–Oellrich \(\Pi\) | 86.051 ms |
-| Bennett \((\partial\alpha_P/\partial T)_P\) | 248.034 ms |
-| Pasad/Venkatarathnam \((\partial\kappa_T/\partial T)_P\) | 252.771 ms |
+| Li pseudo-critical temperature | 46.826 ms |
+| Pedersen \(V/b\) | 464.864 ms |
+| Perschke negative flash | 98.476 ms |
+| Venkatarathnam–Oellrich \(\Pi\) | 3.735 s |
+| Bennett \((\partial\alpha_P/\partial T)_P\) | 9.250 s |
+| Pasad/Venkatarathnam \((\partial\kappa_T/\partial T)_P\) | 8.687 s |
 
 This is verification of the implemented diagnostics and equilibrium workflow,
 not validation against experimental phase labels or a pixel-wise
@@ -529,6 +730,9 @@ reconstruction of the paper's nominal \(500\times500\) raster. The complete
 reproducible calculation, residual audits, timing environment, and all five
 paper cases are in
 [`29_bennett_phase_identification_methods`](https://github.com/ThermoPhase-FCSRG/torch-flash/blob/main/notebooks/verification/29_bennett_phase_identification_methods.ipynb).
+The documentation profile sets
+`TORCH_FLASH_PHASE_ID_NWE_GRID_POINTS=500`; the other four saved cases retain
+their default \(100\times100\) grids.
 
 ## References
 
@@ -572,3 +776,15 @@ paper cases are in
     Phase-Split Calculation in Two and Three Phases,” *SPE Journal* 17(4),
     1096–1107 (2012).
     [doi:10.2118/129844-PA](https://doi.org/10.2118/129844-PA).
+12. M. L. Michelsen, “Calculation of Phase Envelopes and Critical Points for
+    Multicomponent Mixtures,” *Fluid Phase Equilibria* 4, 1–10 (1980).
+    [doi:10.1016/0378-3812(80)80001-X](https://doi.org/10.1016/0378-3812(80)80001-X).
+13. M. L. Michelsen, “The Isothermal Flash Problem. Part I. Stability,”
+    *Fluid Phase Equilibria* 9, 1–19 (1982).
+    [doi:10.1016/0378-3812(82)85001-2](https://doi.org/10.1016/0378-3812(82)85001-2).
+14. M. L. Michelsen, “The Isothermal Flash Problem. Part II. Phase-Split
+    Calculation,” *Fluid Phase Equilibria* 9, 21–40 (1982).
+    [doi:10.1016/0378-3812(82)85002-4](https://doi.org/10.1016/0378-3812(82)85002-4).
+15. Clapeyron.jl contributors, “Multiphase Properties: Flash Methods,”
+    Clapeyron.jl documentation.
+    [Flash API](https://clapeyronthermo.github.io/Clapeyron.jl/stable/properties/multi/).

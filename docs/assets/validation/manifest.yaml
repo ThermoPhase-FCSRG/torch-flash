@@ -52,7 +52,7 @@ figures:
     - https://doi.org/10.1007/s10765-023-03263-6
     description: Native EOS-CG-2021 parity against an independently generated teqp
       reference.
-    executed_artifact_sha256: c8978960cc127c7efab1bf53fd867553d9c5d7e3326afa82a39e17f9fc95dfb7
+    executed_artifact_sha256: db6deb657a330aa541566fbf40f13ca1764dbf31b783ddfc595c39bffd64116b
     publication_form: rendered-plot
     machine_readable_observation_values: false
     data_tables_distributed: false
@@ -68,7 +68,7 @@ figures:
     source_material:
     - https://doi.org/10.1007/s10765-021-02933-7
     description: Pure-MDEA liquid-density predictions against CC BY 4.0 measurements.
-    executed_artifact_sha256: c8978960cc127c7efab1bf53fd867553d9c5d7e3326afa82a39e17f9fc95dfb7
+    executed_artifact_sha256: db6deb657a330aa541566fbf40f13ca1764dbf31b783ddfc595c39bffd64116b
     publication_form: rendered-plot
     machine_readable_observation_values: false
     data_tables_distributed: false
@@ -84,7 +84,7 @@ figures:
     source_material:
     - https://doi.org/10.1007/s10765-021-02933-7
     description: Pure-MDEA speed-of-sound predictions against CC BY 4.0 measurements.
-    executed_artifact_sha256: c8978960cc127c7efab1bf53fd867553d9c5d7e3326afa82a39e17f9fc95dfb7
+    executed_artifact_sha256: db6deb657a330aa541566fbf40f13ca1764dbf31b783ddfc595c39bffd64116b
     publication_form: rendered-plot
     machine_readable_observation_values: false
     data_tables_distributed: false
@@ -441,9 +441,9 @@ figures:
     - https://doi.org/10.1021/acs.energyfuels.6b02316
     - https://doi.org/10.1016/j.fluid.2010.12.001
     - https://doi.org/10.2118/129844-PA
-    description: Six physical phase-identification diagnostics applied after
-      equilibrium flashes on the North Ward Estes 100 by 100 injection grid.
-    executed_artifact_sha256: b46956699f6ab6c6901d2a10348b5cdf6ff59e2acd1b7acf23be54c77a59d3f1
+    description: Six physical phase-identification diagnostics applied after equilibrium
+      flashes on the North Ward Estes 500 by 500 injection grid.
+    executed_artifact_sha256: a23fe74cb2e574c89abe9fc15d700ca20463a26a2d176163df6a096100f5b565
     publication_form: rendered-plot
     machine_readable_observation_values: false
     data_tables_distributed: false

@@ -138,10 +138,25 @@ from `torch.func.jacrev`. Vanishing phases are removed using
 `phase_fraction_tolerance`; composition duplicates are merged only after
 refinement.
 
-For a two-dimensional batch, lower-phase-count cells bracketed by
-higher-phase-count cells are independently reflashed. This is an audit trigger,
-not a topology constraint. A replacement must still reduce Gibbs energy and
-pass the same fugacity and material-balance gates.
+For a two-dimensional batch, two complementary audits follow the independent
+flashes:
+
+1. lower-phase-count cells enclosed by higher-phase-count cells are
+   independently reflashed; and
+2. a resolved three-phase state seeds batched autodiff-Newton refinements in
+   adjacent two-phase cells, advancing the boundary until no neighboring
+   lower-Gibbs three-phase result is accepted.
+
+The second step addresses inconsistent basin discovery between otherwise
+independent grid cells. A neighboring solution is only an initial guess:
+temperature, pressure, feed material balance, and equal fugacity are solved
+again at the target cell. Multicomponent three-phase compositions are not
+assumed constant along a grid row.
+
+Both steps are audit triggers, not topology constraints. A replacement must
+reduce the installed Gibbs energy by `gibbs_reduction_tolerance` and pass the
+same fugacity and material-balance gates. A categorical plot is never smoothed
+or relabeled after the flash.
 
 `flash_grid_oracle` bypasses stability and known-two-phase screening and
 strictly refines multiple Gibbs starts for every multicomponent state. Use it

@@ -118,6 +118,11 @@ plt.style.use("seaborn-v0_8-whitegrid")
 GRID_POINTS = int(os.environ.get("TORCH_FLASH_PHASE_ID_GRID_POINTS", "100"))
 if GRID_POINTS < 3:
     raise ValueError("TORCH_FLASH_PHASE_ID_GRID_POINTS must be at least 3")
+NWE_GRID_POINTS = int(
+    os.environ.get("TORCH_FLASH_PHASE_ID_NWE_GRID_POINTS", str(GRID_POINTS))
+)
+if NWE_GRID_POINTS < 3:
+    raise ValueError("TORCH_FLASH_PHASE_ID_NWE_GRID_POINTS must be at least 3")
 GRID_CHUNK_SIZE = int(os.environ.get("TORCH_FLASH_PHASE_ID_GRID_CHUNK_SIZE", "2048"))
 if GRID_CHUNK_SIZE < 1:
     raise ValueError("TORCH_FLASH_PHASE_ID_GRID_CHUNK_SIZE must be positive")
@@ -169,6 +174,7 @@ reproducibility = pd.Series(
         "dtype": str(runtime.dtype),
         "device": str(runtime.device),
         "grid points per axis": GRID_POINTS,
+        "North Ward Estes grid points per axis": NWE_GRID_POINTS,
         "grid flash chunk size": GRID_CHUNK_SIZE,
         "PIP autodiff chunk size": PIP_AUTODIFF_CHUNK_SIZE,
         "response autodiff chunk size": RESPONSE_AUTODIFF_CHUNK_SIZE,
@@ -197,7 +203,9 @@ reproducibility = pd.Series(
 display(reproducibility.to_frame())
 print(
     "Set TORCH_FLASH_PHASE_ID_GRID_POINTS=9 for the fast smoke profile or 500 "
-    "for the paper's nominal illustrative-grid resolution. The default is 100 x 100."
+    "for the paper's nominal resolution in all cases. To regenerate only the "
+    "documentation figure at 500 x 500, set "
+    "TORCH_FLASH_PHASE_ID_NWE_GRID_POINTS=500. Both defaults are 100 x 100."
 )
 
 # %% [markdown]
@@ -330,13 +338,23 @@ def join_component_sets(
     )
 
 
-def pressure_grid(low: float, high: float) -> torch.Tensor:
+def pressure_grid(
+    low: float,
+    high: float,
+    *,
+    points: int = GRID_POINTS,
+) -> torch.Tensor:
     """Return a paper-axis pressure grid in bar."""
-    return torch.linspace(low, high, GRID_POINTS, **TENSOR_OPTIONS)
+    return torch.linspace(low, high, points, **TENSOR_OPTIONS)
 
 
-def linear_grid(low: float, high: float) -> torch.Tensor:
-    return torch.linspace(low, high, GRID_POINTS, **TENSOR_OPTIONS)
+def linear_grid(
+    low: float,
+    high: float,
+    *,
+    points: int = GRID_POINTS,
+) -> torch.Tensor:
+    return torch.linspace(low, high, points, **TENSOR_OPTIONS)
 
 
 def landmark_pressure_grid(
@@ -497,8 +515,8 @@ def nwe_state(
 nwe_case = PaperCase(
     "Figure 4 - North Ward Estes impure-CO2 injection",
     nwe_model,
-    linear_grid(0.001, 0.999),
-    pressure_grid(50.0, 200.0),
+    linear_grid(0.001, 0.999, points=NWE_GRID_POINTS),
+    pressure_grid(50.0, 200.0, points=NWE_GRID_POINTS),
     nwe_state,
     "injected-gas mole fraction",
     "Li-Firoozabadi PR inputs; PR-consistent Vc derived because source table omits Vc.",
@@ -774,11 +792,15 @@ assert (
 # difficult subset. Duplicate or vanishing phases are removed only after
 # refinement, and every retained result must pass explicit fugacity,
 # material-balance, and Gibbs-reduction gates before it can be colored.
-# One-phase cells bracketed by multiphase neighbors are independently
-# reflashed until the topology audit reaches a fixed point. A cell is replaced
-# only when the independent solve finds a lower-Gibbs split that passes the
-# same residual gates; visual topology never overrides the thermodynamic
-# objective.
+# Lower-phase-count cells enclosed by higher-phase neighbors are independently
+# reflashed. Resolved three-phase cells also seed batched autodiff-Newton
+# refinements in adjacent two-phase cells until no new lower-Gibbs state is
+# accepted. The neighbor is only a continuation guess: equal fugacity and
+# material balance are solved again at the target state, and multicomponent
+# phase compositions are not assumed constant along a grid row. A cell is
+# replaced only when the candidate lowers Gibbs energy and passes the same
+# residual gates; the categorical map is never smoothed or relabeled after the
+# flash.
 # The complete algorithm and its numerical controls are implemented and tested
 # in `torch_flash.flash.grid`; this notebook only prepares the published cases,
 # calls the public API, audits its residuals, and plots the returned results.
@@ -834,7 +856,10 @@ case_failures: dict[str, pd.DataFrame] = {}
 timing_rows = []
 method_timing_rows = []
 for case in CASES:
-    print(f"Flashing {case.name} ({GRID_POINTS} x {GRID_POINTS})...", flush=True)
+    print(
+        f"Flashing {case.name} ({case.horizontal.numel()} x {case.vertical_bar.numel()})...",
+        flush=True,
+    )
     synchronize_device()
     flash_started = time.perf_counter()
     equilibrium = flash_grid(
@@ -1179,19 +1204,37 @@ if GRID_POINTS >= 9:
     assert PHASE_CODES["LL"] in synthetic_regions["d(kappa)/dT at P"]
     assert PHASE_CODES["LLV"] in reservoir_regions["Li pseudo-critical T"]
     assert PHASE_CODES["LL"] in reservoir_regions["Perschke negative flash"]
-    if GRID_POINTS >= 17:
+    if min(case_equilibria[nwe_case.name].grid_shape) >= 17:
         # Figure 4's three-phase strip is narrower than the 9 x 9 smoke spacing.
         assert PHASE_CODES["LLV"] in nwe_regions["d(alpha)/dT at P"]
         nwe_equilibrium = case_equilibria[nwe_case.name]
         nwe_phase_counts = nwe_equilibrium.phase_counts.reshape(
             nwe_equilibrium.grid_shape
         )
-        vertical_three_phase_holes = (
+        retained_vertical_two_phase_cells = (
             (nwe_phase_counts[1:-1] == 2)
             & (nwe_phase_counts[:-2] == 3)
             & (nwe_phase_counts[2:] == 3)
         )
-        assert not bool(vertical_three_phase_holes.any())
+        retained_vertical_two_phase_count = int(
+            retained_vertical_two_phase_cells.sum().detach()
+        )
+        retained_horizontal_two_phase_cells = (
+            (nwe_phase_counts[:, 1:-1] == 2)
+            & (nwe_phase_counts[:, :-2] == 3)
+            & (nwe_phase_counts[:, 2:] == 3)
+        )
+        retained_horizontal_two_phase_count = int(
+            retained_horizontal_two_phase_cells.sum().detach()
+        )
+        print(
+            "Retained vertically bracketed two-phase cells after independent "
+            f"topology audit: {retained_vertical_two_phase_count}; "
+            "horizontally bracketed cells: "
+            f"{retained_horizontal_two_phase_count}"
+        )
+        assert retained_vertical_two_phase_count == 0
+        assert retained_horizontal_two_phase_count == 0
 
 # %% [markdown]
 # ## Public-API audit on flashed phases
@@ -1330,6 +1373,10 @@ assert (
 #   are reported separately from the flash time. Every row is a complete
 #   standalone method pass; the timings do not rely on cross-method work
 #   sharing.
+# - The North Ward Estes LLV boundary uses Gibbs-gated neighboring
+#   continuation after the independent flashes. This recovers valid
+#   three-phase minima missed by isolated multistarts without smoothing the
+#   plotted labels or relaxing any residual tolerance.
 # - Li and Firoozabadi publish all North Ward Estes PR equilibrium inputs.
 #   Their table omits critical volumes, which are derived consistently from PR
 #   only for the Li phase-identification diagnostic and do not affect the
@@ -1339,15 +1386,16 @@ assert (
 #   therefore labeled as the transparent
 #   `bennett-figure6-reconstruction-v1`, not as the unpublished ECLIPSE
 #   parameterization. Its thin higher-temperature/low-pressure LLV branch is
-#   not reproduced by this reconstruction on the 100 by 100 grid. No
+#   not reproduced by this reconstruction on the selected grid. No
 #   additional temperature-dependent or lump-specific interactions are
 #   inferred from the raster.
 # - These results are **verification of the implemented diagnostics**, not
-#   validation against experimental phase labels. The saved 100 by 100 maps
-#   resolve the topology; they are not pixel-wise validation of the paper's 500 by 500
-#   raster.
+#   validation against experimental phase labels. The saved maps resolve the
+#   topology; they are not pixel-wise validation of the paper's raster.
 #
-# For a denser study, set `TORCH_FLASH_PHASE_ID_GRID_POINTS` before execution.
-# The paper reports rerunning illustrative plots on 500 by 500 grids; that
-# profile is intentionally not the default because the strict flash residual
-# gates make it substantially more expensive.
+# For a denser study of every case, set
+# `TORCH_FLASH_PHASE_ID_GRID_POINTS=500` before execution. To reproduce only
+# the North Ward Estes documentation figure at that resolution, set
+# `TORCH_FLASH_PHASE_ID_NWE_GRID_POINTS=500`. The paper reports 500 by 500
+# illustrative grids; that profile is not the default because the strict flash
+# residual gates make it substantially more expensive.

@@ -49,10 +49,10 @@ class GridFlashOptions:
 
     The defaults target float64 reference calculations. Tolerances are applied
     to dimensionless log-fugacity or composition residuals unless stated
-    otherwise. Changing a start count, merge tolerance, or topology-audit
-    setting can change which Gibbs basin is selected; these fields are
-    therefore part of the scientific configuration rather than hidden
-    performance switches.
+    otherwise. Changing a start count, merge tolerance, or Gibbs acceptance
+    tolerance can change which basin is selected; these fields are therefore
+    part of the scientific configuration rather than hidden performance
+    switches.
 
     Attributes
     ----------
@@ -258,14 +258,15 @@ class GridEquilibrium:
         :func:`flash_grid_oracle`, this is the number of multicomponent states
         examined independently.
     topology_audit_count
-        Number of additional cells selected by the two-dimensional topology
-        audit. This is zero for :func:`flash_grid_oracle`.
+        Number of distinct additional cells selected by the two-dimensional
+        enclosed-cell and three-phase-boundary continuation audits. This is
+        zero for :func:`flash_grid_oracle`.
     initial_fallback_replacements
         Number of first-pass grid candidates replaced by a lower-Gibbs,
         converged difficult-state result.
     topology_audit_replacements
         Number of already-installed grid candidates replaced by a lower-Gibbs,
-        converged result during the subsequent topology audit.
+        converged result during the subsequent two-dimensional audits.
 
     Notes
     -----
@@ -1891,6 +1892,29 @@ def _bracketed_lower_phase_indices(
     return indices
 
 
+def _three_phase_boundary_indices(
+    phase_counts: Tensor,
+    vertical_count: int,
+    horizontal_count: int,
+) -> list[int]:
+    """Find two-phase cells sharing a grid edge with a three-phase state.
+
+    The returned cells form a continuation front, not an asserted extension
+    of the three-phase region. A caller must independently refine each
+    candidate and retain it only when the result has lower Gibbs energy and
+    passes the equilibrium residual gates.
+    """
+    counts = phase_counts.reshape(vertical_count, horizontal_count)
+    three_phase = counts == MAX_PHASES
+    adjacent_to_three_phase = torch.zeros_like(three_phase)
+    adjacent_to_three_phase[1:] |= three_phase[:-1]
+    adjacent_to_three_phase[:-1] |= three_phase[1:]
+    adjacent_to_three_phase[:, 1:] |= three_phase[:, :-1]
+    adjacent_to_three_phase[:, :-1] |= three_phase[:, 1:]
+    boundary = (counts == MAX_PHASES - 1) & adjacent_to_three_phase
+    return torch.nonzero(boundary.reshape(-1)).flatten().tolist()
+
+
 def _continuation_seed_logits(
     phase_counts: Tensor,
     phase_fractions: Tensor,
@@ -1900,44 +1924,127 @@ def _continuation_seed_logits(
     horizontal_count: int,
 ) -> dict[int, Tensor]:
     """Seed missed lower-count cells from the nearest resolved three-phase state."""
+    seed_indices = _continuation_seed_indices(
+        phase_counts,
+        target_indices,
+        vertical_count,
+        horizontal_count,
+    )
+    return {
+        target_index: _logits_from_phases(
+            phase_fractions[seed_index, :MAX_PHASES],
+            phase_compositions[seed_index, :MAX_PHASES],
+        )
+        for target_index, seed_index in seed_indices.items()
+    }
+
+
+def _continuation_seed_indices(
+    phase_counts: Tensor,
+    target_indices: list[int],
+    vertical_count: int,
+    horizontal_count: int,
+) -> dict[int, int]:
+    """Map two-phase targets to their nearest resolved three-phase grid cells."""
     counts = phase_counts.reshape(vertical_count, horizontal_count)
-    seeds: dict[int, Tensor] = {}
+    three_phase_coordinates = torch.nonzero(counts == MAX_PHASES)
+    seed_indices: dict[int, int] = {}
     for target_index in target_indices:
         vertical_index, horizontal_index = divmod(target_index, horizontal_count)
         if int(counts[vertical_index, horizontal_index]) != MAX_PHASES - 1:
             continue
-        candidates: list[tuple[int, int, int]] = []
-        for candidate_horizontal in range(horizontal_count):
-            if int(counts[vertical_index, candidate_horizontal]) == MAX_PHASES:
-                candidate_index = vertical_index * horizontal_count + candidate_horizontal
-                # At fixed T and P, three-phase compositions do not depend on
-                # the overall feed while phase fractions do. Prefer a seed on
-                # the same pressure row, then its closest composition.
-                candidates.append(
-                    (
-                        0,
-                        abs(candidate_horizontal - horizontal_index),
-                        candidate_index,
-                    )
-                )
-        for candidate_vertical in range(vertical_count):
-            if int(counts[candidate_vertical, horizontal_index]) == MAX_PHASES:
-                candidate_index = candidate_vertical * horizontal_count + horizontal_index
-                candidates.append(
-                    (
-                        1,
-                        abs(candidate_vertical - vertical_index),
-                        candidate_index,
-                    )
-                )
-        if not candidates:
+        if three_phase_coordinates.numel() == 0:
             continue
-        _, _, seed_index = min(candidates)
-        seeds[target_index] = _logits_from_phases(
-            phase_fractions[seed_index, :MAX_PHASES],
-            phase_compositions[seed_index, :MAX_PHASES],
+        grid_distance = torch.abs(three_phase_coordinates[:, 0] - vertical_index) + torch.abs(
+            three_phase_coordinates[:, 1] - horizontal_index
         )
-    return seeds
+        nearest = int(torch.argmin(grid_distance))
+        seed_vertical = int(three_phase_coordinates[nearest, 0])
+        seed_horizontal = int(three_phase_coordinates[nearest, 1])
+        seed_index = seed_vertical * horizontal_count + seed_horizontal
+        # Multicomponent three-phase compositions can vary with overall feed
+        # even at fixed T and P. The neighboring equilibrium is therefore only
+        # a local continuation guess; it is never copied into the result.
+        seed_indices[target_index] = seed_index
+    return seed_indices
+
+
+def _continuation_grid_states(
+    model: StateModel,
+    temperatures: Tensor,
+    pressures: Tensor,
+    feeds: Tensor,
+    one_phase_gibbs: Tensor,
+    options: GridFlashOptions,
+    seed_logits: dict[int, Tensor],
+) -> dict[int, tuple[Tensor, Tensor, Tensor]]:
+    """Newton-refine neighboring three-phase equilibria at target states.
+
+    Neighbor phase allocations are converted to target-feed allocations before
+    refinement, so material balance is satisfied by construction. The
+    neighboring compositions are only local initial guesses: equal fugacity is
+    solved again at every target temperature, pressure, and feed. This fast
+    continuation path returns only distinct positive three-phase candidates
+    that pass the same fugacity, material-balance, and homogeneous-state Gibbs
+    gates as the independent multistart fallback.
+    """
+    if not seed_logits:
+        return {}
+    ordered_indices = sorted(seed_logits)
+    results: dict[int, tuple[Tensor, Tensor, Tensor]] = {}
+    for start in range(0, len(ordered_indices), options.chunk_size):
+        chunk_indices = ordered_indices[start : start + options.chunk_size]
+        indices = torch.tensor(
+            chunk_indices,
+            dtype=torch.long,
+            device=feeds.device,
+        )
+        logits = torch.stack(tuple(seed_logits[index] for index in chunk_indices))
+        with torch.no_grad():
+            _, initial_fractions, initial_compositions = _allocation_quantities(
+                model,
+                temperatures[indices],
+                pressures[indices],
+                feeds[indices],
+                logits[:, None],
+            )
+        fractions, compositions, split_gibbs, fugacity_residual = _batched_refine_three_phase(
+            model,
+            temperatures[indices],
+            pressures[indices],
+            feeds[indices],
+            initial_fractions[:, 0],
+            initial_compositions[:, 0],
+            options,
+        )
+        pair_distance = torch.stack(
+            (
+                torch.abs(compositions[:, 0] - compositions[:, 1]).amax(dim=-1),
+                torch.abs(compositions[:, 0] - compositions[:, 2]).amax(dim=-1),
+                torch.abs(compositions[:, 1] - compositions[:, 2]).amax(dim=-1),
+            ),
+            dim=-1,
+        )
+        balance_residual = torch.abs(
+            torch.sum(fractions[..., None] * compositions, dim=1) - feeds[indices]
+        ).amax(dim=-1)
+        reduction = one_phase_gibbs[indices] - split_gibbs
+        valid = (
+            (fugacity_residual <= options.fugacity_tolerance)
+            & (balance_residual <= options.material_balance_tolerance)
+            & (fractions.amin(dim=-1) > options.phase_fraction_tolerance)
+            & (pair_distance.amin(dim=-1) > options.phase_composition_merge_tolerance)
+            & (reduction > options.gibbs_reduction_tolerance)
+            & torch.isfinite(split_gibbs)
+            & torch.isfinite(compositions).all(dim=(-1, -2))
+        )
+        for local_index in torch.nonzero(valid).flatten().tolist():
+            results[chunk_indices[local_index]] = (
+                fractions[local_index].detach(),
+                compositions[local_index].detach(),
+                split_gibbs[local_index].detach(),
+            )
+    return results
 
 
 def _independent_multistart_reflash(
@@ -2623,7 +2730,8 @@ def flash_grid(
     The temperature and pressure tensors must have the same non-scalar batch
     shape. The composition can be common to the batch or have that batch shape
     as leading dimensions. Two-dimensional batches additionally receive a
-    topology audit that independently reflashes isolated lower-phase cells.
+    topology audit and a Gibbs-gated continuation audit along resolved
+    three-phase boundaries.
 
     Parameters
     ----------
@@ -2671,11 +2779,14 @@ def flash_grid(
     4. sparse three-phase Gibbs-allocation minimization and autodiff Newton
        refinement for failed or child-unstable states; and
     5. for two-dimensional batches, an independent reflash of lower-phase
-       cells bracketed by higher-phase states.
+       cells bracketed by higher-phase states and of two-phase cells on the
+       advancing boundary of a resolved three-phase region.
 
-    The topology audit only proposes candidates. A replacement still requires
-    lower Gibbs energy plus fugacity and material-balance convergence; visual
-    smoothness never overrides the thermodynamic gates.
+    The two-dimensional audits only propose candidates. Three-phase
+    continuation advances to a neighboring cell until no new lower-Gibbs
+    split is accepted. Every replacement still requires lower Gibbs energy
+    plus fugacity and material-balance convergence; visual smoothness never
+    overrides the thermodynamic gates.
 
     Forward-only screening runs without graph retention. Gibbs minimization
     uses PyTorch autograd and Newton Jacobians use ``torch.func.jacrev``.
@@ -2904,8 +3015,8 @@ def flash_grid(
 
     def install_replacements(
         current: dict[int, tuple[Tensor, Tensor, Tensor]],
-    ) -> int:
-        installed = 0
+    ) -> set[int]:
+        installed: set[int] = set()
         for state_index, (fractions, compositions, split_gibbs) in current.items():
             fractions, balance_residual, equilibrium_residual = _candidate_diagnostics(
                 model,
@@ -2936,27 +3047,51 @@ def flash_grid(
                 (equilibrium_residual <= resolved_options.fugacity_tolerance)
                 & (balance_residual <= resolved_options.material_balance_tolerance)
             )
-            installed += 1
+            installed.add(state_index)
         return installed
 
-    fallback_replacements = install_replacements(replacements)
+    fallback_replacement_indices = install_replacements(replacements)
     audited_indices: set[int] = set()
+    audited_seed_indices: dict[int, int | None] = {}
     audit_replacements = 0
     if len(grid_shape) == 2:
         n_rows, n_columns = grid_shape
         while True:
-            audit_indices = [
-                index
-                for index in _bracketed_lower_phase_indices(
+            bracketed_indices = set(
+                _bracketed_lower_phase_indices(
                     phase_counts,
                     n_rows,
                     n_columns,
                 )
+            )
+            boundary_indices = set(
+                _three_phase_boundary_indices(
+                    phase_counts,
+                    n_rows,
+                    n_columns,
+                )
+            )
+            proposed_indices = bracketed_indices | boundary_indices
+            proposed_seed_indices = _continuation_seed_indices(
+                phase_counts,
+                sorted(proposed_indices),
+                n_rows,
+                n_columns,
+            )
+            audit_indices = sorted(
+                index
+                for index in proposed_indices
                 if index not in audited_indices
-            ]
+                or (
+                    index in boundary_indices
+                    and proposed_seed_indices.get(index) != audited_seed_indices.get(index)
+                )
+            )
             if not audit_indices:
                 break
             audited_indices.update(audit_indices)
+            for index in audit_indices:
+                audited_seed_indices[index] = proposed_seed_indices.get(index)
             audit_seed_logits = _continuation_seed_logits(
                 phase_counts,
                 padded_fractions,
@@ -2965,12 +3100,25 @@ def flash_grid(
                 n_rows,
                 n_columns,
             )
+            continuation_results = _continuation_grid_states(
+                model,
+                temperatures,
+                pressures,
+                feeds,
+                one_phase_gibbs,
+                resolved_options,
+                audit_seed_logits,
+            )
+            continuation_replacements = install_replacements(continuation_results)
+            unresolved_audit_indices = [
+                index for index in audit_indices if index not in continuation_replacements
+            ]
             audit_results = _gibbs_fallback_grid_states(
                 model,
                 temperatures,
                 pressures,
                 feeds,
-                audit_indices,
+                unresolved_audit_indices,
                 one_phase_gibbs,
                 one_phase_gibbs - gibbs_reduction,
                 converged,
@@ -2978,7 +3126,8 @@ def flash_grid(
                 binary_invariants,
                 audit_seed_logits,
             )
-            audit_replacements += install_replacements(audit_results)
+            fallback_audit_replacements = install_replacements(audit_results)
+            audit_replacements += len(continuation_replacements | fallback_audit_replacements)
 
     refinement_seconds = time.perf_counter() - refinement_started
     return GridEquilibrium(
@@ -2998,6 +3147,6 @@ def flash_grid(
         refinement_seconds,
         len(difficult_indices),
         len(audited_indices),
-        fallback_replacements,
+        len(fallback_replacement_indices),
         audit_replacements,
     )

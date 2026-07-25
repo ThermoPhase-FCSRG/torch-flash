@@ -363,6 +363,23 @@ FIGURES = (
         ("https://doi.org/10.1016/j.fluid.2004.06.059",),
         "Temperature-dependent PPR78 binary interactions from the group contribution.",
     ),
+    FigureSpec(
+        "29_phase_identification_north_ward_estes.png",
+        "29_bennett_phase_identification_methods",
+        "notebooks/verification/29_bennett_phase_identification_methods.ipynb",
+        17,
+        2,
+        "verification",
+        False,
+        (),
+        (
+            "https://doi.org/10.1021/acs.energyfuels.6b02316",
+            "https://doi.org/10.1016/j.fluid.2010.12.001",
+            "https://doi.org/10.2118/129844-PA",
+        ),
+        "Six physical phase-identification diagnostics applied after equilibrium "
+        "flashes on the North Ward Estes 500 by 500 injection grid.",
+    ),
 )
 
 

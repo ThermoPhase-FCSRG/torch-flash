@@ -159,6 +159,51 @@ def test_grid_flash_recovers_published_north_ward_estes_three_phase_state():
 
 
 @pytest.mark.serial
+def test_grid_continuation_recovers_north_ward_estes_llv_boundary_state():
+    model = _north_ward_estes_model()
+    oil = torch.tensor(
+        [0.0077, 0.2025, 0.1180, 0.1484, 0.2863, 0.1490, 0.0881],
+        dtype=torch.float64,
+    )
+    injection_gas = torch.tensor(
+        [0.95, 0.05, 0.0, 0.0, 0.0, 0.0, 0.0],
+        dtype=torch.float64,
+    )
+    injected_fraction = torch.tensor([[0.733, 0.775]], dtype=torch.float64)
+    feeds = (1.0 - injected_fraction[..., None]) * oil + injected_fraction[
+        ..., None
+    ] * injection_gas
+    state = ChemicalState(
+        torch.full_like(injected_fraction, 301.48),
+        torch.full_like(injected_fraction, 81.56312625250501e5),
+        feeds,
+    )
+
+    result = flash_grid(model, state)
+    oracle = flash_grid_oracle(
+        model,
+        ChemicalState(
+            state.temperature[:, :1].reshape(1),
+            state.pressure[:, :1].reshape(1),
+            state.composition[:, :1].reshape(1, 7),
+        ),
+    )
+
+    assert result.phase_counts.tolist() == [3, 3]
+    assert result.topology_audit_count == 1
+    assert result.topology_audit_replacements == 1
+    assert result.phase_fractions[0].amin() > 1.0e-4
+    assert result.fugacity_residual[0] <= 1.0e-8
+    assert result.material_balance_residual[0] <= 5.0e-11
+    torch.testing.assert_close(
+        result.gibbs_reduction[0],
+        oracle.gibbs_reduction[0],
+        atol=2.0e-7,
+        rtol=0.0,
+    )
+
+
+@pytest.mark.serial
 def test_binary_invariant_autodiff_newton_and_grid_lever_rule():
     model = _binary_model()
     invariant = solve_binary_three_phase_invariant(
@@ -669,6 +714,11 @@ def test_grid_internal_phase_merge_refinement_and_topology_helpers():
     bracketed = grid_module._bracketed_lower_phase_indices(counts, 3, 4)
     assert 1 in bracketed
     assert 5 in bracketed
+    assert grid_module._three_phase_boundary_indices(
+        torch.tensor([[3, 2, 2, 2]], dtype=torch.int64).reshape(-1),
+        1,
+        4,
+    ) == [1]
     phase_fractions = torch.zeros((12, 3), dtype=torch.float64)
     phase_fractions[:, 0] = 1.0
     phase_fractions[4, :3] = torch.tensor([0.2, 0.3, 0.5])
@@ -1193,3 +1243,88 @@ def test_flash_grid_runs_and_rejects_topology_audit_replacement(monkeypatch):
     assert result.initial_fallback_replacements == 3
     assert result.topology_audit_replacements == 0
     assert result.phase_counts.tolist() == [3, 2, 3]
+
+
+def test_flash_grid_advances_only_lower_gibbs_three_phase_boundary(monkeypatch):
+    model = _binary_model()
+    state = ChemicalState(
+        torch.full((1, 4), 250.0, dtype=torch.float64),
+        torch.full((1, 4), 2.0e6, dtype=torch.float64),
+        torch.full((1, 4, 2), 0.5, dtype=torch.float64),
+    )
+
+    def stable_result(_model, temperatures, _pressures, compositions, _options):
+        state_count = temperatures.numel()
+        return grid_module.BatchedStabilityResult(
+            torch.ones(state_count, dtype=torch.bool),
+            torch.zeros(state_count, dtype=torch.float64),
+            compositions,
+            1,
+            torch.ones(state_count, dtype=torch.bool),
+            torch.zeros(state_count, dtype=torch.float64),
+        )
+
+    three_fractions = torch.full((3,), 1.0 / 3.0, dtype=torch.float64)
+    two_fractions = torch.full((2,), 0.5, dtype=torch.float64)
+    three_compositions = torch.full((3, 2), 0.5, dtype=torch.float64)
+    two_compositions = torch.full((2, 2), 0.5, dtype=torch.float64)
+    monkeypatch.setattr(grid_module, "_batched_stability_in_chunks", stable_result)
+    monkeypatch.setattr(
+        grid_module,
+        "_binary_invariant_split",
+        lambda *_args: (three_fractions, three_compositions),
+    )
+    calls = 0
+
+    def fallback(
+        _model,
+        _temperatures,
+        _pressures,
+        _feeds,
+        state_indices,
+        _one_phase_gibbs,
+        current_gibbs,
+        _current_converged,
+        _options,
+        _binary_invariants,
+        _seed_logits=None,
+    ):
+        nonlocal calls
+        calls += 1
+        if calls == 1:
+            return {
+                index: (
+                    (three_fractions, three_compositions)
+                    if index == 0
+                    else (two_fractions, two_compositions)
+                )
+                + (current_gibbs[index],)
+                for index in range(4)
+            }
+        if calls == 2:
+            assert state_indices == [1]
+            return {
+                1: (
+                    three_fractions,
+                    three_compositions,
+                    current_gibbs[1] - 1.0e-3,
+                )
+            }
+        assert calls == 3
+        assert state_indices == [2]
+        return {
+            2: (
+                three_fractions,
+                three_compositions,
+                current_gibbs[2],
+            )
+        }
+
+    monkeypatch.setattr(grid_module, "_gibbs_fallback_grid_states", fallback)
+    result = flash_grid(model, state)
+
+    assert calls == 3
+    assert result.topology_audit_count == 2
+    assert result.initial_fallback_replacements == 4
+    assert result.topology_audit_replacements == 1
+    assert result.phase_counts.tolist() == [3, 3, 2, 2]
