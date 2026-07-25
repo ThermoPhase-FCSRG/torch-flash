@@ -232,8 +232,10 @@ class CubicEOS(nn.Module):
     ----------
     names
         Canonical component names in tensor component-axis order.
-    critical_temperature, critical_pressure, acentric_factor, molar_mass
-        Per-component model buffers.
+    critical_temperature, critical_pressure, acentric_factor, molar_mass,
+    critical_volume
+        Per-component model buffers. ``critical_volume`` is ``None`` when the
+        component source does not provide it.
     mixing
         Active mixing-rule module; its trainable tensors remain registered
         PyTorch parameters.
@@ -251,6 +253,7 @@ class CubicEOS(nn.Module):
     critical_pressure: Tensor
     acentric_factor: Tensor
     molar_mass: Tensor
+    critical_volume: Tensor | None
     volume_translation: Tensor
     volume_translation_slope: Tensor
     volume_translation_reference_temperature: Tensor
@@ -271,6 +274,10 @@ class CubicEOS(nn.Module):
         self.register_buffer("critical_pressure", components.critical_pressure.clone())
         self.register_buffer("acentric_factor", components.acentric_factor.clone())
         self.register_buffer("molar_mass", components.molar_mass.clone())
+        self.register_buffer(
+            "critical_volume",
+            None if components.critical_volume is None else components.critical_volume.clone(),
+        )
         if mixing is None:
             zeros = torch.zeros(
                 (components.ncomponents, components.ncomponents),

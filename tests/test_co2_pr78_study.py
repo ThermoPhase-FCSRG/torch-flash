@@ -634,7 +634,8 @@ def test_batched_flash_secondary_paths_and_dew_continuation(monkeypatch):
         current,
         torch.full_like(current, 1.0e12),
     )
-    assert not bool(((exhausted.amin(-1) < 0.0) & (exhausted.amax(-1) > 0.0)).all())
+    torch.testing.assert_close(exhausted, current)
+    assert bool(((exhausted.amin(-1) < 0.0) & (exhausted.amax(-1) > 0.0)).all())
 
     dew_start = phase_envelope(
         model,

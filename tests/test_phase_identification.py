@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import replace
+from typing import cast
 
 import pytest
 import torch
@@ -8,11 +9,16 @@ import torch
 from torch_flash import (
     ChemicalState,
     FlashResult,
+    PhaseIdentification,
+    PhaseIdentificationCriterion,
     component_set,
     identify_flash_phases,
     identify_phase,
+    li_pseudo_critical_temperature,
+    negative_flash_residual,
     peng_robinson_1978,
     phase_properties,
+    phase_response_derivatives,
     two_phase_flash,
     volume_to_covolume_ratio,
 )
@@ -45,6 +51,20 @@ class _ZeroRatioModel(_NoCovolumeModel):
 
     def mixture_parameters(self, temperature, composition):
         return temperature.new_tensor(1.0), temperature.new_tensor(1.0)
+
+
+class _IdealGasResponseModel:
+    def pressure(self, temperature, molar_volume, composition):
+        del composition
+        return R * temperature / molar_volume
+
+    def molar_volume(self, temperature, pressure, composition, phase="stable"):
+        del composition, phase
+        return R * temperature / pressure
+
+
+class _CriticalTemperatureOnly:
+    critical_temperature = torch.tensor([190.0, 304.0], dtype=torch.float64)
 
 
 def _state(temperature: float, pressure: float = 1.0e5) -> ChemicalState:
@@ -116,6 +136,148 @@ def test_identification_uses_untranslated_cubic_volume_and_retains_autodiff():
     assert torch.isfinite(ratio).all()
 
 
+def test_all_five_paper_methods_identify_clear_methane_states():
+    components = component_set(("methane",), dtype=torch.float64)
+    model = peng_robinson_1978(components)
+    assert model.critical_volume is not None
+    torch.testing.assert_close(model.critical_volume, components.critical_volume)
+    methods: tuple[PhaseIdentificationCriterion, ...] = (
+        "li-pseudo-critical-temperature",
+        "pedersen-volume-to-covolume",
+        "perschke-negative-flash",
+        "pasad-isothermal-compressibility-derivative",
+        "bennett-thermal-expansion-derivative",
+    )
+    liquid = ChemicalState(
+        torch.tensor(120.0, dtype=torch.float64),
+        torch.tensor(5.0e6, dtype=torch.float64),
+        torch.ones(1, dtype=torch.float64),
+    )
+    vapor = ChemicalState(
+        torch.tensor(500.0, dtype=torch.float64),
+        torch.tensor(1.0e5, dtype=torch.float64),
+        torch.ones(1, dtype=torch.float64),
+    )
+
+    for method in methods:
+        liquid_result = identify_phase(
+            model,
+            liquid,
+            method=method,
+            ambiguity_relative_tolerance=0.0,
+        )
+        vapor_result = identify_phase(
+            model,
+            vapor,
+            method=method,
+            ambiguity_relative_tolerance=0.0,
+        )
+        assert liquid_result.kind == "liquid"
+        assert vapor_result.kind == "vapor"
+        assert liquid_result.method == vapor_result.method == method
+        assert liquid_result.criterion_value is not None
+        assert vapor_result.criterion_value is not None
+        assert torch.isfinite(liquid_result.criterion_value)
+        assert torch.isfinite(vapor_result.criterion_value)
+
+
+def test_li_pseudo_critical_temperature_and_negative_flash_match_equations():
+    components = component_set(("methane", "carbon_dioxide"), dtype=torch.float64)
+    model = peng_robinson_1978(components)
+    composition = torch.tensor(
+        [[0.25, 0.75], [0.80, 0.20]],
+        dtype=torch.float64,
+    )
+    critical_volume = torch.tensor([1.0e-4, 2.0e-4], dtype=torch.float64)
+    calculated = li_pseudo_critical_temperature(
+        model,
+        composition,
+        factor=1.1,
+        critical_volume=critical_volume,
+    )
+    weights = composition * critical_volume
+    expected = 1.1 * (weights * components.critical_temperature).sum(dim=-1) / weights.sum(dim=-1)
+    torch.testing.assert_close(calculated, expected)
+
+    state = ChemicalState(
+        torch.tensor([180.0, 250.0], dtype=torch.float64),
+        torch.tensor([2.0e6, 5.0e6], dtype=torch.float64),
+        composition,
+    )
+    k_values = (
+        components.critical_pressure
+        / state.pressure[..., None]
+        * torch.exp(
+            5.373
+            * (1.0 + components.acentric_factor)
+            * (1.0 - components.critical_temperature / state.temperature[..., None])
+        )
+    )
+    expected_residual = (composition * (k_values - 1.0) / (1.0 + 0.5 * (k_values - 1.0))).sum(
+        dim=-1
+    )
+    torch.testing.assert_close(negative_flash_residual(model, state), expected_residual)
+
+
+def test_phase_response_autodiff_recovers_ideal_gas_derivatives():
+    temperature = torch.tensor(350.0, dtype=torch.float64, requires_grad=True)
+    pressure = torch.tensor(2.0e6, dtype=torch.float64)
+    state = ChemicalState(temperature, pressure, torch.ones(1, dtype=torch.float64))
+    response = phase_response_derivatives(_IdealGasResponseModel(), state)
+
+    torch.testing.assert_close(response.molar_volume, R * temperature / pressure)
+    torch.testing.assert_close(
+        response.isothermal_compressibility,
+        pressure.reciprocal(),
+    )
+    torch.testing.assert_close(
+        response.thermal_expansion_coefficient,
+        temperature.reciprocal(),
+    )
+    torch.testing.assert_close(
+        response.isothermal_compressibility_temperature_derivative,
+        torch.zeros_like(temperature),
+        atol=1.0e-18,
+        rtol=0.0,
+    )
+    torch.testing.assert_close(
+        response.thermal_expansion_temperature_derivative,
+        -temperature.reciprocal().square(),
+    )
+    response.thermal_expansion_temperature_derivative.backward()
+    assert temperature.grad is not None
+    torch.testing.assert_close(
+        temperature.grad,
+        2.0 / temperature.detach().pow(3),
+    )
+
+
+def test_derivative_identification_retains_trainable_model_gradient():
+    components = component_set(("methane", "carbon_dioxide"), dtype=torch.float64)
+    model = peng_robinson_1978(
+        components,
+        kij=torch.tensor([[0.0, 0.08], [0.08, 0.0]], dtype=torch.float64),
+        trainable=True,
+    )
+    state = ChemicalState(
+        torch.tensor(180.0, dtype=torch.float64),
+        torch.tensor(3.0e6, dtype=torch.float64),
+        torch.tensor([0.5, 0.5], dtype=torch.float64),
+    )
+    result = identify_phase(
+        model,
+        state,
+        method="bennett-thermal-expansion-derivative",
+    )
+    assert result.criterion_value is not None
+    result.criterion_value.backward()
+    raw_kij = model.mixing.raw_kij
+    assert isinstance(raw_kij, torch.Tensor)
+    assert raw_kij.grad is not None
+    assert torch.isfinite(raw_kij.grad).all()
+    assert float(raw_kij.grad[0, 1].abs()) > 0.0
+
+
 @pytest.mark.parametrize(
     ("threshold", "ambiguity", "message"),
     [
@@ -155,6 +317,58 @@ def test_phase_identification_model_and_state_validation():
         volume_to_covolume_ratio(_ZeroRatioModel(), _state(300.0))
     with pytest.raises(ValueError, match="ratio"):
         identify_phase(_ZeroRatioModel(), _state(300.0))
+    with pytest.raises(ValueError, match="unknown phase-identification"):
+        identify_phase(
+            _NoCovolumeModel(),
+            _state(300.0),
+            method="not-a-method",  # type: ignore[arg-type]
+        )
+
+
+def test_new_method_input_validation_and_unavailable_results():
+    components = component_set(("methane", "carbon_dioxide"), dtype=torch.float64)
+    model = peng_robinson_1978(components)
+    with pytest.raises(ValueError, match="factor"):
+        li_pseudo_critical_temperature(model, torch.tensor([0.5, 0.5]), factor=0.0)
+    with pytest.raises(ValueError, match="component counts"):
+        li_pseudo_critical_temperature(model, torch.ones(1))
+    with pytest.raises(ValueError, match="equal-length"):
+        li_pseudo_critical_temperature(
+            model,
+            torch.tensor([0.5, 0.5]),
+            critical_volume=torch.ones(3),
+        )
+    with pytest.raises(TypeError, match="critical temperatures"):
+        li_pseudo_critical_temperature(object(), torch.ones(1))
+    with pytest.raises(TypeError, match="critical volumes"):
+        li_pseudo_critical_temperature(
+            _CriticalTemperatureOnly(),
+            torch.tensor([0.5, 0.5]),
+        )
+    with pytest.raises(TypeError, match="critical constants"):
+        negative_flash_residual(object(), _state(300.0))
+    with pytest.raises(ValueError, match="scalar T-P"):
+        phase_response_derivatives(
+            _IdealGasResponseModel(),
+            ChemicalState(
+                torch.tensor([300.0, 310.0]),
+                torch.tensor([1.0e5, 1.0e5]),
+                torch.tensor([[0.5, 0.5], [0.4, 0.6]]),
+            ),
+        )
+    with pytest.raises(TypeError, match="pressure and molar_volume"):
+        phase_response_derivatives(object(), _state(300.0))
+
+    unavailable_methods: tuple[PhaseIdentificationCriterion, ...] = (
+        "li-pseudo-critical-temperature",
+        "perschke-negative-flash",
+        "pasad-isothermal-compressibility-derivative",
+        "bennett-thermal-expansion-derivative",
+    )
+    for method in unavailable_methods:
+        result = identify_phase(_NoCovolumeModel(), _state(300.0), method=method)
+        assert result.kind == "unknown"
+        assert result.method == "unavailable"
 
 
 def test_unavailable_single_phase_and_density_ordering_fallback():
@@ -169,20 +383,26 @@ def test_unavailable_single_phase_and_density_ordering_fallback():
     assert identify_flash_phases((liquid,)) == (liquid,)
 
     identified = identify_flash_phases((liquid, vapor))
-    assert tuple(phase.phase_identification.kind for phase in identified) == (
+    identities = tuple(
+        cast(PhaseIdentification, phase.phase_identification) for phase in identified
+    )
+    assert tuple(identity.kind for identity in identities) == (
         "liquid",
         "vapor",
     )
-    assert all(phase.phase_identification.method == "density-ordering" for phase in identified)
-    assert not any(phase.phase_identification.ambiguous for phase in identified)
+    assert all(identity.method == "density-ordering" for identity in identities)
+    assert not any(identity.ambiguous for identity in identities)
 
     equal_volume = replace(vapor, molar_volume=liquid.molar_volume)
     ambiguous = identify_flash_phases((liquid, equal_volume))
-    assert tuple(phase.phase_identification.kind for phase in ambiguous) == (
+    ambiguous_identities = tuple(
+        cast(PhaseIdentification, phase.phase_identification) for phase in ambiguous
+    )
+    assert tuple(identity.kind for identity in ambiguous_identities) == (
         "unknown",
         "unknown",
     )
-    assert all(phase.phase_identification.ambiguous for phase in ambiguous)
+    assert all(identity.ambiguous for identity in ambiguous_identities)
 
     invalid = replace(vapor, molar_volume=torch.tensor(float("nan")))
     with pytest.raises(ValueError, match="molar volumes"):

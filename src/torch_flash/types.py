@@ -10,8 +10,19 @@ from torch import Tensor
 
 PhaseKind = Literal["liquid", "vapor", "stable"]
 PhaseIdentityKind = Literal["liquid", "vapor", "unknown"]
-PhaseIdentificationMethod = Literal[
+PhaseIdentificationCriterion = Literal[
+    "li-pseudo-critical-temperature",
     "pedersen-volume-to-covolume",
+    "perschke-negative-flash",
+    "pasad-isothermal-compressibility-derivative",
+    "bennett-thermal-expansion-derivative",
+]
+PhaseIdentificationMethod = Literal[
+    "li-pseudo-critical-temperature",
+    "pedersen-volume-to-covolume",
+    "perschke-negative-flash",
+    "pasad-isothermal-compressibility-derivative",
+    "bennett-thermal-expansion-derivative",
     "density-ordering",
     "unavailable",
 ]
@@ -107,11 +118,14 @@ class PhaseIdentification:
     """Likely physical identity of a homogeneous phase.
 
     ``kind`` is deliberately separate from the EoS root requested through
-    :class:`PhaseProperties`. For the Pedersen cubic-EoS criterion,
-    ``criterion_value`` is ``V/b`` and ``threshold`` is normally 1.75. For
+    :class:`PhaseProperties`. ``criterion_value`` and ``threshold`` retain the
+    native quantity used by the selected method: ``T/Tc`` and one for Li's
+    pseudo-critical-temperature rule, ``V/b`` and normally 1.75 for Pedersen's
+    rule, ``G(0.5)`` and zero for Perschke's negative-flash rule, or the
+    relevant temperature derivative and zero for either derivative rule. For
     density ordering, they are the phase molar volume and the geometric-mean
     separator between the two least-dense phases. The Boolean ``ambiguous``
-    marks values within the configured relative band around the separator.
+    marks values within the configured numerical band around the separator.
 
     Phase identification is a naming diagnostic; it does not change the
     equilibrium calculation or any thermodynamic property.

@@ -17,7 +17,7 @@ from torch_flash.components import ComponentSet
 from torch_flash.initialization import wilson_k_values
 from torch_flash.material_balance import rachford_rice
 from torch_flash.properties.state import StateModel
-from torch_flash.types import BatchedTwoPhaseFlashResult, ChemicalState
+from torch_flash.types import BatchedTwoPhaseFlashResult, ChemicalState, PhaseKind
 
 
 def _model_components(model: StateModel) -> ComponentSet:
@@ -47,19 +47,27 @@ def _batch_inputs(state: ChemicalState) -> tuple[Tensor, Tensor, Tensor]:
 
 
 def _straddles_unity(log_k: Tensor) -> Tensor:
-    return (log_k.amin(dim=-1) < 0.0) & (log_k.amax(dim=-1) > 0.0)
+    k_values = torch.exp(_bounded_log_k(log_k))
+    return (k_values.amin(dim=-1) < 1.0) & (k_values.amax(dim=-1) > 1.0)
+
+
+def _bounded_log_k(log_k: Tensor) -> Tensor:
+    """Keep K ratios positive and finite in double-precision trial states."""
+    return torch.clamp(log_k, -80.0, 80.0)
 
 
 def _admissible_update(current: Tensor, target: Tensor) -> Tensor:
     """Backtrack only rows that would lose their finite RR root."""
     factor = torch.ones(current.shape[:-1], dtype=current.dtype, device=current.device)
     for _ in range(16):
-        candidate = current + factor[..., None] * (target - current)
+        candidate = _bounded_log_k(current + factor[..., None] * (target - current))
         valid = _straddles_unity(candidate)
         if bool(valid.all()):
             return candidate
         factor = torch.where(valid, factor, 0.5 * factor)
-    return current + factor[..., None] * (target - current)
+    candidate = _bounded_log_k(current + factor[..., None] * (target - current))
+    valid = _straddles_unity(candidate)
+    return torch.where(valid[..., None], candidate, current)
 
 
 def batched_two_phase_flash(
@@ -67,6 +75,7 @@ def batched_two_phase_flash(
     state: ChemicalState,
     *,
     initial_k_values: Tensor | None = None,
+    phase_roots: tuple[PhaseKind, PhaseKind] = ("liquid", "vapor"),
     tolerance: float = 1.0e-8,
     substitution_iterations: int = 12,
     newton_iterations: int = 16,
@@ -88,6 +97,11 @@ def batched_two_phase_flash(
     initial_k_values
         Optional positive vapor-to-liquid ratios of shape
         ``(batch, ncomponents)``. Wilson estimates are used when omitted.
+    phase_roots
+        Cubic-root requests for the denominator and numerator phases,
+        respectively. The default ``("liquid", "vapor")`` solves a known
+        vapor-liquid branch. ``("stable", "stable")`` is useful when a
+        preceding stability calculation supplies a generic phase-split seed.
     tolerance
         Per-state convergence threshold for the maximum absolute
         log-fugacity residual.
@@ -123,6 +137,10 @@ def batched_two_phase_flash(
         raise ValueError("tolerance must be positive")
     if substitution_iterations < 0 or newton_iterations < 0:
         raise ValueError("iteration counts must be nonnegative")
+    if len(phase_roots) != 2 or any(
+        phase not in ("liquid", "vapor", "stable") for phase in phase_roots
+    ):
+        raise ValueError("phase_roots must contain two valid phase-root requests")
     temperature, pressure, composition = _batch_inputs(state)
     if initial_k_values is None:
         k_values = wilson_k_values(
@@ -139,7 +157,7 @@ def batched_two_phase_flash(
             dtype=composition.dtype,
             device=composition.device,
         )
-    log_k = torch.log(k_values)
+    log_k = _bounded_log_k(torch.log(k_values))
     if not bool(_straddles_unity(log_k).all()):
         raise ValueError("every batched state requires Kmin < 1 < Kmax")
 
@@ -153,13 +171,13 @@ def batched_two_phase_flash(
             temperature,
             pressure,
             split.liquid_composition,
-            "liquid",
+            phase_roots[0],
         )
         log_phi_vapor = model.log_fugacity_coefficients(
             temperature,
             pressure,
             split.vapor_composition,
-            "vapor",
+            phase_roots[1],
         )
         return current_log_k - (log_phi_liquid - log_phi_vapor)
 
@@ -214,7 +232,7 @@ def batched_two_phase_flash(
         accepted = ~active
         next_log_k = current.detach()
         for _ in range(12):
-            trial = current.detach() + factor[..., None] * step.detach()
+            trial = _bounded_log_k(current.detach() + factor[..., None] * step.detach())
             straddles = _straddles_unity(trial)
             safe_trial = torch.where(straddles[..., None], trial, current.detach())
             trial_norm = equilibrium_residual(safe_trial).detach().abs().amax(dim=-1)
