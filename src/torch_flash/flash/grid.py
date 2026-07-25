@@ -363,7 +363,7 @@ def identify_grid_phases(
     pseudo_critical_temperature_factor: float = 1.0,
     ambiguity_relative_tolerance: float = 0.05,
     pip_denominator_relative_tolerance: float | None = None,
-    pip_autodiff_chunk_size: int = 2048,
+    pip_autodiff_chunk_size: int = 4096,
     response_autodiff_chunk_size: int = 2048,
 ) -> GridPhaseIdentification:
     """Identify each equilibrium phase and summarize paper-style regions.
@@ -405,8 +405,10 @@ def identify_grid_phases(
         Positive maximum number of independent equilibrium phases passed to
         one batched forward-mode autodiff evaluation of the
         Venkatarathnam-Oellrich parameter. Smaller chunks reduce temporary
-        memory; larger chunks may reduce Python overhead. This setting does
-        not couple states or change the defining equations.
+        memory; larger chunks reduce repeated nested-JVP setup and result
+        assembly. The default balances throughput with temporary memory for
+        multicomponent CPU batches. This setting does not couple states or
+        change the defining equations.
     response_autodiff_chunk_size
         Positive maximum number of independent equilibrium phases passed to
         one batched forward-mode autodiff evaluation of either response
@@ -439,12 +441,21 @@ def identify_grid_phases(
     The two response-derivative criteria and the
     Venkatarathnam-Oellrich pressure-derivative parameter evaluate first and
     second PyTorch autodiff derivatives at every equilibrium composition. The
+    Li pseudo-critical-temperature and Perschke negative-flash algebra is also
+    evaluated over one leading phase batch when the required component
+    properties are tensors; models without those properties retain the scalar
+    unavailable-result behavior. Each requested method is executed as an
+    independent complete pass, so ``method_elapsed_seconds`` represents the
+    practical single-method workload rather than shared multi-method work. The
     returned grid tensors are detached intentionally; the scalar
     :func:`identify_phase` API retains its autodiff graph.
     """
     from torch_flash.properties.phase_identification import (
+        _negative_flash_scale,
         _phase_response_details,
         identify_phase,
+        li_pseudo_critical_temperature,
+        negative_flash_residual,
         phase_identification_parameter,
         volume_to_covolume_ratio,
     )
@@ -547,6 +558,67 @@ def identify_grid_phases(
 
     for method_index, method in enumerate(methods):
         method_started = time.perf_counter()
+        if method == "li-pseudo-critical-temperature" and all(
+            isinstance(getattr(model, name, None), Tensor)
+            for name in ("critical_temperature", "critical_volume")
+        ):
+            active, state_indices, phase_indices = active_phase_indices()
+            if state_indices.numel() == 0:
+                method_elapsed_seconds.append(time.perf_counter() - method_started)
+                continue
+            pseudo_critical = li_pseudo_critical_temperature(
+                model,
+                equilibrium.phase_compositions[state_indices, phase_indices],
+                factor=pseudo_critical_temperature_factor,
+            )
+            ratio = equilibrium.temperatures[state_indices] / pseudo_critical
+            one = ratio.new_tensor(1.0)
+            store_batched_identification(
+                method_index,
+                active,
+                state_indices,
+                phase_indices,
+                ratio,
+                one,
+                vapor_if_positive=True,
+                ambiguity_margin=torch.log(ratio),
+                ambiguity_limit=torch.log1p(
+                    ratio.new_tensor(ambiguity_relative_tolerance),
+                ),
+            )
+            method_elapsed_seconds.append(time.perf_counter() - method_started)
+            continue
+
+        if method == "perschke-negative-flash" and all(
+            isinstance(getattr(model, name, None), Tensor)
+            for name in ("critical_temperature", "critical_pressure", "acentric_factor")
+        ):
+            active, state_indices, phase_indices = active_phase_indices()
+            if state_indices.numel() == 0:
+                method_elapsed_seconds.append(time.perf_counter() - method_started)
+                continue
+            state = ChemicalState(
+                equilibrium.temperatures[state_indices],
+                equilibrium.pressures[state_indices],
+                equilibrium.phase_compositions[state_indices, phase_indices],
+            )
+            residual = negative_flash_residual(model, state)
+            scale = _negative_flash_scale(model, state)
+            zero = residual.new_zeros(())
+            store_batched_identification(
+                method_index,
+                active,
+                state_indices,
+                phase_indices,
+                residual,
+                zero,
+                vapor_if_positive=True,
+                ambiguity_margin=residual,
+                ambiguity_limit=scale * ambiguity_relative_tolerance,
+            )
+            method_elapsed_seconds.append(time.perf_counter() - method_started)
+            continue
+
         if (
             method == "pedersen-volume-to-covolume"
             and callable(getattr(model, "select_z", None))
@@ -806,23 +878,74 @@ def _batched_two_phase_in_chunks(
     initial_k_values: Tensor,
     options: GridFlashOptions,
 ) -> BatchedTwoPhaseFlashResult:
-    """Run independent two-phase flashes with a bounded autodiff batch."""
+    """Run admissible independent two-phase flashes with a bounded batch.
+
+    A stability-derived K estimate can collapse to one at float32 precision.
+    Such a row has no finite Rachford-Rice bracket and cannot enter the known
+    two-phase solver. It is returned explicitly as non-converged, with an
+    infinite residual, so the grid's existing difficult-state fallback can
+    examine it without aborting other independent rows in the same chunk.
+    Admissible rows use the original K estimates and convergence gates
+    unchanged.
+    """
     results = []
     for start in range(0, temperatures.numel(), options.chunk_size):
         stop = min(start + options.chunk_size, temperatures.numel())
-        results.append(
-            batched_two_phase_flash(
+        current_compositions = compositions[start:stop]
+        current_k = initial_k_values[start:stop]
+        admissible = (
+            torch.isfinite(current_k).all(dim=-1)
+            & (current_k > 0.0).all(dim=-1)
+            & (current_k.amin(dim=-1) < 1.0)
+            & (current_k.amax(dim=-1) > 1.0)
+        )
+        state_count = stop - start
+        component_count = current_compositions.shape[-1]
+        vapor_fraction = temperatures.new_zeros(state_count)
+        liquid_fraction = temperatures.new_ones(state_count)
+        liquid_composition = current_compositions.clone()
+        vapor_composition = current_compositions.clone()
+        k_values = temperatures.new_ones((state_count, component_count))
+        converged = torch.zeros(
+            state_count,
+            dtype=torch.bool,
+            device=temperatures.device,
+        )
+        residual_norm = temperatures.new_full((state_count,), torch.inf)
+        iterations = 0
+        if bool(admissible.any()):
+            valid = torch.nonzero(admissible).flatten()
+            valid_result = batched_two_phase_flash(
                 model,
                 ChemicalState(
-                    temperatures[start:stop],
-                    pressures[start:stop],
-                    compositions[start:stop],
+                    temperatures[start:stop][valid],
+                    pressures[start:stop][valid],
+                    current_compositions[valid],
                 ),
-                initial_k_values=initial_k_values[start:stop],
+                initial_k_values=current_k[valid],
                 phase_roots=("stable", "stable"),
                 tolerance=options.fugacity_tolerance,
                 substitution_iterations=options.two_phase_substitution_iterations,
                 newton_iterations=options.two_phase_newton_iterations,
+            )
+            vapor_fraction[valid] = valid_result.vapor_fraction
+            liquid_fraction[valid] = valid_result.liquid_fraction
+            liquid_composition[valid] = valid_result.liquid_composition
+            vapor_composition[valid] = valid_result.vapor_composition
+            k_values[valid] = valid_result.k_values
+            converged[valid] = valid_result.converged
+            residual_norm[valid] = valid_result.residual_norm
+            iterations = valid_result.iterations
+        results.append(
+            BatchedTwoPhaseFlashResult(
+                vapor_fraction,
+                liquid_fraction,
+                liquid_composition,
+                vapor_composition,
+                k_values,
+                iterations,
+                converged,
+                residual_norm,
             )
         )
     return BatchedTwoPhaseFlashResult(

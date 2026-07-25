@@ -133,7 +133,7 @@ def test_grid_flash_recovers_published_north_ward_estes_three_phase_state():
         identification.phase_identity_codes[3],
         identification.phase_identity_codes[5],
     )
-    for method_index in (1, 3, 4, 5):
+    for method_index in range(6):
         method = identification.methods[method_index]
         for phase_index in range(3):
             scalar = identify_phase(
@@ -551,12 +551,53 @@ def test_grid_phase_identification_covers_single_two_phase_and_unavailable_regio
     )
     assert unavailable.region_codes.tolist() == [[5]]
 
+    nonconverged = identify_grid_phases(
+        model,
+        replace(
+            unavailable_equilibrium,
+            converged=torch.tensor([False]),
+        ),
+        methods=(
+            "li-pseudo-critical-temperature",
+            "perschke-negative-flash",
+        ),
+    )
+    assert nonconverged.region_codes.tolist() == [[5], [5]]
+
     with pytest.raises(ValueError, match="phase counts"):
         identify_grid_phases(
             model,
             replace(equilibrium, phase_counts=torch.ones(2, dtype=torch.int64)),
             methods=("pedersen-volume-to-covolume",),
         )
+
+
+def test_grid_two_phase_batch_isolates_non_straddling_k_values():
+    model = _binary_model()
+    temperatures = torch.full((2,), 180.0, dtype=torch.float64)
+    pressures = torch.full((2,), 2.0e6, dtype=torch.float64)
+    feeds = torch.full((2, 2), 0.5, dtype=torch.float64)
+    result = grid_module._batched_two_phase_in_chunks(
+        model,
+        temperatures,
+        pressures,
+        feeds,
+        torch.tensor(
+            [
+                [2.0, 0.5],
+                [1.0, 1.0],
+            ],
+            dtype=torch.float64,
+        ),
+        GridFlashOptions(),
+    )
+
+    assert result.converged.shape == (2,)
+    assert torch.isfinite(result.residual_norm[0])
+    assert not bool(result.converged[1])
+    assert torch.isinf(result.residual_norm[1])
+    torch.testing.assert_close(result.liquid_composition[1], feeds[1])
+    torch.testing.assert_close(result.vapor_composition[1], feeds[1])
 
 
 def test_grid_internal_phase_merge_refinement_and_topology_helpers():
