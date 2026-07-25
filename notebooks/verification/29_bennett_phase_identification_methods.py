@@ -44,14 +44,13 @@
 #
 # All public inputs are SI: kelvin, pascal, m³/mol, and kg/mol. Plots show bar
 # only after the explicit conversion \(1\ {\rm bar}=10^5\ {\rm Pa}\).
-# Float64 on CPU remains the reference profile. Float32 CPU or MPS execution
-# is an explicit accuracy/performance study configured below.
+# Float64 on CPU is the reference profile. The settings cell below keeps the
+# few study choices visible as ordinary Python values.
 
 # %%
 from __future__ import annotations
 
 import gc
-import os
 import platform
 import time
 from collections.abc import Callable
@@ -84,22 +83,22 @@ from torch_flash import (
 )
 from torch_flash.constants import R
 
-PYTORCH_THREADS = int(os.environ.get("TORCH_FLASH_PHASE_ID_THREADS", "1"))
-if PYTORCH_THREADS < 1:
-    raise ValueError("TORCH_FLASH_PHASE_ID_THREADS must be positive")
-DTYPE_NAME = os.environ.get("TORCH_FLASH_PHASE_ID_DTYPE", "float64").lower()
-if DTYPE_NAME not in {"float32", "float64"}:
-    raise ValueError("TORCH_FLASH_PHASE_ID_DTYPE must be float32 or float64")
-TORCH_DTYPE = getattr(torch, DTYPE_NAME)
-DEVICE_REQUEST = os.environ.get("TORCH_FLASH_PHASE_ID_DEVICE", "cpu")
-runtime = configure(
-    device=DEVICE_REQUEST,
-    dtype=TORCH_DTYPE,
-    num_threads=PYTORCH_THREADS,
-)
+# %% [markdown]
+# ## Study settings
+#
+# North Ward Estes uses the paper's 500 by 500 resolution. The remaining cases
+# use 100 by 100 to keep a complete notebook run practical. All other
+# numerical controls use the documented `torch-flash` defaults.
+
+# %%
+GRID_POINTS = 100
+NWE_GRID_POINTS = 500
+
+runtime = configure(device="cpu", dtype=torch.float64, num_threads=1)
 TENSOR_OPTIONS = runtime.tensor_options
 
 
+# %%
 def synchronize_device() -> None:
     """Wait for queued accelerator kernels before a wall-clock timestamp."""
     if runtime.device.type == "cuda":
@@ -115,56 +114,6 @@ if ipython is not None:
     ipython.run_line_magic("matplotlib", "inline")
 plt.style.use("seaborn-v0_8-whitegrid")
 
-GRID_POINTS = int(os.environ.get("TORCH_FLASH_PHASE_ID_GRID_POINTS", "100"))
-if GRID_POINTS < 3:
-    raise ValueError("TORCH_FLASH_PHASE_ID_GRID_POINTS must be at least 3")
-NWE_GRID_POINTS = int(
-    os.environ.get("TORCH_FLASH_PHASE_ID_NWE_GRID_POINTS", str(GRID_POINTS))
-)
-if NWE_GRID_POINTS < 3:
-    raise ValueError("TORCH_FLASH_PHASE_ID_NWE_GRID_POINTS must be at least 3")
-GRID_CHUNK_SIZE = int(os.environ.get("TORCH_FLASH_PHASE_ID_GRID_CHUNK_SIZE", "2048"))
-if GRID_CHUNK_SIZE < 1:
-    raise ValueError("TORCH_FLASH_PHASE_ID_GRID_CHUNK_SIZE must be positive")
-PIP_AUTODIFF_CHUNK_SIZE = int(
-    os.environ.get("TORCH_FLASH_PHASE_ID_PIP_CHUNK_SIZE", "8192")
-)
-if PIP_AUTODIFF_CHUNK_SIZE < 1:
-    raise ValueError("TORCH_FLASH_PHASE_ID_PIP_CHUNK_SIZE must be positive")
-RESPONSE_AUTODIFF_CHUNK_SIZE = int(
-    os.environ.get("TORCH_FLASH_PHASE_ID_RESPONSE_CHUNK_SIZE", "2048")
-)
-if RESPONSE_AUTODIFF_CHUNK_SIZE < 1:
-    raise ValueError("TORCH_FLASH_PHASE_ID_RESPONSE_CHUNK_SIZE must be positive")
-FALLBACK_WORKERS = int(os.environ.get("TORCH_FLASH_PHASE_ID_FALLBACK_WORKERS", "1"))
-if FALLBACK_WORKERS < 1:
-    raise ValueError("TORCH_FLASH_PHASE_ID_FALLBACK_WORKERS must be positive")
-FLOAT32_REQUESTED_CONVERGENCE_TOLERANCE = float(
-    os.environ.get("TORCH_FLASH_PHASE_ID_FLOAT32_CONVERGENCE_TOLERANCE", "1e-6")
-)
-if FLOAT32_REQUESTED_CONVERGENCE_TOLERANCE <= 0.0:
-    raise ValueError("float32 convergence tolerance must be positive")
-FLOAT32_PRECISION_FLOOR = 32.0 * torch.finfo(torch.float32).eps
-FLOAT32_EFFECTIVE_CONVERGENCE_TOLERANCE = max(
-    FLOAT32_REQUESTED_CONVERGENCE_TOLERANCE,
-    FLOAT32_PRECISION_FLOOR,
-)
-FLASH_FUGACITY_TOLERANCE = (
-    FLOAT32_EFFECTIVE_CONVERGENCE_TOLERANCE if TORCH_DTYPE == torch.float32 else 1.0e-8
-)
-FLASH_MATERIAL_BALANCE_TOLERANCE = (
-    FLOAT32_EFFECTIVE_CONVERGENCE_TOLERANCE if TORCH_DTYPE == torch.float32 else 5.0e-11
-)
-FLASH_NEWTON_TOLERANCE = (
-    FLOAT32_EFFECTIVE_CONVERGENCE_TOLERANCE if TORCH_DTYPE == torch.float32 else 1.0e-11
-)
-FLASH_STABILITY_TOLERANCE = (
-    FLOAT32_EFFECTIVE_CONVERGENCE_TOLERANCE if TORCH_DTYPE == torch.float32 else 1.0e-7
-)
-BINARY_INVARIANT_NEWTON_TOLERANCE = (
-    FLOAT32_EFFECTIVE_CONVERGENCE_TOLERANCE if TORCH_DTYPE == torch.float32 else 1.0e-11
-)
-
 reproducibility = pd.Series(
     {
         "torch-flash": torch_flash.__version__,
@@ -175,38 +124,11 @@ reproducibility = pd.Series(
         "device": str(runtime.device),
         "grid points per axis": GRID_POINTS,
         "North Ward Estes grid points per axis": NWE_GRID_POINTS,
-        "grid flash chunk size": GRID_CHUNK_SIZE,
-        "PIP autodiff chunk size": PIP_AUTODIFF_CHUNK_SIZE,
-        "response autodiff chunk size": RESPONSE_AUTODIFF_CHUNK_SIZE,
-        "requested float32 convergence tolerance": (
-            FLOAT32_REQUESTED_CONVERGENCE_TOLERANCE
-            if TORCH_DTYPE == torch.float32
-            else np.nan
-        ),
-        "effective float32 convergence tolerance": (
-            FLOAT32_EFFECTIVE_CONVERGENCE_TOLERANCE
-            if TORCH_DTYPE == torch.float32
-            else np.nan
-        ),
-        "random Gibbs fallback starts": int(
-            os.environ.get("TORCH_FLASH_PHASE_ID_RANDOM_FALLBACK_STARTS", "8")
-        ),
-        "scalar fallback workers": FALLBACK_WORKERS,
         "PyTorch intra-op threads": torch.get_num_threads(),
-        "flash fugacity tolerance": FLASH_FUGACITY_TOLERANCE,
-        "material-balance tolerance": FLASH_MATERIAL_BALANCE_TOLERANCE,
-        "flash Newton tolerance": FLASH_NEWTON_TOLERANCE,
-        "binary invariant Newton tolerance": BINARY_INVARIANT_NEWTON_TOLERANCE,
     },
     name="value",
 )
 display(reproducibility.to_frame())
-print(
-    "Set TORCH_FLASH_PHASE_ID_GRID_POINTS=9 for the fast smoke profile or 500 "
-    "for the paper's nominal resolution in all cases. To regenerate only the "
-    "documentation figure at 500 x 500, set "
-    "TORCH_FLASH_PHASE_ID_NWE_GRID_POINTS=500. Both defaults are 100 x 100."
-)
 
 # %% [markdown]
 # ## The six criteria
@@ -436,7 +358,6 @@ binary_invariant = solve_binary_three_phase_invariant(
             [0.958, 0.042],
         ]
     ),
-    tolerance=BINARY_INVARIANT_NEWTON_TOLERANCE,
 )
 binary_invariant_pressure_bar = binary_invariant.pressure / 1.0e5
 binary_invariant_methane_fractions = binary_invariant.phase_compositions[:, 0]
@@ -757,10 +678,7 @@ binary_invariant_audit = pd.Series(
     name="value",
 )
 display(binary_invariant_audit.to_frame())
-assert (
-    binary_invariant_audit["maximum log-fugacity residual"]
-    <= BINARY_INVARIANT_NEWTON_TOLERANCE
-)
+assert binary_invariant.converged
 
 # %% [markdown]
 # ## Grid evaluation
@@ -810,34 +728,16 @@ assert (
 # autodiff. Independent cells are evaluated as tensor batches rather than as
 # Python worker jobs. On the recorded Apple-silicon host, one PyTorch intra-op
 # thread was faster for these small per-state algebraic systems than 4 or 10
-# threads, and a scalar `ThreadPoolExecutor` fallback was slower; both choices
-# remain explicit environment controls. Float64 CPU remains the reference.
-# Float32 CPU and MPS runs record both the requested tolerance and a
-# precision-aware effective floor of 32 times machine epsilon. This avoids
-# treating roundoff-level stationary-point and log-fugacity noise as physical
-# instability. The float32 maps are compared visually and quantitatively with
-# the float64 reference.
-# The PIP pass uses 8192-phase chunks because each method is executed
-# independently in the practical workflow studied here. A matched 20000-phase
-# profile reduced PIP time per phase by about 39% relative to 2048-state
-# chunks. The environment override remains visible for models whose component
-# count makes the larger nested-JVP temporaries undesirable.
+# threads, and a scalar `ThreadPoolExecutor` fallback was slower. This
+# reference run therefore configures one PyTorch thread in the settings cell.
+# Flash tolerances, fallback controls, and autodiff chunk sizes use the
+# documented `torch-flash` defaults.
 # `torch.compile` accelerated a warmed 2048-state fugacity kernel but its cold
 # compilation cost exceeded a complete 50 by 50 case, so eager execution is
 # the reproducible default for this one-pass study.
 
 # %%
-GRID_FLASH_OPTIONS = GridFlashOptions(
-    chunk_size=GRID_CHUNK_SIZE,
-    random_allocation_starts=int(
-        os.environ.get("TORCH_FLASH_PHASE_ID_RANDOM_FALLBACK_STARTS", "8")
-    ),
-    fallback_workers=FALLBACK_WORKERS,
-    fugacity_tolerance=FLASH_FUGACITY_TOLERANCE,
-    material_balance_tolerance=FLASH_MATERIAL_BALANCE_TOLERANCE,
-    flash_newton_tolerance=FLASH_NEWTON_TOLERANCE,
-    stability_tolerance=FLASH_STABILITY_TOLERANCE,
-)
+GRID_FLASH_OPTIONS = GridFlashOptions()
 CASE_BINARY_INVARIANTS = {
     binary_case.name: (binary_invariant,),
 }
@@ -883,8 +783,6 @@ for case in CASES:
             case.model,
             equilibrium,
             methods=(method,),
-            pip_autodiff_chunk_size=PIP_AUTODIFF_CHUNK_SIZE,
-            response_autodiff_chunk_size=RESPONSE_AUTODIFF_CHUNK_SIZE,
         )
         synchronize_device()
         elapsed_seconds = time.perf_counter() - identification_started
@@ -1367,8 +1265,8 @@ assert (
 #   explicitly audited criteria retain gradients to temperature and a
 #   trainable EoS interaction.
 # - Pedersen \(V/b\) evaluates roots in one leading batch. Each derivative
-#   method independently batches phases in configurable chunks and uses nested
-#   forward-mode JVPs, avoiding a dense cross-state Jacobian.
+#   method independently batches phases with the public defaults and uses
+#   nested forward-mode JVPs, avoiding a dense cross-state Jacobian.
 # - Total identification time and a per-method, per-equilibrium-phase timing
 #   are reported separately from the flash time. Every row is a complete
 #   standalone method pass; the timings do not rely on cross-method work
@@ -1393,9 +1291,7 @@ assert (
 #   validation against experimental phase labels. The saved maps resolve the
 #   topology; they are not pixel-wise validation of the paper's raster.
 #
-# For a denser study of every case, set
-# `TORCH_FLASH_PHASE_ID_GRID_POINTS=500` before execution. To reproduce only
-# the North Ward Estes documentation figure at that resolution, set
-# `TORCH_FLASH_PHASE_ID_NWE_GRID_POINTS=500`. The paper reports 500 by 500
-# illustrative grids; that profile is not the default because the strict flash
-# residual gates make it substantially more expensive.
+# The saved North Ward Estes documentation figure uses the paper's 500 by 500
+# grid. To run every case at that resolution, change `GRID_POINTS` to `500` in
+# the first code cell. The strict flash residual gates make that complete
+# profile substantially more expensive.
