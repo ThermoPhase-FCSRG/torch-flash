@@ -104,6 +104,7 @@ nav:
       - Two-Phase Flash: theory/two-phase-flash.md
       - Multiphase Flash: theory/multiphase-flash.md
       - Phase Properties and Their Derivatives: theory/phase-properties-derivatives.md
+      - Physical Phase Identification: theory/phase-identification.md
       - Activity Models: theory/activity-models.md
       - Fugacity Models: theory/fugacity-models.md
       - Characterization and Pseudo-Components: theory/characterization-pseudocomponents.md

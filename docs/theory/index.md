@@ -30,6 +30,7 @@ tables remain in their cited parameter sources.
 | How is a vapor-liquid split computed? | [Two-Phase Flash](two-phase-flash.md) | `two_phase_flash`, `rachford_rice` |
 | How is a fixed phase count handled? | [Multiphase Flash](multiphase-flash.md) | `multiphase_flash`, `solve_generalized_rachford_rice` |
 | How are properties and sensitivities evaluated? | [Phase Properties and Their Derivatives](phase-properties-derivatives.md) | `phase_properties`, `state_derivatives` |
+| How is an equilibrium phase labeled liquid or vapor? | [Physical Phase Identification](phase-identification.md) | `identify_phase`, `identify_grid_phases` |
 | How is liquid nonideality represented? | [Activity Models](activity-models.md) | `activity_model` |
 | How does an EoS provide equilibrium fugacity? | [Fugacity Models](fugacity-models.md) | `log_fugacity_coefficients` |
 | How are unresolved heavy fractions represented? | [Characterization and Pseudo-Components](characterization-pseudocomponents.md) | characterization and lumping APIs |
