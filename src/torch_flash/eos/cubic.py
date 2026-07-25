@@ -306,8 +306,6 @@ class CubicEOS(nn.Module):
             reference_temperature = 288.15
         if translation.shape != components.critical_temperature.shape:
             raise ValueError("volume_translation must have one value per component")
-        if translation_slope.shape != components.critical_temperature.shape:
-            raise ValueError("volume_translation slope must have one value per component")
         self.register_buffer("volume_translation", translation.clone())
         self.register_buffer("volume_translation_slope", translation_slope.clone())
         self.register_buffer(
@@ -384,7 +382,7 @@ class CubicEOS(nn.Module):
         InvalidStateError
             If any temperature is nonpositive.
         """
-        if bool((temperature <= 0.0).any()):
+        if not torch.compiler.is_compiling() and bool((temperature <= 0.0).any()):
             raise InvalidStateError("temperature must be positive")
         reduced = temperature[..., None] / self.critical_temperature
         alpha = (1.0 + self._kappa() * (1.0 - torch.sqrt(reduced))).square()
@@ -445,10 +443,32 @@ class CubicEOS(nn.Module):
             If pressure is nonpositive, or temperature is rejected by the
             pure-parameter calculation.
         """
-        if bool((pressure <= 0.0).any()):
+        if not torch.compiler.is_compiling() and bool((pressure <= 0.0).any()):
             raise InvalidStateError("pressure must be positive")
         am, bm = self.mixture_parameters(temperature, composition)
-        return am * pressure / (R * temperature).square(), bm * pressure / (R * temperature)
+        return self._dimensionless_from_mixture(temperature, pressure, am, bm)
+
+    @staticmethod
+    def _dimensionless_from_mixture(
+        temperature: Tensor,
+        pressure: Tensor,
+        attraction: Tensor,
+        covolume: Tensor,
+    ) -> tuple[Tensor, Tensor]:
+        """Form conventional ``A`` and ``B`` from already mixed parameters."""
+        return (
+            attraction * pressure / (R * temperature).square(),
+            covolume * pressure / (R * temperature),
+        )
+
+    def _z_factors_from_dimensionless(self, a: Tensor, b: Tensor) -> Tensor:
+        """Return cubic roots without recomputing mixture parameters."""
+        u = self.constants.delta1 + self.constants.delta2
+        w = self.constants.delta1 * self.constants.delta2
+        c2 = (u - 1.0) * b - 1.0
+        c1 = a - u * b + (w - u) * b.square()
+        c0 = -(a * b + w * b.square() * (1.0 + b))
+        return cubic_real_roots(c2, c1, c0)
 
     def z_factors(self, temperature: Tensor, pressure: Tensor, composition: Tensor) -> Tensor:
         """Return all sorted real compressibility-factor root slots.
@@ -467,12 +487,7 @@ class CubicEOS(nn.Module):
             one real root, that root is repeated in all three slots.
         """
         a, b = self.dimensionless_parameters(temperature, pressure, composition)
-        u = self.constants.delta1 + self.constants.delta2
-        w = self.constants.delta1 * self.constants.delta2
-        c2 = (u - 1.0) * b - 1.0
-        c1 = a - u * b + (w - u) * b.square()
-        c0 = -(a * b + w * b.square() * (1.0 + b))
-        return cubic_real_roots(c2, c1, c0)
+        return self._z_factors_from_dimensionless(a, b)
 
     def _residual_gibbs_rt_from_z(self, z: Tensor, a: Tensor, b: Tensor) -> Tensor:
         d1 = self.constants.delta1
@@ -516,20 +531,32 @@ class CubicEOS(nn.Module):
             If no root exceeds the mixture covolume.
         """
         roots = self.z_factors(temperature, pressure, composition)
-        _, b = self.dimensionless_parameters(temperature, pressure, composition)
+        a, b = self.dimensionless_parameters(temperature, pressure, composition)
+        return self._select_z_from_dimensionless(a, b, phase, roots=roots)
+
+    def _select_z_from_dimensionless(
+        self,
+        a: Tensor,
+        b: Tensor,
+        phase: PhaseKind,
+        *,
+        roots: Tensor | None = None,
+    ) -> Tensor:
+        """Select a physical cubic root from precomputed ``A`` and ``B``."""
+        if roots is None:
+            roots = self._z_factors_from_dimensionless(a, b)
         valid = roots > b[..., None] * (1.0 + 32.0 * torch.finfo(roots.dtype).eps)
         if phase == "liquid":
             selected = torch.where(valid, roots, torch.inf).amin(dim=-1)
         elif phase == "vapor":
             selected = torch.where(valid, roots, -torch.inf).amax(dim=-1)
         elif phase == "stable":
-            a, b = self.dimensionless_parameters(temperature, pressure, composition)
             gibbs = self._residual_gibbs_rt_from_z(roots, a[..., None], b[..., None])
             gibbs = torch.where(valid, gibbs, torch.inf)
             selected = torch.gather(roots, -1, gibbs.argmin(dim=-1, keepdim=True)).squeeze(-1)
         else:
             raise ValueError(f"unknown phase root {phase!r}")
-        if not bool(torch.isfinite(selected).all()):
+        if not torch.compiler.is_compiling() and not bool(torch.isfinite(selected).all()):
             raise InvalidStateError("cubic EoS produced no physical volume root")
         return selected
 
@@ -650,22 +677,43 @@ class CubicEOS(nn.Module):
         the exact composition dependence of the selected rule.
         """
         x = normalize_composition(composition)
-        z = self.select_z(temperature, pressure, x, phase)
-        a, b = self.dimensionless_parameters(temperature, pressure, x)
-        if isinstance(
+        pure_a, pure_b = self.pure_parameters(temperature)
+        quadratic_mixing = isinstance(
             self.mixing,
             QuadraticMixing | TemperatureDependentQuadraticMixing | PPR78Mixing,
-        ):
-            pure_a, pure_b = self.pure_parameters(temperature)
-            am, bm = self.mixture_parameters(temperature, x)
-            if isinstance(self.mixing, PPR78Mixing):
-                aij = self.mixing.cross_a(temperature, pure_a, pure_b)
-            elif isinstance(self.mixing, TemperatureDependentQuadraticMixing):
-                aij = self.mixing.cross_a(temperature, pure_a)
+        )
+        if isinstance(self.mixing, PPR78Mixing):
+            aij = self.mixing.cross_a(temperature, pure_a, pure_b)
+            am = torch.einsum("...i,...ij,...j->...", x, aij, x)
+            bm = torch.sum(x * pure_b, dim=-1)
+            partial_b = pure_b + torch.zeros_like(x)
+        elif isinstance(self.mixing, TemperatureDependentQuadraticMixing):
+            aij = self.mixing.cross_a(temperature, pure_a)
+            am = torch.einsum("...i,...ij,...j->...", x, aij, x)
+            if self.mixing._linear_covolume:
+                bm = torch.sum(x * pure_b, dim=-1)
+                partial_b = pure_b + torch.zeros_like(x)
             else:
-                aij = self.mixing.cross_a(pure_a)
+                bij = self.mixing.cross_b(pure_b)
+                bm = torch.einsum("...i,...ij,...j->...", x, bij, x)
+                partial_b = 2.0 * torch.einsum("...j,...ij->...i", x, bij) - bm[..., None]
+        elif isinstance(self.mixing, QuadraticMixing):
+            aij = self.mixing.cross_a(pure_a)
+            am = torch.einsum("...i,...ij,...j->...", x, aij, x)
+            if self.mixing._linear_covolume:
+                bm = torch.sum(x * pure_b, dim=-1)
+                partial_b = pure_b + torch.zeros_like(x)
+            else:
+                bij = self.mixing.cross_b(pure_b)
+                bm = torch.einsum("...i,...ij,...j->...", x, bij, x)
+                partial_b = 2.0 * torch.einsum("...j,...ij->...i", x, bij) - bm[..., None]
+        else:
+            am, bm = self.mixing(temperature, x, pure_a, pure_b)
+        a, b = self._dimensionless_from_mixture(temperature, pressure, am, bm)
+        z = self._select_z_from_dimensionless(a, b, phase)
+        if quadratic_mixing:
             sum_aij = torch.einsum("...j,...ij->...i", x, aij)
-            partial_b_over_b = self.mixing.partial_b(x, pure_b) / bm[..., None]
+            partial_b_over_b = partial_b / bm[..., None]
             composition_term = 2.0 * sum_aij / am[..., None] - partial_b_over_b
             d1 = self.constants.delta1
             d2 = self.constants.delta2

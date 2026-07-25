@@ -294,6 +294,36 @@ class BatchedTwoPhaseFlashResult:
 
 
 @dataclass(frozen=True)
+class BatchedStabilityResult:
+    """Tangent-plane stability results for independent homogeneous states.
+
+    Attributes
+    ----------
+    stable:
+        Boolean stability decision for each input state.
+    minimum_tpd:
+        Lowest dimensionless tangent-plane distance found per state.
+    trial_composition:
+        Composition associated with ``minimum_tpd``.
+    iterations:
+        Shared number of successive-substitution passes executed.
+    converged:
+        Whether the selected stationary-point iteration met its residual
+        tolerance for each state.
+    residual_norm:
+        Maximum absolute log trial-mole update at the selected stationary
+        point.
+    """
+
+    stable: Tensor
+    minimum_tpd: Tensor
+    trial_composition: Tensor
+    iterations: int
+    converged: Tensor
+    residual_norm: Tensor
+
+
+@dataclass(frozen=True)
 class StabilityResult:
     """Result of tangent-plane-distance minimization.
 

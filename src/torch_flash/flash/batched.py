@@ -17,7 +17,12 @@ from torch_flash.components import ComponentSet
 from torch_flash.initialization import wilson_k_values
 from torch_flash.material_balance import rachford_rice
 from torch_flash.properties.state import StateModel
-from torch_flash.types import BatchedTwoPhaseFlashResult, ChemicalState, PhaseKind
+from torch_flash.types import (
+    BatchedStabilityResult,
+    BatchedTwoPhaseFlashResult,
+    ChemicalState,
+    PhaseKind,
+)
 
 
 def _model_components(model: StateModel) -> ComponentSet:
@@ -68,6 +73,161 @@ def _admissible_update(current: Tensor, target: Tensor) -> Tensor:
     candidate = _bounded_log_k(current + factor[..., None] * (target - current))
     valid = _straddles_unity(candidate)
     return torch.where(valid[..., None], candidate, current)
+
+
+def batched_tangent_plane_stability(
+    model: StateModel,
+    state: ChemicalState,
+    *,
+    initial_compositions: Tensor | None = None,
+    tolerance: float = 1.0e-7,
+    max_iterations: int = 40,
+) -> BatchedStabilityResult:
+    """Screen independent states with vectorized tangent-plane iterations.
+
+    Michelsen's stationary-point substitution is applied to all states and
+    trial compositions in tensor batches. This routine is intended as the
+    inexpensive first stage of a grid flash: clearly unstable cells seed a
+    phase-split calculation, while non-converged or near-zero TPD cells remain
+    explicit candidates for a stricter stability fallback.
+
+    Parameters
+    ----------
+    model
+        Homogeneous-state model supporting batched stable-root fugacity
+        coefficients.
+    state
+        One-dimensional temperature and pressure batches. Composition may be
+        common to the batch or contain one row per state.
+    initial_compositions
+        Optional trial compositions with shape ``(starts, ncomponents)`` or
+        ``(batch, starts, ncomponents)``. By default the feed, Wilson vapor-
+        and liquid-like trials, and one component-rich trial per component
+        are evaluated.
+    tolerance
+        Maximum absolute stationary-point log-mole update.
+    max_iterations
+        Maximum vectorized successive-substitution passes.
+
+    Returns
+    -------
+    BatchedStabilityResult
+        Per-state TPD minima, trial compositions, convergence diagnostics,
+        and stability decisions.
+
+    Notes
+    -----
+    The normalized TPD at a stationary point is ``-log(sum(W))``. A
+    non-converged nonnegative result is not a global stability proof; callers
+    performing automatic phase discovery should send those cells to a strict
+    fallback or retain an ambiguity flag.
+    """
+    if tolerance <= 0.0:
+        raise ValueError("tolerance must be positive")
+    if max_iterations <= 0:
+        raise ValueError("max_iterations must be positive")
+    temperature, pressure, composition = _batch_inputs(state)
+    batch_size, ncomponents = composition.shape
+    log_composition = torch.log(torch.clamp_min(composition, 1.0e-30))
+    reference = log_composition + model.log_fugacity_coefficients(
+        temperature,
+        pressure,
+        composition,
+        "stable",
+    )
+
+    if initial_compositions is None:
+        k_values = wilson_k_values(
+            _model_components(model),
+            temperature,
+            pressure,
+        )
+        identity = torch.eye(
+            ncomponents,
+            dtype=composition.dtype,
+            device=composition.device,
+        )
+        component_rich = 0.95 * identity[None, :, :] + 0.05 * composition[:, None, :]
+        trials = torch.cat(
+            (
+                composition[:, None, :],
+                (composition * k_values)[:, None, :],
+                (composition / k_values)[:, None, :],
+                component_rich,
+            ),
+            dim=1,
+        )
+    else:
+        if initial_compositions.ndim == 2:
+            if initial_compositions.shape[-1] != ncomponents:
+                raise ValueError("trial compositions must use the model component count")
+            trials = initial_compositions[None, :, :].expand(batch_size, -1, -1)
+        elif (
+            initial_compositions.ndim == 3
+            and initial_compositions.shape[0] == batch_size
+            and initial_compositions.shape[-1] == ncomponents
+        ):
+            trials = initial_compositions
+        else:
+            raise ValueError(
+                "trial compositions must have shape (starts, components) "
+                "or (batch, starts, components)"
+            )
+        if bool((~torch.isfinite(trials)).any() | (trials < 0.0).any()):
+            raise ValueError("trial compositions must be finite and nonnegative")
+        if bool((trials.sum(dim=-1) <= 0.0).any()):
+            raise ValueError("every trial composition must have a positive sum")
+        trials = trials.to(dtype=composition.dtype, device=composition.device)
+
+    log_trial_moles = torch.log(torch.clamp_min(trials, 1.0e-30))
+    residual_norm = torch.full(
+        log_trial_moles.shape[:-1],
+        torch.inf,
+        dtype=composition.dtype,
+        device=composition.device,
+    )
+    completed_iterations = 0
+    for iteration in range(1, max_iterations + 1):
+        trial_composition = torch.softmax(log_trial_moles, dim=-1)
+        target = reference[:, None, :] - model.log_fugacity_coefficients(
+            temperature[:, None],
+            pressure[:, None],
+            trial_composition,
+            "stable",
+        )
+        residual_norm = (target - log_trial_moles).abs().amax(dim=-1)
+        active = residual_norm > tolerance
+        log_trial_moles = torch.where(
+            active[..., None],
+            _bounded_log_k(target),
+            log_trial_moles,
+        )
+        completed_iterations = iteration
+        if not bool(active.any()):
+            break
+
+    trial_composition = torch.softmax(log_trial_moles, dim=-1)
+    target = reference[:, None, :] - model.log_fugacity_coefficients(
+        temperature[:, None],
+        pressure[:, None],
+        trial_composition,
+        "stable",
+    )
+    residual_norm = (target - log_trial_moles).abs().amax(dim=-1)
+    candidate_tpd = -torch.logsumexp(target, dim=-1)
+    best_start = candidate_tpd.argmin(dim=-1)
+    batch_index = torch.arange(batch_size, device=composition.device)
+    minimum_tpd = candidate_tpd[batch_index, best_start]
+    best_composition = trial_composition[batch_index, best_start]
+    best_residual = residual_norm[batch_index, best_start]
+    return BatchedStabilityResult(
+        minimum_tpd >= -10.0 * tolerance,
+        minimum_tpd,
+        best_composition,
+        completed_iterations,
+        best_residual <= tolerance,
+        best_residual,
+    )
 
 
 def batched_two_phase_flash(

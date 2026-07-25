@@ -83,6 +83,7 @@ from .eos import (
     whitson_volume_translation,
 )
 from .flash import (
+    batched_tangent_plane_stability,
     batched_two_phase_flash,
     multiphase_flash,
     solve_generalized_rachford_rice,
@@ -128,6 +129,7 @@ from .transport import (
     lbc_viscosity,
 )
 from .types import (
+    BatchedStabilityResult,
     BatchedTwoPhaseFlashResult,
     ChemicalState,
     FlashResult,
@@ -146,6 +148,7 @@ __all__ = [
     "DEFAULT_VOLUME_TO_COVOLUME_THRESHOLD",
     "EOSCG2021_COMPONENTS",
     "GERG2008_COMPONENTS",
+    "BatchedStabilityResult",
     "BatchedTwoPhaseFlashResult",
     "BinaryBubblePoint",
     "BinaryCriticalPoint",
@@ -185,6 +188,7 @@ __all__ = [
     "VolumeTranslation",
     "activity_model",
     "available_parameter_sets",
+    "batched_tangent_plane_stability",
     "batched_two_phase_flash",
     "binary_bubble_point",
     "binary_critical_point",

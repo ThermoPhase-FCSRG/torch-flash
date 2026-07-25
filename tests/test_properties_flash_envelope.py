@@ -9,6 +9,7 @@ import torch
 
 from torch_flash import (
     ChemicalState,
+    batched_tangent_plane_stability,
     component_set,
     peng_robinson_1978,
     phase_properties,
@@ -465,6 +466,106 @@ def test_tangent_plane_stability_stable_and_unstable(binary_model, two_phase_sta
                 torch.tensor([[0.5, 0.5]]),
             ),
         )
+
+
+def test_batched_tangent_plane_stability_matches_scalar_classification(
+    binary_model,
+    two_phase_state,
+):
+    temperatures = torch.stack(
+        (two_phase_state.temperature, torch.tensor(450.0, dtype=torch.float64))
+    )
+    pressures = torch.stack((two_phase_state.pressure, torch.tensor(1.0e5, dtype=torch.float64)))
+    result = batched_tangent_plane_stability(
+        binary_model,
+        ChemicalState(temperatures, pressures, two_phase_state.composition),
+        max_iterations=80,
+    )
+    assert result.stable.tolist() == [False, True]
+    assert bool(result.converged.all())
+    assert result.minimum_tpd[0] < 0.0
+    assert result.minimum_tpd[1] >= -1.0e-6
+    torch.testing.assert_close(
+        result.trial_composition.sum(dim=-1),
+        torch.ones(2, dtype=torch.float64),
+    )
+    assert result.iterations <= 80
+    assert bool((result.residual_norm <= 1.0e-7).all())
+
+    common_trials = torch.stack(
+        (
+            two_phase_state.composition,
+            torch.tensor([0.95, 0.05], dtype=torch.float64),
+        )
+    )
+    custom = batched_tangent_plane_stability(
+        binary_model,
+        ChemicalState(temperatures, pressures, two_phase_state.composition),
+        initial_compositions=common_trials,
+        max_iterations=80,
+    )
+    assert custom.minimum_tpd.shape == (2,)
+    batched_trials = common_trials[None, :, :].expand(2, -1, -1)
+    batched_custom = batched_tangent_plane_stability(
+        binary_model,
+        ChemicalState(temperatures, pressures, two_phase_state.composition),
+        initial_compositions=batched_trials,
+        max_iterations=1,
+    )
+    assert batched_custom.minimum_tpd.shape == (2,)
+    assert batched_custom.iterations == 1
+
+
+@pytest.mark.parametrize(
+    ("trials", "match"),
+    [
+        (torch.ones((2, 3), dtype=torch.float64), "component count"),
+        (torch.ones((1, 2, 2), dtype=torch.float64), "shape"),
+        (torch.ones(2, dtype=torch.float64), "shape"),
+        (torch.tensor([[0.5, -0.5]], dtype=torch.float64), "nonnegative"),
+        (torch.zeros((1, 2), dtype=torch.float64), "positive sum"),
+    ],
+)
+def test_batched_tangent_plane_stability_rejects_invalid_trials(
+    binary_model,
+    two_phase_state,
+    trials,
+    match,
+):
+    state = ChemicalState(
+        two_phase_state.temperature.repeat(2),
+        two_phase_state.pressure.repeat(2),
+        two_phase_state.composition,
+    )
+    with pytest.raises(ValueError, match=match):
+        batched_tangent_plane_stability(
+            binary_model,
+            state,
+            initial_compositions=trials,
+        )
+
+
+@pytest.mark.parametrize(
+    ("keyword", "value", "match"),
+    [
+        ("tolerance", 0.0, "tolerance"),
+        ("max_iterations", 0, "max_iterations"),
+    ],
+)
+def test_batched_tangent_plane_stability_rejects_invalid_controls(
+    binary_model,
+    two_phase_state,
+    keyword,
+    value,
+    match,
+):
+    state = ChemicalState(
+        two_phase_state.temperature[None],
+        two_phase_state.pressure[None],
+        two_phase_state.composition,
+    )
+    with pytest.raises(ValueError, match=match):
+        batched_tangent_plane_stability(binary_model, state, **{keyword: value})
 
 
 def test_stability_newton_fallback_and_model_without_constants(monkeypatch):

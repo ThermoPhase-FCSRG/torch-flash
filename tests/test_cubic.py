@@ -172,6 +172,29 @@ def test_temperature_dependent_cubic_bip_factory_fugacity_and_gradients(binary_c
         model.log_fugacity_coefficients(temperature, pressure, composition, "vapor"),
         constant.log_fugacity_coefficients(temperature, pressure, composition, "vapor"),
     )
+    linear_covolume_model = peng_robinson_1978(
+        binary_components,
+        kij_a=a,
+        kij_b=b,
+    )
+    linear_covolume_constant = peng_robinson_1978(
+        binary_components,
+        kij=linear_covolume_model.mixing.kij(temperature).detach(),
+    )
+    torch.testing.assert_close(
+        linear_covolume_model.log_fugacity_coefficients(
+            temperature,
+            pressure,
+            composition,
+            "vapor",
+        ),
+        linear_covolume_constant.log_fugacity_coefficients(
+            temperature,
+            pressure,
+            composition,
+            "vapor",
+        ),
+    )
 
     loss = (
         model.log_fugacity_coefficients(

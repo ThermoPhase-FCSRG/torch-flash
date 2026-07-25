@@ -604,11 +604,19 @@ def test_batched_flash_secondary_paths_and_dew_continuation(monkeypatch):
         model,
         state,
         initial_k_values=polished.k_values,
+        phase_roots=("stable", "stable"),
         tolerance=1.0e-6,
         substitution_iterations=0,
         newton_iterations=2,
     )
     assert bool(immediate_newton.converged.all())
+    with pytest.raises(ValueError, match="phase_roots"):
+        batched_two_phase_flash(
+            model,
+            state,
+            initial_k_values=polished.k_values,
+            phase_roots=("liquid", "invalid"),  # type: ignore[arg-type]
+        )
 
     original_solve = torch.linalg.solve
 

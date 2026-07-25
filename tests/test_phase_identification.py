@@ -345,6 +345,29 @@ def test_new_method_input_validation_and_unavailable_results():
             _CriticalTemperatureOnly(),
             torch.tensor([0.5, 0.5]),
         )
+    for critical_temperature in (
+        torch.tensor([float("nan"), 304.0], dtype=torch.float64),
+        torch.tensor([-190.0, 304.0], dtype=torch.float64),
+    ):
+        invalid_temperature_model = replace(
+            components,
+            critical_temperature=critical_temperature,
+        )
+        with pytest.raises(ValueError, match="critical temperatures"):
+            li_pseudo_critical_temperature(
+                invalid_temperature_model,
+                torch.tensor([0.5, 0.5], dtype=torch.float64),
+            )
+    for critical_volume in (
+        torch.tensor([float("inf"), 1.0e-4], dtype=torch.float64),
+        torch.tensor([0.0, 1.0e-4], dtype=torch.float64),
+    ):
+        with pytest.raises(ValueError, match="critical volumes"):
+            li_pseudo_critical_temperature(
+                model,
+                torch.tensor([0.5, 0.5], dtype=torch.float64),
+                critical_volume=critical_volume,
+            )
     with pytest.raises(TypeError, match="critical constants"):
         negative_flash_residual(object(), _state(300.0))
     with pytest.raises(ValueError, match="scalar T-P"):
