@@ -10,6 +10,7 @@ from .phase_identification import (
     identify_phase,
     li_pseudo_critical_temperature,
     negative_flash_residual,
+    phase_identification_parameter,
     phase_response_derivatives,
     volume_to_covolume_ratio,
 )
@@ -36,6 +37,7 @@ __all__ = [
     "li_pseudo_critical_temperature",
     "log_fugacities_tv",
     "negative_flash_residual",
+    "phase_identification_parameter",
     "phase_properties",
     "phase_response_derivatives",
     "state_derivatives",

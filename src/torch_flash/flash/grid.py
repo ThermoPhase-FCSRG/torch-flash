@@ -36,6 +36,7 @@ DEFAULT_GRID_PHASE_IDENTIFICATION_METHODS: tuple[PhaseIdentificationCriterion, .
     "perschke-negative-flash",
     "pasad-isothermal-compressibility-derivative",
     "bennett-thermal-expansion-derivative",
+    "venkatarathnam-oellrich-phase-identification-parameter",
 )
 
 GRID_PHASE_REGION_LABELS = ("V", "L", "LV", "LL", "three-phase", "unavailable")
@@ -310,7 +311,8 @@ class GridPhaseIdentification:
         Native scalar criterion values with the same padded shape as
         ``phase_identity_codes``. Units depend on the method: dimensionless
         ``T/Tc``, dimensionless ``V/b``, dimensionless negative-flash
-        residual, ``1/(Pa K)``, or ``1/K^2``.
+        residual, ``1/(Pa K)``, ``1/K^2``, or the dimensionless
+        Venkatarathnam-Oellrich phase-identification parameter.
     thresholds
         Decision threshold in the same units as each criterion value.
     ambiguous
@@ -321,6 +323,11 @@ class GridPhaseIdentification:
         :data:`GRID_PHASE_REGION_LABELS`.
     elapsed_seconds
         Wall-clock seconds spent evaluating all requested methods.
+    method_elapsed_seconds
+        Wall-clock seconds for each complete method pass, in ``methods``
+        order. Their sum differs from ``elapsed_seconds`` only by result
+        allocation and assembly overhead. Timings are workload diagnostics,
+        not deterministic numerical outputs.
 
     Notes
     -----
@@ -339,6 +346,7 @@ class GridPhaseIdentification:
     ambiguous: Tensor
     region_codes: Tensor
     elapsed_seconds: float
+    method_elapsed_seconds: tuple[float, ...]
 
 
 MAX_PHASES = 3
@@ -353,6 +361,8 @@ def identify_grid_phases(
     volume_to_covolume_threshold: float = 1.75,
     pseudo_critical_temperature_factor: float = 1.0,
     ambiguity_relative_tolerance: float = 0.05,
+    pip_denominator_relative_tolerance: float | None = None,
+    pip_autodiff_chunk_size: int = 2048,
 ) -> GridPhaseIdentification:
     """Identify each equilibrium phase and summarize paper-style regions.
 
@@ -369,8 +379,9 @@ def identify_grid_phases(
         Result returned by :func:`flash_grid` or
         :func:`flash_grid_oracle`.
     methods
-        Unique ordered criteria to evaluate. The default is all five Bennett
-        and Schmidt methods.
+        Unique ordered criteria to evaluate. The default is the five Bennett
+        and Schmidt methods plus the Venkatarathnam-Oellrich
+        pressure-derivative parameter.
     phase
         Homogeneous EoS root request used while evaluating each already
         separated equilibrium composition. ``"stable"`` is normally
@@ -384,12 +395,23 @@ def identify_grid_phases(
     ambiguity_relative_tolerance
         Nonnegative relative band around each criterion threshold. It changes
         only ``ambiguous`` flags, not the sign-based identity.
+    pip_denominator_relative_tolerance
+        Optional scaled singularity threshold for the dimensionless
+        Venkatarathnam-Oellrich criterion. ``None`` uses the square root of
+        machine epsilon. It is ignored by all other methods.
+    pip_autodiff_chunk_size
+        Positive maximum number of independent equilibrium phases passed to
+        one batched forward-mode autodiff evaluation of the
+        Venkatarathnam-Oellrich parameter. Smaller chunks reduce temporary
+        memory; larger chunks may reduce Python overhead. This setting does
+        not couple states or change the defining equations.
 
     Returns
     -------
     GridPhaseIdentification
         Per-phase identities, native criterion values and thresholds,
-        ambiguity flags, paper-style region codes, and elapsed time.
+        ambiguity flags, paper-style region codes, total elapsed time, and one
+        measured elapsed time per requested method.
 
     Raises
     ------
@@ -407,17 +429,23 @@ def identify_grid_phases(
     maps to ``"LV"`` and otherwise to ``"LL"``. Three phases share one plotting
     category; inspect ``phase_identity_codes`` for the exact labels.
 
-    The two derivative criteria evaluate first and second PyTorch autodiff
-    derivatives at every equilibrium composition. The returned grid tensors
-    are detached intentionally; the scalar :func:`identify_phase` API retains
-    its autodiff graph.
+    The two response-derivative criteria and the
+    Venkatarathnam-Oellrich pressure-derivative parameter evaluate first and
+    second PyTorch autodiff derivatives at every equilibrium composition. The
+    returned grid tensors are detached intentionally; the scalar
+    :func:`identify_phase` API retains its autodiff graph.
     """
-    from torch_flash.properties.phase_identification import identify_phase
+    from torch_flash.properties.phase_identification import (
+        identify_phase,
+        phase_identification_parameter,
+    )
 
     if not methods:
         raise ValueError("at least one phase-identification method is required")
     if len(set(methods)) != len(methods):
         raise ValueError("phase-identification methods must be unique")
+    if pip_autodiff_chunk_size < 1:
+        raise ValueError("pip_autodiff_chunk_size must be positive")
     state_count = equilibrium.temperatures.numel()
     if equilibrium.phase_counts.shape != (state_count,):
         raise ValueError("equilibrium phase counts do not match the state batch")
@@ -443,7 +471,76 @@ def identify_grid_phases(
         device=equilibrium.feeds.device,
     )
     started = time.perf_counter()
+    method_elapsed_seconds = []
     for method_index, method in enumerate(methods):
+        method_started = time.perf_counter()
+        if method == "venkatarathnam-oellrich-phase-identification-parameter":
+            active = equilibrium.converged[:, None] & (
+                torch.arange(MAX_PHASES, device=equilibrium.feeds.device)[None, :]
+                < equilibrium.phase_counts[:, None]
+            )
+            state_indices, phase_indices = torch.nonzero(active, as_tuple=True)
+            if state_indices.numel() == 0:
+                method_elapsed_seconds.append(time.perf_counter() - method_started)
+                continue
+            parameter_chunks: list[Tensor] = []
+            batched_succeeded = True
+            try:
+                for start in range(0, state_indices.numel(), pip_autodiff_chunk_size):
+                    stop = min(start + pip_autodiff_chunk_size, state_indices.numel())
+                    current_states = state_indices[start:stop]
+                    current_phases = phase_indices[start:stop]
+                    parameter_chunks.append(
+                        phase_identification_parameter(
+                            model,
+                            ChemicalState(
+                                equilibrium.temperatures[current_states],
+                                equilibrium.pressures[current_states],
+                                equilibrium.phase_compositions[
+                                    current_states,
+                                    current_phases,
+                                ],
+                            ),
+                            phase,
+                            denominator_relative_tolerance=(pip_denominator_relative_tolerance),
+                        )
+                    )
+            except ValueError:
+                # Preserve the scalar API's per-state unavailable behavior if
+                # one member of a batch fails a physical or singularity gate.
+                batched_succeeded = False
+
+            if batched_succeeded:
+                parameter = torch.cat(parameter_chunks)
+                one = parameter.new_tensor(1.0)
+                identities[method_index, state_indices, phase_indices] = torch.where(
+                    parameter > one,
+                    torch.zeros_like(parameter, dtype=torch.int8),
+                    torch.ones_like(parameter, dtype=torch.int8),
+                )
+                criterion_values[method_index, state_indices, phase_indices] = parameter.detach()
+                thresholds[method_index, state_indices, phase_indices] = one
+                ambiguous[method_index, state_indices, phase_indices] = (
+                    (parameter - one).abs() <= ambiguity_relative_tolerance
+                ).detach()
+
+                state_identities = identities[method_index]
+                batched_has_vapor = ((state_identities == 1) & active).any(dim=-1)
+                labels = torch.where(
+                    equilibrium.phase_counts == 1,
+                    torch.where(batched_has_vapor, 0, 1),
+                    torch.where(
+                        equilibrium.phase_counts == 2,
+                        torch.where(batched_has_vapor, 2, 3),
+                        4,
+                    ),
+                )
+                region_codes[method_index, equilibrium.converged] = labels[
+                    equilibrium.converged
+                ].to(torch.int8)
+                method_elapsed_seconds.append(time.perf_counter() - method_started)
+                continue
+
         for state_index in range(state_count):
             if not bool(equilibrium.converged[state_index]):
                 continue
@@ -463,6 +560,7 @@ def identify_grid_phases(
                     threshold=volume_to_covolume_threshold,
                     pseudo_critical_temperature_factor=(pseudo_critical_temperature_factor),
                     ambiguity_relative_tolerance=ambiguity_relative_tolerance,
+                    pip_denominator_relative_tolerance=(pip_denominator_relative_tolerance),
                 )
                 if identification.kind == "unknown":
                     available = False
@@ -489,6 +587,7 @@ def identify_grid_phases(
             else:
                 label = "three-phase"
             region_codes[method_index, state_index] = GRID_PHASE_REGION_LABELS.index(label)
+        method_elapsed_seconds.append(time.perf_counter() - method_started)
 
     return GridPhaseIdentification(
         methods=methods,
@@ -498,6 +597,7 @@ def identify_grid_phases(
         ambiguous=ambiguous,
         region_codes=region_codes.reshape((len(methods), *equilibrium.grid_shape)),
         elapsed_seconds=time.perf_counter() - started,
+        method_elapsed_seconds=tuple(method_elapsed_seconds),
     )
 
 

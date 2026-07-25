@@ -204,7 +204,9 @@ collects these through `phase_identifications`, `phase_kinds`, and
 `phase_regime`.
 
 `identify_phase` implements the five homogeneous-state criteria compared by
-[Bennett and Schmidt (2017)](https://doi.org/10.1021/acs.energyfuels.6b02316):
+[Bennett and Schmidt (2017)](https://doi.org/10.1021/acs.energyfuels.6b02316)
+and the dimensionless phase-identification parameter of
+[Venkatarathnam and Oellrich (2011)](https://doi.org/10.1016/j.fluid.2010.12.001):
 
 - Li's volume-weighted pseudo-critical temperature, with vapor when
   \(T/T_{c,\mathrm{mix}}>1\);
@@ -214,13 +216,21 @@ collects these through `phase_identifications`, `phase_kinds`, and
 - the Pasad/Venkatarathnam isothermal-compressibility criterion, with liquid
   when \((\partial\kappa_T/\partial T)_P>0\); and
 - Bennett's thermal-expansion criterion, with liquid when
-  \((\partial\alpha_P/\partial T)_P>0\).
+  \((\partial\alpha_P/\partial T)_P>0\); and
+- the Venkatarathnam-Oellrich parameter
+  \[
+  \Pi=V\left(\frac{P_{VT}}{P_T}-\frac{P_{VV}}{P_V}\right),
+  \]
+  with liquid when \(\Pi>1\) and vapor when \(\Pi\leq1\). Derivatives are
+  evaluated at fixed composition.
 
 The public method names are
 `li-pseudo-critical-temperature`, `pedersen-volume-to-covolume`,
 `perschke-negative-flash`,
 `pasad-isothermal-compressibility-derivative`, and
-`bennett-thermal-expansion-derivative`. Pedersen \(V/b\) remains the default
+`bennett-thermal-expansion-derivative`, and
+`venkatarathnam-oellrich-phase-identification-parameter`. Pedersen \(V/b\)
+remains the default
 used by `phase_properties`. Its differentiable
 `volume_to_covolume_ratio` helper supports leading batches; cubic volume
 translations are excluded from \(V\) because they are not part of the
@@ -236,13 +246,26 @@ response and identification criterion tensors retain their gradient path to
 differentiable model parameters; only the discrete identity and ambiguity
 flags are detached decisions.
 
+`phase_identification_parameter` evaluates \(\Pi\) directly from the explicit
+EoS pressure with nested `torch.func.jvp` calls. It accepts scalar or matching
+leading state batches and requires finite, mechanically stable states with
+\(P_V<0\). Since each output state depends only on the matching input state,
+all-one JVP directions recover the independent Jacobian diagonals without a
+dense cross-state Jacobian. A dtype-scaled guard rejects singular \(P_T\) or
+\(P_V\) denominators. The public helper preserves the autodiff graph; the grid
+wrapper evaluates it in configurable chunks and detaches stored criterion
+values to avoid retaining one higher-order graph per phase. The optional
+high-temperature inversion correction from the source is not applied: the
+implemented rule is for labeling equilibrium phases returned by a converged
+flash.
+
 The 5% band around the divider is marked ambiguous without changing the
 deterministic label. For a multiphase model that has no cubic covolume,
 `identify_flash_phases` falls back to molar-volume ordering: the least-dense
 phase is likely vapor. Near-equal phase volumes remain `unknown`. This fallback
 cannot in general distinguish VLE from LLE, and the 1.75 threshold is only
 documented for the SRK/PR forms; CPA or a custom cubic-family model requires
-its own validation. The five criteria identify an already selected
+its own validation. The six criteria identify an already selected
 homogeneous state; they do not establish stability, discover the equilibrium
 phase count, or change any thermodynamic property or equilibrium equation.
 

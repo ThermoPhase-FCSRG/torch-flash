@@ -16,6 +16,7 @@ PhaseIdentificationCriterion = Literal[
     "perschke-negative-flash",
     "pasad-isothermal-compressibility-derivative",
     "bennett-thermal-expansion-derivative",
+    "venkatarathnam-oellrich-phase-identification-parameter",
 ]
 PhaseIdentificationMethod = Literal[
     "li-pseudo-critical-temperature",
@@ -23,6 +24,7 @@ PhaseIdentificationMethod = Literal[
     "perschke-negative-flash",
     "pasad-isothermal-compressibility-derivative",
     "bennett-thermal-expansion-derivative",
+    "venkatarathnam-oellrich-phase-identification-parameter",
     "density-ordering",
     "unavailable",
 ]
@@ -122,10 +124,12 @@ class PhaseIdentification:
     native quantity used by the selected method: ``T/Tc`` and one for Li's
     pseudo-critical-temperature rule, ``V/b`` and normally 1.75 for Pedersen's
     rule, ``G(0.5)`` and zero for Perschke's negative-flash rule, or the
-    relevant temperature derivative and zero for either derivative rule. For
-    density ordering, they are the phase molar volume and the geometric-mean
-    separator between the two least-dense phases. The Boolean ``ambiguous``
-    marks values within the configured numerical band around the separator.
+    relevant temperature derivative and zero for either derivative rule, or
+    the dimensionless Venkatarathnam-Oellrich phase-identification parameter
+    and one. For density ordering, they are the phase molar volume and the
+    geometric-mean separator between the two least-dense phases. The Boolean
+    ``ambiguous`` marks values within the configured numerical band around the
+    separator.
 
     Phase identification is a naming diagnostic; it does not change the
     equilibrium calculation or any thermodynamic property.

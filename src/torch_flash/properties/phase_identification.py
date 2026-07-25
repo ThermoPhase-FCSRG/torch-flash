@@ -1,9 +1,11 @@
 """Physical phase-identification diagnostics for homogeneous and flashed states.
 
-The five named criteria follow Bennett and Schmidt, *Energy & Fuels* 31
-(2017), 3370-3379, doi:10.1021/acs.energyfuels.6b02316. Root selection,
-physical phase identification, and the equilibrium phase count remain
-separate concepts.
+The five comparison criteria follow Bennett and Schmidt, *Energy & Fuels* 31
+(2017), 3370-3379, doi:10.1021/acs.energyfuels.6b02316. The dimensionless
+pressure-derivative criterion follows Venkatarathnam and Oellrich, *Fluid
+Phase Equilibria* 301 (2011), 225-233,
+doi:10.1016/j.fluid.2010.12.001. Root selection, physical phase
+identification, and the equilibrium phase count remain separate concepts.
 """
 
 from __future__ import annotations
@@ -32,6 +34,10 @@ DEFAULT_PHASE_IDENTIFICATION_METHOD: PhaseIdentificationCriterion = "pedersen-vo
 DEFAULT_VOLUME_TO_COVOLUME_THRESHOLD = 1.75
 DEFAULT_PSEUDO_CRITICAL_TEMPERATURE_FACTOR = 1.0
 DEFAULT_AMBIGUITY_RELATIVE_TOLERANCE = 0.05
+
+
+class _PhaseIdentificationParameterSingularityError(ValueError):
+    """Signal that the pressure-derivative ratio is not numerically defined."""
 
 
 @dataclass(frozen=True)
@@ -82,6 +88,11 @@ def _validate_options(threshold: float, ambiguity_relative_tolerance: float) -> 
 def _validate_positive_factor(value: float) -> None:
     if not math.isfinite(value) or value <= 0.0:
         raise ValueError("pseudo-critical-temperature factor must be finite and positive")
+
+
+def _validate_pip_denominator_tolerance(value: float | None) -> None:
+    if value is not None and (not math.isfinite(value) or value < 0.0):
+        raise ValueError("PIP denominator relative tolerance must be finite and non-negative")
 
 
 def _unavailable_identification() -> PhaseIdentification:
@@ -249,6 +260,210 @@ def _negative_flash_scale(model: object, state: ChemicalState) -> Tensor:
     k_values = wilson_k_values(components, state.temperature, state.pressure)
     terms = state.composition * (k_values - 1.0) / (1.0 + 0.5 * (k_values - 1.0))
     return terms.abs().sum(dim=-1)
+
+
+def phase_identification_parameter(
+    model: object,
+    state: ChemicalState,
+    phase: PhaseKind = "stable",
+    *,
+    denominator_relative_tolerance: float | None = None,
+) -> Tensor:
+    r"""Evaluate the Venkatarathnam-Oellrich phase-identification parameter.
+
+    The dimensionless parameter is
+
+    .. math::
+
+        \Pi = V\left[
+        \frac{(\partial^2 P/\partial V\partial T)_x}
+             {(\partial P/\partial T)_{V,x}}
+        -
+        \frac{(\partial^2 P/\partial V^2)_{T,x}}
+             {(\partial P/\partial V)_{T,x}}
+        \right].
+
+    Venkatarathnam and Oellrich classify a mechanically stable homogeneous
+    state as liquid or liquid-like when ``Pi > 1`` and vapor-like when
+    ``Pi <= 1``. The method labels a supplied homogeneous state; it does not
+    select an EoS root, perform a stability test, or determine the equilibrium
+    phase count.
+
+    Parameters
+    ----------
+    model
+        Homogeneous-state model implementing ``pressure(T, V, x)`` and
+        ``molar_volume(T, P, x, phase)`` with PyTorch tensor operations.
+        ``pressure`` must return pressure in Pa for physical molar volume in
+        m3/mol.
+    state
+        Temperature in K, pressure in Pa, and normalized composition. Matching
+        leading state batches are supported; components occupy the final
+        composition axis.
+    phase
+        Homogeneous EoS root used only to obtain the evaluation volume. The
+        default ``"stable"`` selects the admissible root of lowest residual
+        Gibbs energy; it does not perform a flash.
+    denominator_relative_tolerance
+        Optional non-negative singularity threshold. ``|P_T|`` is compared
+        with this value times ``|P/T|`` and ``|P_V|`` with this value times
+        ``|P/V|``. When omitted, the threshold is the square root of machine
+        epsilon for the state's dtype. Set zero only for controlled numerical
+        experiments that require exact-zero guards.
+
+    Returns
+    -------
+    Tensor
+        Dimensionless ``Pi`` with the leading state shape. A scalar state
+        returns a scalar tensor. The result remains connected through the
+        first and second pressure derivatives, the selected molar volume, the
+        state tensors, and any trainable model parameters.
+
+    Raises
+    ------
+    TypeError
+        If the model does not expose differentiable ``pressure`` and
+        ``molar_volume`` methods.
+    ValueError
+        If the state shapes are inconsistent, any molar volume or pressure
+        derivative is nonfinite, any volume is nonpositive, ``P_V >= 0``
+        indicates a mechanically unstable root, a scaled denominator is
+        singular, or the relative tolerance is invalid. For a batch, invalid
+        state checks reject the complete batch so callers can isolate or
+        subdivide it explicitly.
+
+    Notes
+    -----
+    Nested ``torch.func.jvp`` calls evaluate the first and second directional
+    derivatives of the batched explicit pressure. Because each output state
+    depends only on the matching input state, all-one temperature or volume
+    tangents recover the independent Jacobian diagonals without constructing
+    a dense cross-state Jacobian. No finite-difference step or cubic-specific
+    derivative formula is used.
+
+    The paper describes an additional high-temperature inversion correction
+    for isolated superheated states. It also states that this correction is
+    unnecessary when identifying saturated split phases after a converged
+    flash. This function returns the local parameter itself and does not
+    perform a remote temperature root search.
+    """
+    _validate_pip_denominator_tolerance(denominator_relative_tolerance)
+    state_shape = state.temperature.shape
+    if state.pressure.shape != state_shape or state.composition.shape[:-1] != state_shape:
+        raise ValueError("phase-identification parameter state shapes are inconsistent")
+    pressure_function: Any = getattr(model, "pressure", None)
+    volume_function: Any = getattr(model, "molar_volume", None)
+    if not callable(pressure_function) or not callable(volume_function):
+        raise TypeError("phase-identification parameter requires pressure and molar_volume methods")
+    volume = cast(
+        Tensor,
+        volume_function(
+            state.temperature,
+            state.pressure,
+            state.composition,
+            phase,
+        ),
+    )
+    if (
+        volume.shape != state_shape
+        or not bool(torch.isfinite(volume).all().detach())
+        or bool((volume <= 0.0).any().detach())
+    ):
+        raise ValueError(
+            "phase-identification molar volume must match the state shape and be finite positive"
+        )
+    composition = state.composition
+
+    def pressure_at_temperature_volume(
+        temperature: Tensor,
+        molar_volume: Tensor,
+    ) -> Tensor:
+        return cast(
+            Tensor,
+            pressure_function(
+                temperature,
+                molar_volume,
+                composition,
+            ),
+        )
+
+    temperature_direction = torch.ones_like(state.temperature)
+    volume_direction = torch.ones_like(volume)
+    zero_temperature = torch.zeros_like(state.temperature)
+    zero_volume = torch.zeros_like(volume)
+
+    def pressure_volume_at_temperature_volume(
+        temperature: Tensor,
+        molar_volume: Tensor,
+    ) -> Tensor:
+        return cast(
+            Tensor,
+            torch.func.jvp(
+                pressure_at_temperature_volume,
+                (temperature, molar_volume),
+                (zero_temperature, volume_direction),
+            )[1],
+        )
+
+    pressure_temperature = torch.func.jvp(
+        pressure_at_temperature_volume,
+        (state.temperature, volume),
+        (temperature_direction, zero_volume),
+    )[1]
+    pressure_volume = pressure_volume_at_temperature_volume(
+        state.temperature,
+        volume,
+    )
+    pressure_volume_temperature = torch.func.jvp(
+        pressure_volume_at_temperature_volume,
+        (state.temperature, volume),
+        (temperature_direction, zero_volume),
+    )[1]
+    pressure_volume_second = torch.func.jvp(
+        pressure_volume_at_temperature_volume,
+        (state.temperature, volume),
+        (zero_temperature, volume_direction),
+    )[1]
+    derivatives = torch.stack(
+        (
+            pressure_temperature,
+            pressure_volume,
+            pressure_volume_temperature,
+            pressure_volume_second,
+        )
+    )
+    if not bool(torch.isfinite(derivatives).all().detach()):
+        raise ValueError("phase-identification pressure derivatives are nonfinite")
+    if bool((pressure_volume >= 0.0).any().detach()):
+        raise _PhaseIdentificationParameterSingularityError(
+            "phase-identification parameter requires a mechanically stable P_V < 0 root"
+        )
+
+    relative_tolerance = (
+        math.sqrt(torch.finfo(volume.dtype).eps)
+        if denominator_relative_tolerance is None
+        else denominator_relative_tolerance
+    )
+    pressure_temperature_scale = torch.abs(state.pressure / state.temperature)
+    pressure_volume_scale = torch.abs(state.pressure / volume)
+    if bool(
+        (torch.abs(pressure_temperature) <= relative_tolerance * pressure_temperature_scale)
+        .any()
+        .detach()
+    ) or bool(
+        (torch.abs(pressure_volume) <= relative_tolerance * pressure_volume_scale).any().detach()
+    ):
+        raise _PhaseIdentificationParameterSingularityError(
+            "phase-identification parameter has a scaled singular P_T or P_V denominator"
+        )
+    return cast(
+        Tensor,
+        volume
+        * (
+            pressure_volume_temperature / pressure_temperature
+            - pressure_volume_second / pressure_volume
+        ),
+    )
 
 
 def _phase_response_details(
@@ -425,16 +640,70 @@ def identify_phase(
     threshold: float = DEFAULT_VOLUME_TO_COVOLUME_THRESHOLD,
     pseudo_critical_temperature_factor: float = DEFAULT_PSEUDO_CRITICAL_TEMPERATURE_FACTOR,
     ambiguity_relative_tolerance: float = DEFAULT_AMBIGUITY_RELATIVE_TOLERANCE,
+    pip_denominator_relative_tolerance: float | None = None,
 ) -> PhaseIdentification:
     """Identify one homogeneous state with a selected literature criterion.
 
-    The default remains Pedersen's ``V/b`` method for backward compatibility.
+    Parameters
+    ----------
+    model
+        Homogeneous-state model exposing the properties required by
+        ``method``. The derivative methods require differentiable
+        ``pressure(T, V, x)`` and ``molar_volume(T, P, x, phase)`` methods.
+    state
+        One scalar temperature in K, scalar pressure in Pa, and one normalized
+        composition vector.
+    phase
+        Homogeneous EoS root-selection request. It is separate from the
+        returned physical identity and does not perform a flash.
+    method
+        Literature criterion used for the label. The default remains
+        Pedersen's ``V/b`` rule for backward compatibility. The
+        Venkatarathnam-Oellrich method compares its dimensionless
+        phase-identification parameter with one.
+    threshold
+        Positive dimensionless ``V/b`` threshold used only by Pedersen's
+        method.
+    pseudo_critical_temperature_factor
+        Positive multiplier in Li's volume-weighted pseudo-critical
+        temperature, used only by that method.
+    ambiguity_relative_tolerance
+        Non-negative relative ambiguity band around the selected separator.
+        The returned liquid/vapor label still follows the exact inequality;
+        this value changes only the ``ambiguous`` flag.
+    pip_denominator_relative_tolerance
+        Optional scaled singularity guard forwarded to
+        :func:`phase_identification_parameter`. It is ignored by the other
+        methods. ``None`` selects the square root of machine epsilon.
+
+    Returns
+    -------
+    PhaseIdentification
+        Physical identity, method, native criterion tensor, decision
+        threshold, and ambiguity flag. A method whose required model
+        properties are unavailable returns ``kind="unknown"``. A singular or
+        mechanically unstable PIP state also returns an ambiguous unknown
+        result rather than an infinite criterion.
+
+    Raises
+    ------
+    ValueError
+        If the state is batched, a numerical option is invalid, the method
+        name is unknown, or an evaluated non-PIP criterion is invalid.
+    TypeError
+        If a mandatory model operation for the selected available criterion
+        is missing.
+
+    Notes
+    -----
     Every returned criterion tensor remains connected to the PyTorch graph;
     only the string label and ambiguity flag require a detached scalar
-    decision.
+    decision. Phase identification is post-processing: it neither establishes
+    stability nor changes phase compositions, fractions, or phase count.
     """
     _validate_options(threshold, ambiguity_relative_tolerance)
     _validate_positive_factor(pseudo_critical_temperature_factor)
+    _validate_pip_denominator_tolerance(pip_denominator_relative_tolerance)
     if state.temperature.ndim != 0 or state.pressure.ndim != 0 or state.composition.ndim != 1:
         raise ValueError("phase identification currently accepts one scalar T-P state")
 
@@ -495,6 +764,36 @@ def identify_phase(
             vapor_if_positive=True,
             ambiguity_margin=residual,
             ambiguity_limit=scale * ambiguity_relative_tolerance,
+        )
+
+    if method == "venkatarathnam-oellrich-phase-identification-parameter":
+        if not callable(getattr(model, "pressure", None)) or not callable(
+            getattr(model, "molar_volume", None)
+        ):
+            return _unavailable_identification()
+        one = state.temperature.new_tensor(1.0)
+        try:
+            parameter = phase_identification_parameter(
+                model,
+                state,
+                phase,
+                denominator_relative_tolerance=pip_denominator_relative_tolerance,
+            )
+        except _PhaseIdentificationParameterSingularityError:
+            return PhaseIdentification(
+                kind="unknown",
+                method=method,
+                criterion_value=None,
+                threshold=one,
+                ambiguous=True,
+            )
+        return _scalar_identification(
+            criterion=parameter,
+            threshold=one,
+            method=method,
+            vapor_if_positive=False,
+            ambiguity_margin=parameter - one,
+            ambiguity_limit=one * ambiguity_relative_tolerance,
         )
 
     if method in (

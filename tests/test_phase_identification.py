@@ -17,6 +17,7 @@ from torch_flash import (
     li_pseudo_critical_temperature,
     negative_flash_residual,
     peng_robinson_1978,
+    phase_identification_parameter,
     phase_properties,
     phase_response_derivatives,
     two_phase_flash,
@@ -61,6 +62,51 @@ class _IdealGasResponseModel:
     def molar_volume(self, temperature, pressure, composition, phase="stable"):
         del composition, phase
         return R * temperature / pressure
+
+
+class _VanDerWaalsResponseModel:
+    def __init__(self, molar_volume: float, attraction: float, covolume: float):
+        self.volume = torch.tensor(molar_volume, dtype=torch.float64)
+        self.attraction = torch.tensor(attraction, dtype=torch.float64)
+        self.covolume = torch.tensor(covolume, dtype=torch.float64)
+
+    def pressure(self, temperature, molar_volume, composition):
+        del composition
+        return (
+            R * temperature / (molar_volume - self.covolume)
+            - self.attraction / molar_volume.square()
+        )
+
+    def molar_volume(self, temperature, pressure, composition, phase="stable"):
+        del temperature, pressure, composition, phase
+        return self.volume
+
+
+class _TemperatureIndependentStableModel:
+    def pressure(self, temperature, molar_volume, composition):
+        del temperature, composition
+        return molar_volume.reciprocal()
+
+    def molar_volume(self, temperature, pressure, composition, phase="stable"):
+        del pressure, composition, phase
+        return temperature.new_tensor(1.0e-3)
+
+
+class _FixedVolumePathologicalModel:
+    def __init__(self, behavior: str):
+        self.behavior = behavior
+
+    def pressure(self, temperature, molar_volume, composition):
+        del composition
+        if self.behavior == "nonfinite":
+            return temperature * molar_volume * temperature.new_tensor(float("nan"))
+        return R * temperature * molar_volume
+
+    def molar_volume(self, temperature, pressure, composition, phase="stable"):
+        del pressure, composition, phase
+        if self.behavior == "invalid-volume":
+            return temperature.new_tensor(0.0)
+        return temperature.new_tensor(1.0e-3)
 
 
 class _CriticalTemperatureOnly:
@@ -136,7 +182,7 @@ def test_identification_uses_untranslated_cubic_volume_and_retains_autodiff():
     assert torch.isfinite(ratio).all()
 
 
-def test_all_five_paper_methods_identify_clear_methane_states():
+def test_all_phase_identification_methods_identify_clear_methane_states():
     components = component_set(("methane",), dtype=torch.float64)
     model = peng_robinson_1978(components)
     assert model.critical_volume is not None
@@ -147,6 +193,7 @@ def test_all_five_paper_methods_identify_clear_methane_states():
         "perschke-negative-flash",
         "pasad-isothermal-compressibility-derivative",
         "bennett-thermal-expansion-derivative",
+        "venkatarathnam-oellrich-phase-identification-parameter",
     )
     liquid = ChemicalState(
         torch.tensor(120.0, dtype=torch.float64),
@@ -252,6 +299,75 @@ def test_phase_response_autodiff_recovers_ideal_gas_derivatives():
     )
 
 
+def test_phase_identification_parameter_matches_analytic_van_der_waals_derivatives():
+    temperature = torch.tensor(300.0, dtype=torch.float64)
+    volume = 3.0e-4
+    attraction = 0.05
+    covolume = 4.0e-5
+    model = _VanDerWaalsResponseModel(volume, attraction, covolume)
+    pressure = model.pressure(
+        temperature,
+        model.volume,
+        torch.ones(1, dtype=torch.float64),
+    )
+    state = ChemicalState(
+        temperature,
+        pressure,
+        torch.ones(1, dtype=torch.float64),
+    )
+
+    parameter = phase_identification_parameter(model, state)
+    pressure_temperature = R / (volume - covolume)
+    pressure_volume = (
+        -R * float(temperature) / (volume - covolume) ** 2 + 2.0 * attraction / volume**3
+    )
+    pressure_volume_temperature = -R / (volume - covolume) ** 2
+    pressure_volume_second = (
+        2.0 * R * float(temperature) / (volume - covolume) ** 3 - 6.0 * attraction / volume**4
+    )
+    expected = volume * (
+        pressure_volume_temperature / pressure_temperature
+        - pressure_volume_second / pressure_volume
+    )
+    torch.testing.assert_close(
+        parameter,
+        torch.tensor(expected, dtype=torch.float64),
+        rtol=2.0e-14,
+        atol=0.0,
+    )
+
+
+def test_phase_identification_parameter_recovers_ideal_gas_limit():
+    temperature = torch.tensor(350.0, dtype=torch.float64, requires_grad=True)
+    state = ChemicalState(
+        temperature,
+        torch.tensor(2.0e6, dtype=torch.float64),
+        torch.ones(1, dtype=torch.float64),
+    )
+    parameter = phase_identification_parameter(_IdealGasResponseModel(), state)
+    torch.testing.assert_close(
+        parameter,
+        torch.ones((), dtype=torch.float64),
+        atol=2.0e-15,
+        rtol=0.0,
+    )
+    identification = identify_phase(
+        _IdealGasResponseModel(),
+        state,
+        method="venkatarathnam-oellrich-phase-identification-parameter",
+    )
+    assert identification.kind == "vapor"
+    assert identification.ambiguous
+    parameter.backward()
+    assert temperature.grad is not None
+    torch.testing.assert_close(
+        temperature.grad,
+        torch.zeros_like(temperature),
+        atol=1.0e-16,
+        rtol=0.0,
+    )
+
+
 def test_derivative_identification_retains_trainable_model_gradient():
     components = component_set(("methane", "carbon_dioxide"), dtype=torch.float64)
     model = peng_robinson_1978(
@@ -276,6 +392,35 @@ def test_derivative_identification_retains_trainable_model_gradient():
     assert raw_kij.grad is not None
     assert torch.isfinite(raw_kij.grad).all()
     assert float(raw_kij.grad[0, 1].abs()) > 0.0
+
+
+def test_phase_identification_parameter_retains_state_and_model_gradients():
+    components = component_set(("methane", "carbon_dioxide"), dtype=torch.float64)
+    model = peng_robinson_1978(
+        components,
+        kij=torch.tensor([[0.0, 0.08], [0.08, 0.0]], dtype=torch.float64),
+        trainable=True,
+    )
+    temperature = torch.tensor(240.0, dtype=torch.float64, requires_grad=True)
+    state = ChemicalState(
+        temperature,
+        torch.tensor(3.0e6, dtype=torch.float64),
+        torch.tensor([0.5, 0.5], dtype=torch.float64),
+    )
+    result = identify_phase(
+        model,
+        state,
+        method="venkatarathnam-oellrich-phase-identification-parameter",
+    )
+    assert result.criterion_value is not None
+    temperature_gradient, interaction_gradient = torch.autograd.grad(
+        result.criterion_value,
+        (temperature, model.mixing.raw_kij),
+    )
+    assert torch.isfinite(temperature_gradient)
+    assert torch.isfinite(interaction_gradient).all()
+    assert float(temperature_gradient.abs()) > 0.0
+    assert float(interaction_gradient[0, 1].abs()) > 0.0
 
 
 @pytest.mark.parametrize(
@@ -381,12 +526,77 @@ def test_new_method_input_validation_and_unavailable_results():
         )
     with pytest.raises(TypeError, match="pressure and molar_volume"):
         phase_response_derivatives(object(), _state(300.0))
+    with pytest.raises(TypeError, match="pressure and molar_volume"):
+        phase_identification_parameter(object(), _state(300.0))
+    batched_parameter = phase_identification_parameter(
+        _IdealGasResponseModel(),
+        ChemicalState(
+            torch.tensor([300.0, 310.0]),
+            torch.tensor([1.0e5, 1.0e5]),
+            torch.tensor([[0.5, 0.5], [0.4, 0.6]]),
+        ),
+    )
+    torch.testing.assert_close(batched_parameter, torch.ones(2))
+    with pytest.raises(ValueError, match="shapes"):
+        phase_identification_parameter(
+            _IdealGasResponseModel(),
+            ChemicalState(
+                torch.tensor([300.0, 310.0]),
+                torch.tensor([1.0e5, 1.0e5, 1.0e5]),
+                torch.ones((2, 1)),
+            ),
+        )
+    with pytest.raises(ValueError, match="relative tolerance"):
+        phase_identification_parameter(
+            _IdealGasResponseModel(),
+            ChemicalState(
+                torch.tensor(300.0),
+                torch.tensor(1.0e5),
+                torch.ones(1),
+            ),
+            denominator_relative_tolerance=-1.0,
+        )
+    with pytest.raises(ValueError, match="finite positive"):
+        phase_identification_parameter(
+            _FixedVolumePathologicalModel("invalid-volume"),
+            _state(300.0),
+        )
+    with pytest.raises(ValueError, match="nonfinite"):
+        phase_identification_parameter(
+            _FixedVolumePathologicalModel("nonfinite"),
+            _state(300.0),
+        )
+    with pytest.raises(ValueError, match="mechanically stable"):
+        phase_identification_parameter(
+            _FixedVolumePathologicalModel("unstable"),
+            _state(300.0),
+        )
+
+    singular_state = ChemicalState(
+        torch.tensor(300.0, dtype=torch.float64),
+        torch.tensor(1.0e5, dtype=torch.float64),
+        torch.ones(1, dtype=torch.float64),
+    )
+    with pytest.raises(ValueError, match="singular"):
+        phase_identification_parameter(
+            _TemperatureIndependentStableModel(),
+            singular_state,
+        )
+    singular_identification = identify_phase(
+        _TemperatureIndependentStableModel(),
+        singular_state,
+        method="venkatarathnam-oellrich-phase-identification-parameter",
+    )
+    assert singular_identification.kind == "unknown"
+    assert singular_identification.criterion_value is None
+    assert singular_identification.ambiguous
 
     unavailable_methods: tuple[PhaseIdentificationCriterion, ...] = (
         "li-pseudo-critical-temperature",
         "perschke-negative-flash",
         "pasad-isothermal-compressibility-derivative",
         "bennett-thermal-expansion-derivative",
+        "venkatarathnam-oellrich-phase-identification-parameter",
     )
     for method in unavailable_methods:
         result = identify_phase(_NoCovolumeModel(), _state(300.0), method=method)

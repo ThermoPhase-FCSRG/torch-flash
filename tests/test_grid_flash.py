@@ -9,6 +9,7 @@ from torch_flash import (
     ChemicalState,
     ComponentSet,
     GridFlashOptions,
+    PhaseIdentificationCriterion,
     flash_grid,
     flash_grid_oracle,
     identify_grid_phases,
@@ -116,11 +117,22 @@ def test_grid_flash_recovers_published_north_ward_estes_three_phase_state():
         rtol=0.0,
     )
 
-    identification = identify_grid_phases(model, result)
-    assert identification.region_codes.shape == (5, 1)
-    assert identification.region_codes[:, 0].tolist() == [4, 4, 4, 4, 4]
+    identification = identify_grid_phases(
+        model,
+        result,
+        pip_autodiff_chunk_size=1,
+    )
+    assert identification.region_codes.shape == (6, 1)
+    assert identification.region_codes[:, 0].tolist() == [4, 4, 4, 4, 4, 4]
     assert torch.all(identification.phase_identity_codes[:, 0, :3] >= 0)
     assert torch.isfinite(identification.criterion_values[:, 0, :3]).all()
+    assert torch.equal(
+        identification.phase_identity_codes[3],
+        identification.phase_identity_codes[5],
+    )
+    assert len(identification.method_elapsed_seconds) == len(identification.methods)
+    assert all(seconds >= 0.0 for seconds in identification.method_elapsed_seconds)
+    assert sum(identification.method_elapsed_seconds) <= identification.elapsed_seconds
 
 
 def test_binary_invariant_autodiff_newton_and_grid_lever_rule():
@@ -280,6 +292,33 @@ def test_grid_flash_and_identification_validate_batch_inputs():
                 "pedersen-volume-to-covolume",
             ),
         )
+    with pytest.raises(ValueError, match="chunk"):
+        identify_grid_phases(
+            model,
+            equilibrium,
+            pip_autodiff_chunk_size=0,
+        )
+    pip_method: tuple[PhaseIdentificationCriterion, ...] = (
+        "venkatarathnam-oellrich-phase-identification-parameter",
+    )
+    singular = identify_grid_phases(
+        model,
+        equilibrium,
+        methods=pip_method,
+        pip_denominator_relative_tolerance=1.0e6,
+    )
+    assert singular.region_codes.tolist() == [[5]]
+
+    nonconverged = replace(
+        equilibrium,
+        converged=torch.zeros_like(equilibrium.converged),
+    )
+    unavailable = identify_grid_phases(
+        model,
+        nonconverged,
+        methods=pip_method,
+    )
+    assert unavailable.region_codes.tolist() == [[5]]
 
 
 def test_binary_invariant_validates_inputs():

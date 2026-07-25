@@ -1,11 +1,13 @@
 # %% [markdown]
-# # Bennett phase-identification methods: five-case comparison
+# # Phase identification: Bennett comparison plus the Venkatarathnam-Oellrich parameter
 #
 # ## Objective and classification
 #
 # This **verification** study demonstrates and compares the `torch-flash`
 # implementations of all five phase-identification criteria selected by
-# Bennett and Schmidt and applies them to their five illustrative cases:
+# Bennett and Schmidt together with the Venkatarathnam-Oellrich
+# phase-identification parameter. All six diagnostics are applied to Bennett
+# and Schmidt's five illustrative cases:
 #
 # 1. pure methane \(P\)-\(T\);
 # 2. methane/carbon-dioxide \(P\)-composition at 180 K;
@@ -36,6 +38,9 @@
 # - Pedersen, Christensen, and Shaikh, *Phase Behavior of Petroleum
 #   Reservoir Fluids*, 3rd ed. (2024), Eqs. 5.1-5.5: characterization of
 #   incomplete ECLIPSE pseudo-component rows.
+# - Venkatarathnam and Oellrich, *Fluid Phase Equilibria* 301 (2011), 225-233,
+#   [doi:10.1016/j.fluid.2010.12.001](https://doi.org/10.1016/j.fluid.2010.12.001):
+#   the dimensionless phase-identification parameter used here.
 #
 # All public inputs are SI: kelvin, pascal, m³/mol, and kg/mol. Plots show bar
 # only after the explicit conversion \(1\ {\rm bar}=10^5\ {\rm Pa}\).
@@ -92,6 +97,11 @@ if GRID_POINTS < 3:
 GRID_CHUNK_SIZE = int(os.environ.get("TORCH_FLASH_PHASE_ID_GRID_CHUNK_SIZE", "2048"))
 if GRID_CHUNK_SIZE < 1:
     raise ValueError("TORCH_FLASH_PHASE_ID_GRID_CHUNK_SIZE must be positive")
+PIP_AUTODIFF_CHUNK_SIZE = int(
+    os.environ.get("TORCH_FLASH_PHASE_ID_PIP_CHUNK_SIZE", "2048")
+)
+if PIP_AUTODIFF_CHUNK_SIZE < 1:
+    raise ValueError("TORCH_FLASH_PHASE_ID_PIP_CHUNK_SIZE must be positive")
 FALLBACK_WORKERS = int(os.environ.get("TORCH_FLASH_PHASE_ID_FALLBACK_WORKERS", "1"))
 if FALLBACK_WORKERS < 1:
     raise ValueError("TORCH_FLASH_PHASE_ID_FALLBACK_WORKERS must be positive")
@@ -105,6 +115,7 @@ reproducibility = pd.Series(
         "dtype": str(torch.get_default_dtype()),
         "grid points per axis": GRID_POINTS,
         "grid flash chunk size": GRID_CHUNK_SIZE,
+        "PIP autodiff chunk size": PIP_AUTODIFF_CHUNK_SIZE,
         "random Gibbs fallback starts": int(
             os.environ.get("TORCH_FLASH_PHASE_ID_RANDOM_FALLBACK_STARTS", "8")
         ),
@@ -120,7 +131,7 @@ print(
 )
 
 # %% [markdown]
-# ## The five criteria
+# ## The six criteria
 #
 # Bennett and Schmidt select the following rules:
 #
@@ -157,10 +168,30 @@ print(
 # \alpha=\frac{1}{V}\left(\frac{\partial V}{\partial T}\right)_P.
 # \]
 #
-# `torch-flash` evaluates the last two rules from first and second PyTorch
-# autodiff derivatives of the explicit EoS pressure \(P(T,V,x)\). For plotting,
-# every score below is transformed to the same sign convention:
-# **positive is vapor-like, negative is liquid-like**.
+# Venkatarathnam and Oellrich define
+#
+# \[
+# \Pi =
+# V\left[
+# \frac{P_{VT}}{P_T}
+# -\frac{P_{VV}}{P_V}
+# \right],
+# \qquad
+# \Pi>1\ \Rightarrow\ {\rm liquid},\quad
+# \Pi\leq1\ \Rightarrow\ {\rm vapor},
+# \]
+#
+# where \(P_T=(\partial P/\partial T)_V\),
+# \(P_V=(\partial P/\partial V)_T\), and the remaining symbols are second
+# derivatives at fixed composition. `torch-flash` evaluates all three
+# pressure-derivative rules with PyTorch autodiff, preserving the graph to
+# temperature and trainable EoS parameters. For \(\Pi\), nested
+# `torch.func.jvp` calls evaluate independent batched pressure derivatives
+# without constructing a dense cross-state Jacobian. The paper's optional
+# high-temperature inversion correction is not needed for the saturated phases
+# produced by a converged flash, which is the use studied here. For plotting,
+# every score is transformed to the same sign convention: **positive is
+# vapor-like, negative is liquid-like**.
 
 # %%
 METHODS = {
@@ -169,6 +200,9 @@ METHODS = {
     "Perschke negative flash": "perschke-negative-flash",
     "d(kappa)/dT at P": "pasad-isothermal-compressibility-derivative",
     "d(alpha)/dT at P": "bennett-thermal-expansion-derivative",
+    "Venkatarathnam-Oellrich PIP": (
+        "venkatarathnam-oellrich-phase-identification-parameter"
+    ),
 }
 
 
@@ -706,6 +740,7 @@ case_equilibria: dict[str, GridEquilibrium] = {}
 case_results: dict[str, dict[str, np.ndarray]] = {}
 case_failures: dict[str, pd.DataFrame] = {}
 timing_rows = []
+method_timing_rows = []
 for case in CASES:
     print(f"Flashing {case.name} ({GRID_POINTS} x {GRID_POINTS})...", flush=True)
     equilibrium = flash_grid(
@@ -718,6 +753,7 @@ for case in CASES:
         case.model,
         equilibrium,
         methods=tuple(METHODS.values()),
+        pip_autodiff_chunk_size=PIP_AUTODIFF_CHUNK_SIZE,
     )
     regions = {
         label: identification.region_codes[index].detach().cpu().numpy()
@@ -769,6 +805,26 @@ for case in CASES:
             "three-phase cells": int(torch.sum(equilibrium.phase_counts == 3)),
         }
     )
+    active_phase_count = int(
+        equilibrium.phase_counts[equilibrium.converged].sum().detach()
+    )
+    for (label, method), elapsed_seconds in zip(
+        METHODS.items(),
+        identification.method_elapsed_seconds,
+        strict=True,
+    ):
+        method_timing_rows.append(
+            {
+                "case": case.name,
+                "method": label,
+                "method id": method,
+                "seconds": elapsed_seconds,
+                "active equilibrium phases": active_phase_count,
+                "microseconds per phase": (
+                    1.0e6 * elapsed_seconds / active_phase_count
+                ),
+            }
+        )
     gc.collect()
 
 timing_table = pd.DataFrame(timing_rows)
@@ -781,6 +837,23 @@ for case, failures in case_failures.items():
         print(failures.head(10).to_string(index=False))
 assert (timing_table["minimum valid fraction"] >= 0.98).all()
 assert (timing_table["maximum material-balance residual"] <= 5.0e-11).all()
+
+method_timing_table = pd.DataFrame(method_timing_rows)
+display(
+    method_timing_table.pivot(
+        index="case",
+        columns="method",
+        values="seconds",
+    )
+)
+display(
+    method_timing_table.groupby("method", sort=False).agg(
+        total_seconds=("seconds", "sum"),
+        mean_microseconds_per_phase=("microseconds per phase", "mean"),
+    )
+)
+assert np.isfinite(method_timing_table["seconds"]).all()
+assert (method_timing_table["seconds"] >= 0.0).all()
 
 # %%
 # Li and Firoozabadi Table 9 independently reports a three-phase North Ward
@@ -837,7 +910,7 @@ assert (
 #
 # Colors follow the paper exactly: red V, green L, yellow LV, cyan LL, and
 # black LLV/LLL. Gray cells failed a numerical gate and are not silently
-# assigned a phase. The equilibrium split is identical in all five panels;
+# assigned a phase. The equilibrium split is identical in all six panels;
 # only the physical labels assigned to its phases change.
 
 # %%
@@ -848,7 +921,7 @@ phase_norm = BoundaryNorm(np.arange(-0.5, 6.5), phase_cmap.N)
 
 
 def plot_case(case: PaperCase, regions: dict[str, np.ndarray]) -> None:
-    figure, axes = plt.subplots(2, 3, figsize=(16, 9), constrained_layout=True)
+    figure, axes = plt.subplots(2, 3, figsize=(18, 9), constrained_layout=True)
     for axis, (method, phase_code) in zip(axes.flat, regions.items(), strict=False):
         axis.pcolormesh(
             case.horizontal.detach().numpy(),
@@ -861,9 +934,7 @@ def plot_case(case: PaperCase, regions: dict[str, np.ndarray]) -> None:
         axis.set_title(method, fontsize=11)
         axis.set_xlabel(case.horizontal_label)
         axis.set_ylabel("pressure / bar")
-    legend_axis = axes.flat[-1]
-    legend_axis.axis("off")
-    legend_axis.legend(
+    figure.legend(
         handles=[
             plt.Line2D(
                 [],
@@ -875,7 +946,8 @@ def plot_case(case: PaperCase, regions: dict[str, np.ndarray]) -> None:
             )
             for label, code in PHASE_CODES.items()
         ],
-        loc="center",
+        loc="center left",
+        bbox_to_anchor=(1.0, 0.5),
         fontsize=12,
     )
     figure.suptitle(case.name, fontsize=15, y=1.04)
@@ -954,6 +1026,30 @@ display(
     )
 )
 
+# For mechanically stable states, Eq. 17 is algebraically equivalent in sign
+# to the isothermal-compressibility derivative criterion. Report the grid-level
+# consequence explicitly instead of relying on visual similarity alone.
+pip_equivalence_rows = []
+for case in CASES:
+    compressibility = case_results[case.name]["d(kappa)/dT at P"]
+    pip = case_results[case.name]["Venkatarathnam-Oellrich PIP"]
+    valid = (compressibility != PHASE_CODES["unavailable"]) & (
+        pip != PHASE_CODES["unavailable"]
+    )
+    pip_equivalence_rows.append(
+        {
+            "case": case.name,
+            "valid cells": int(valid.sum()),
+            "different region codes": int((compressibility[valid] != pip[valid]).sum()),
+            "region-code agreement": float(
+                np.mean(compressibility[valid] == pip[valid])
+            ),
+        }
+    )
+pip_equivalence_table = pd.DataFrame(pip_equivalence_rows)
+display(pip_equivalence_table)
+assert (pip_equivalence_table["region-code agreement"] >= 0.98).all()
+
 # %% [markdown]
 # ### Paper-topology regression gates
 #
@@ -999,7 +1095,7 @@ if GRID_POINTS >= 9:
 # composition is an equilibrium-phase composition returned by the grid flash,
 # not the feed.
 # The stored criterion is in its native units: \(T/T_c\), \(V/b\), \(G(0.5)\),
-# 1/(Pa K), or 1/K².
+# 1/(Pa K), 1/K², or dimensionless \(\Pi\).
 
 # %%
 api_rows = []
@@ -1044,61 +1140,88 @@ assert api_table["criterion"].notna().all()
 # ## Higher-order autodiff audit
 #
 # A trainable CH₄/CO₂ interaction is used to verify that Bennett's
-# \((\partial\alpha/\partial T)_P\) criterion remains connected to both the
-# temperature and model parameter graph. A nonzero finite interaction
-# gradient is the relevant differentiability gate.
+# \((\partial\alpha/\partial T)_P\) criterion and the
+# Venkatarathnam-Oellrich parameter remain connected to both the temperature
+# and model-parameter graph. Their native units differ, so the audit reports
+# raw values and checks finite, nonzero sensitivities rather than comparing
+# their magnitudes.
 
 # %%
-gradient_model = peng_robinson_1978(
-    binary_components,
-    kij=binary_kij,
-    trainable=True,
-)
-gradient_temperature = torch.tensor(180.0, requires_grad=True)
-gradient_state = ChemicalState(
-    gradient_temperature,
-    torch.tensor(3.0e6),
-    torch.tensor([0.5, 0.5]),
-)
-gradient_identification = identify_phase(
-    gradient_model,
-    gradient_state,
-    method="bennett-thermal-expansion-derivative",
-)
-if gradient_identification.criterion_value is None:
-    raise RuntimeError("thermal-expansion criterion unexpectedly unavailable")
-temperature_gradient, interaction_gradient = torch.autograd.grad(
-    gradient_identification.criterion_value,
-    (gradient_temperature, gradient_model.mixing.raw_kij),
-)
-gradient_audit = pd.Series(
-    {
-        "criterion / K^-2": float(gradient_identification.criterion_value.detach()),
-        "d criterion / dT / K^-3": float(temperature_gradient),
-        "off-diagonal d criterion / dkij / K^-2": float(interaction_gradient[0, 1]),
-        "all gradients finite": bool(
-            torch.isfinite(temperature_gradient)
-            & torch.isfinite(interaction_gradient).all()
-        ),
-    },
-    name="value",
-)
-display(gradient_audit.to_frame())
-assert bool(gradient_audit["all gradients finite"])
-assert abs(float(interaction_gradient[0, 1])) > 0.0
+gradient_rows = []
+for criterion_label, criterion_method in (
+    ("d(alpha)/dT at P", "bennett-thermal-expansion-derivative"),
+    (
+        "Venkatarathnam-Oellrich PIP",
+        "venkatarathnam-oellrich-phase-identification-parameter",
+    ),
+):
+    gradient_model = peng_robinson_1978(
+        binary_components,
+        kij=binary_kij,
+        trainable=True,
+    )
+    gradient_temperature = torch.tensor(180.0, requires_grad=True)
+    gradient_state = ChemicalState(
+        gradient_temperature,
+        torch.tensor(3.0e6),
+        torch.tensor([0.5, 0.5]),
+    )
+    gradient_identification = identify_phase(
+        gradient_model,
+        gradient_state,
+        method=criterion_method,
+    )
+    if gradient_identification.criterion_value is None:
+        raise RuntimeError(f"{criterion_label} unexpectedly unavailable")
+    temperature_gradient, interaction_gradient = torch.autograd.grad(
+        gradient_identification.criterion_value,
+        (gradient_temperature, gradient_model.mixing.raw_kij),
+    )
+    gradient_rows.append(
+        {
+            "criterion": criterion_label,
+            "criterion value (native units)": float(
+                gradient_identification.criterion_value.detach()
+            ),
+            "d criterion / dT (native units/K)": float(temperature_gradient),
+            "off-diagonal d criterion / dkij (native units)": float(
+                interaction_gradient[0, 1]
+            ),
+            "all gradients finite": bool(
+                torch.isfinite(temperature_gradient)
+                & torch.isfinite(interaction_gradient).all()
+            ),
+        }
+    )
+
+gradient_audit = pd.DataFrame(gradient_rows)
+display(gradient_audit)
+assert gradient_audit["all gradients finite"].all()
+assert (
+    gradient_audit["off-diagonal d criterion / dkij (native units)"].abs() > 0.0
+).all()
 
 # %% [markdown]
 # ## Conclusions and limitations
 #
 # - Every plotted cell is flashed first. Only converged equilibrium phase
 #   compositions that pass fugacity and material-balance gates are passed to
-#   the five identification criteria.
-# - The five maps recover the paper's defining topology and method-specific
+#   the six identification criteria.
+# - The six maps recover the paper's defining topology and method-specific
 #   differences: the methane compressibility dome, binary LV/LL divider,
 #   North Ward Estes three-phase band, synthetic-fluid envelope, and the main
 #   reservoir-fluid envelope with its low-temperature LLV/LL strip.
-# - The derivative methods use second-order PyTorch autodiff and retain a
-#   gradient to trainable EoS interactions.
+# - The Venkatarathnam-Oellrich map agrees with the
+#   \((\partial\kappa/\partial T)_P\) map, as expected from the algebraic
+#   relation between the two criteria on mechanically stable states.
+# - All three derivative methods use second-order PyTorch autodiff. Both
+#   explicitly audited criteria retain gradients to temperature and a
+#   trainable EoS interaction.
+# - The Venkatarathnam-Oellrich grid path batches independent phases in
+#   configurable chunks and uses nested forward-mode JVPs, avoiding a dense
+#   cross-state Jacobian.
+# - Total identification time and a per-method, per-equilibrium-phase timing
+#   are reported separately from the flash time.
 # - Li and Firoozabadi publish all North Ward Estes PR equilibrium inputs.
 #   Their table omits critical volumes, which are derived consistently from PR
 #   only for the Li phase-identification diagnostic and do not affect the

@@ -254,7 +254,8 @@ than interpreting a single near-critical pixel in isolation.
 ## Autodiff boundary
 
 PyTorch autodiff supplies Gibbs gradients, equal-fugacity Newton Jacobians,
-and the two derivative phase-identification criteria. Forward-only stability
+the two response-derivative phase-identification criteria, and the
+Venkatarathnam-Oellrich pressure-derivative parameter. Forward-only stability
 screening avoids retaining a graph.
 
 The complete grid result is intentionally not an end-to-end differentiable
@@ -274,9 +275,16 @@ PyTorch's intra-operation pool. Benchmark one thread first for the small dense
 linear systems typical of cubic-EoS flashes.
 
 Record `elapsed_seconds`, `batched_search_seconds`, `refinement_seconds`,
-dtype, device, PyTorch thread count, grid shape, and all residual maxima.
-Changing the number of Gibbs starts or numerical tolerances changes the
-scientific workload and must be reported with timing.
+`GridPhaseIdentification.method_elapsed_seconds`, dtype, device, PyTorch
+thread count, grid shape, and all residual maxima. The method timings follow
+the exact order in `GridPhaseIdentification.methods`. Changing the number of
+Gibbs starts or numerical tolerances changes the scientific workload and must
+be reported with timing.
+
+`pip_autodiff_chunk_size` bounds the number of independent equilibrium phases
+passed to one nested forward-mode JVP evaluation of the
+Venkatarathnam-Oellrich parameter. It is a memory/performance control only:
+states remain independent and the equations are unchanged.
 
 Configure process-wide dtype, device, and threads once before model
 construction. `flash_grid` never changes global PyTorch runtime settings.
@@ -284,13 +292,14 @@ construction. `flash_grid` never changes global PyTorch runtime settings.
 ## Physical phase-identification methods
 
 `identify_grid_phases` defaults to the five criteria compared by Bennett and
-Schmidt:
+Schmidt plus the Venkatarathnam-Oellrich phase-identification parameter:
 
 - Li volume-weighted pseudo-critical temperature;
 - Pedersen volume-to-covolume ratio;
 - Perschke negative flash;
 - temperature derivative of isothermal compressibility; and
-- temperature derivative of thermal expansion.
+- temperature derivative of thermal expansion; and
+- the dimensionless Venkatarathnam-Oellrich pressure-derivative parameter.
 
 Each criterion is evaluated at each returned equilibrium composition. The
 native value, threshold, and ambiguity flag remain available in
