@@ -271,7 +271,7 @@ def _pedersen_molecular_weight(molar_mass_kg: Tensor, composition: Tensor) -> Te
     return 1.304e-4 * (mw.pow(2.303) - mn.pow(2.303)) + mn
 
 
-def pedersen_viscosity(
+def corresponding_states_viscosity(
     temperature: Tensor,
     pressure: Tensor,
     composition: Tensor,
@@ -279,7 +279,7 @@ def pedersen_viscosity(
     *,
     phase: Literal["liquid", "vapor"] = "vapor",
 ) -> Tensor:
-    """Evaluate Pedersen corresponding-states mixture viscosity.
+    """Evaluate the Pedersen corresponding-states mixture viscosity.
 
     Parameters
     ----------
@@ -314,7 +314,7 @@ def pedersen_viscosity(
     relevant state or flash calculation.
     """
     if composition.ndim != 1:
-        raise ValueError("Pedersen viscosity currently accepts one composition vector")
+        raise ValueError("corresponding-states viscosity currently accepts one composition vector")
     if composition.numel() != components.ncomponents:
         raise ValueError("composition and component set sizes must match")
     z = normalize_composition(composition)

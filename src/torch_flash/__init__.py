@@ -117,9 +117,9 @@ from .properties import (
 )
 from .standard_state import IdealGasPolynomial, ideal_gas_polynomial, poling_ideal_gas
 from .transport import (
+    corresponding_states_viscosity,
     lbc_pseudocomponent_critical_volume,
     lbc_viscosity,
-    pedersen_viscosity,
 )
 from .types import (
     BatchedTwoPhaseFlashResult,
@@ -187,6 +187,7 @@ __all__ = [
     "component_set",
     "configure",
     "continue_saturation_branch",
+    "corresponding_states_viscosity",
     "cpa_components_from_cuts",
     "cpa_eos",
     "cpa_folas_2005",
@@ -220,7 +221,6 @@ __all__ = [
     "pedersen_logarithmic_split",
     "pedersen_peneloux_translation",
     "pedersen_temperature_dependent_translation",
-    "pedersen_viscosity",
     "peng_robinson_1976",
     "peng_robinson_1978",
     "phase_envelope",

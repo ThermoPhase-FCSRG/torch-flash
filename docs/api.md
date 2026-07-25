@@ -25,7 +25,7 @@ advanced constructors.
 | [Phase properties and derivatives](api/properties.md) | Homogeneous-state properties, caloric properties, standard states, and phase identification |
 | [Flash and equilibrium](api/flash-equilibrium.md) | Initial estimates, stability, two-phase and multiphase flash, material balance, saturation, envelopes, and binary loci |
 | [Characterization, parameters, and fitting](api/characterization-parameters.md) | Heavy-end splitting/lumping, cubic property adapters, interactions, PPR78 groups, and calibration helpers |
-| [Transport properties](api/transport.md) | Pedersen and Lohrenz-Bray-Clark viscosity calculations |
+| [Transport properties](api/transport.md) | Corresponding-states and Lohrenz-Bray-Clark viscosity calculations |
 | [Optional backends and numerical solvers](api/backends-solvers.md) | Capability reporting, external homogeneous-state adapters, and damped Newton |
 | [State and result types](api/results.md) | Chemical states, phase properties, convergence results, and equilibrium-point records |
 
