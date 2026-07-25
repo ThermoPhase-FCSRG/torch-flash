@@ -72,6 +72,29 @@ def volume_to_covolume_ratio(
 ) -> Tensor:
     """Return the differentiable cubic-family ``V/b`` phase diagnostic.
 
+    Parameters
+    ----------
+    model
+        Model implementing ``select_z`` and cubic ``mixture_parameters``.
+    state
+        Temperature in K, pressure in Pa, and mole fractions.
+    phase
+        Homogeneous root-selection request.
+
+    Returns
+    -------
+    Tensor
+        Positive dimensionless EOS volume-to-covolume ratio.
+
+    Raises
+    ------
+    TypeError
+        If the model lacks root selection or a mixture covolume.
+    ValueError
+        If the evaluated covolume or ratio is nonpositive/nonfinite.
+
+    Notes
+    -----
     Leading batch dimensions are supported. Cubic volume translations are
     excluded because Pedersen's criterion uses the volume entering the cubic
     repulsive term. A model without ``mixture_parameters`` has no defined
@@ -141,6 +164,35 @@ def identify_phase(
 ) -> PhaseIdentification:
     """Identify a scalar homogeneous state using the Pedersen ``V/b`` rule.
 
+    Parameters
+    ----------
+    model
+        Model implementing root selection and optionally cubic mixture
+        covolume parameters.
+    state
+        One scalar TP state.
+    phase
+        Root-selection request.
+    threshold
+        Dimensionless ``V/b`` separator.
+    ambiguity_relative_tolerance
+        Relative band around the separator marked ambiguous.
+
+    Returns
+    -------
+    PhaseIdentification
+        Physical-identity diagnostic or ``unknown`` when a covolume is
+        unavailable.
+
+    Raises
+    ------
+    ValueError
+        If options or state shapes are invalid.
+    TypeError
+        If the model does not implement root selection.
+
+    Notes
+    -----
     The default threshold of 1.75 is documented by Pedersen et al. for SRK and
     PR. Models that expose compatible cubic-family ``mixture_parameters`` can
     use the same machinery, but a non-SRK/PR threshold requires independent
@@ -176,7 +228,27 @@ def identify_phase_from_properties(
     threshold: float = DEFAULT_VOLUME_TO_COVOLUME_THRESHOLD,
     ambiguity_relative_tolerance: float = DEFAULT_AMBIGUITY_RELATIVE_TOLERANCE,
 ) -> PhaseIdentification:
-    """Identify a phase while reusing already evaluated state properties."""
+    """Identify a phase while reusing already evaluated state properties.
+
+    Parameters
+    ----------
+    model
+        Model that may expose cubic mixture covolume parameters.
+    state
+        Homogeneous scalar TP state associated with ``properties``.
+    properties
+        Previously evaluated properties supplying the compressibility factor.
+    threshold
+        Dimensionless ``V/b`` separator.
+    ambiguity_relative_tolerance
+        Relative band around ``threshold`` classified as ambiguous.
+
+    Returns
+    -------
+    PhaseIdentification
+        Pedersen ``V/b`` classification, or an unavailable/unknown result for
+        batched states or models without a compatible covolume.
+    """
     _validate_options(threshold, ambiguity_relative_tolerance)
     if state.temperature.ndim != 0 or state.pressure.ndim != 0 or state.composition.ndim != 1:
         return _unavailable_identification()
@@ -196,6 +268,27 @@ def identify_flash_phases(
 ) -> tuple[PhaseProperties, ...]:
     """Fill unavailable multiphase identities by molar-volume ordering.
 
+    Parameters
+    ----------
+    phases
+        Homogeneous phase properties from one flash result.
+    ambiguity_relative_tolerance
+        Minimum relative molar-volume separation needed to label the
+        least-dense phase as vapor.
+
+    Returns
+    -------
+    tuple
+        Phase records with physical-identification diagnostics filled where
+        possible.
+
+    Raises
+    ------
+    ValueError
+        If phase volumes are invalid or the ambiguity tolerance is negative.
+
+    Notes
+    -----
     Existing ``V/b`` identifications are preserved. If no phase has a cubic
     covolume diagnostic, the least-dense phase (largest molar volume) is
     labeled vapor and the remaining phases liquid. Near-equal leading volumes

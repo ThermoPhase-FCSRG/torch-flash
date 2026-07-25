@@ -18,7 +18,20 @@ CubicCharacterization = Literal["SRK", "PR"]
 
 @dataclass(frozen=True)
 class CubicFractionProperties:
-    """Critical properties and acentric factors for cubic EoS adapters."""
+    """Critical properties and acentric factors for cubic-EoS adapters.
+
+    Attributes
+    ----------
+    critical_temperature:
+        Cut critical temperatures in K.
+    critical_pressure:
+        Cut critical pressures in Pa.
+    acentric_factor:
+        Dimensionless cut acentric factors.
+    m:
+        Dimensionless alpha-function parameter associated with the requested
+        SRK or PR correlation.
+    """
 
     critical_temperature: Tensor
     critical_pressure: Tensor
@@ -53,6 +66,29 @@ def pedersen_cubic_properties(
     Implements Pedersen et al. (2024), Eqs. 5.1-5.5 and Table 5.3.
     The correlation coefficients are EoS-specific; the input distribution and
     density split remain model-neutral.
+
+    Parameters
+    ----------
+    distribution:
+        SCN distribution with molar masses in kg/mol and densities in kg/m3.
+    eos:
+        ``"SRK"`` or ``"PR"``; each selects a distinct coefficient table.
+    parameter_set:
+        Characterization parameter identifier, YAML path, or explicit record.
+
+    Returns
+    -------
+    CubicFractionProperties
+        Cut properties with the same shape, dtype, and device as the
+        distribution.
+
+    Raises
+    ------
+    ValueError
+        If the EoS name is invalid, densities are absent, or the fitted
+        acentric-factor inversion has no real solution.
+    ParameterDatabaseError
+        If the selected document is not a compatible characterization set.
     """
     if eos not in ("SRK", "PR"):
         raise ValueError("eos must be 'SRK' or 'PR'")

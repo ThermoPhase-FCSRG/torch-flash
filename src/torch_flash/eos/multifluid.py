@@ -25,7 +25,19 @@ from torch_flash.types import PhaseKind, normalize_composition
 
 @dataclass(frozen=True)
 class MultifluidMetadata:
-    """Identity and validation scope of one coefficient set."""
+    """Identity and validation scope of one multifluid coefficient set.
+
+    Attributes
+    ----------
+    model
+        Exact published model or fitted-parameter identity.
+    reference
+        Defining bibliographic reference.
+    version
+        Version of the serialized coefficient set.
+    validated_components
+        Component inventory for which the parameterization is defined.
+    """
 
     model: str
     reference: str
@@ -42,6 +54,23 @@ class HelmholtzTerms:
     -linear_density*(delta-linear_shift))``. Setting the optional arrays to
     zero recovers the power-exponential subset. The final linear-density
     factor is the binary departure form used by GERG-2008.
+
+    Attributes
+    ----------
+    n, d, t, decay
+        Term amplitudes, reduced-density exponents, inverse-reduced-temperature
+        exponents, and exponential density powers.
+    eta, epsilon
+        Optional Gaussian density width and center arrays.
+    beta, gamma
+        Optional Gaussian temperature width and center arrays.
+    linear_density, linear_shift
+        Optional GERG linear-density exponential parameters.
+
+    Notes
+    -----
+    Every present tensor has the same term-table shape. Pure tables typically
+    use component rows; departure tables use component-pair rows.
     """
 
     n: Tensor
@@ -72,7 +101,16 @@ class HelmholtzTerms:
 
 @dataclass(frozen=True)
 class GaoBTerms:
-    """Gao-B critical-region residual Helmholtz terms."""
+    """Gao-B critical-region residual Helmholtz coefficient arrays.
+
+    Attributes
+    ----------
+    n, d, t
+        Term amplitude and reduced-density/reduced-temperature exponents.
+    eta, epsilon, beta, gamma, b
+        Critical-region shape parameters. Every tensor must have the same
+        shape as ``n``.
+    """
 
     n: Tensor
     d: Tensor
@@ -91,7 +129,18 @@ class GaoBTerms:
 
 @dataclass(frozen=True)
 class NonAnalyticTerms:
-    """Span-Wagner non-analytic critical-region residual terms."""
+    """Span--Wagner non-analytic critical-region coefficient arrays.
+
+    Attributes
+    ----------
+    n
+        Term amplitudes.
+    capital_a, capital_b, capital_c, capital_d
+        Non-analytic shape coefficients.
+    a, b, beta
+        Critical exponents and crossover parameters. Every tensor must have
+        the same shape as ``n``.
+    """
 
     n: Tensor
     capital_a: Tensor
@@ -125,6 +174,20 @@ class IdealHelmholtzTerms:
     constant of the original pure-fluid equation and the common mixture gas
     constant. It multiplies the density-independent part only, preserving the
     exact ideal-gas pressure limit.
+
+    Attributes
+    ----------
+    lead_constant, lead_tau, log_tau, tau_log_tau
+        One leading coefficient of each analytic form per component.
+    power_n, power_t
+        Amplitudes and exponents for pure power terms.
+    planck_n, planck_theta
+        Planck--Einstein amplitudes and characteristic-temperature ratios.
+    gerg_n, gerg_theta, gerg_sign
+        GERG hyperbolic-term amplitudes, arguments, and sinh/cosh selectors.
+    gas_scale
+        Per-component ratio of the source pure-fluid gas constant to the
+        common mixture gas constant.
     """
 
     lead_constant: Tensor
@@ -166,7 +229,34 @@ class IdealHelmholtzTerms:
 
 
 class MultiFluidEOS(nn.Module):
-    """Autodifferentiable multifluid Helmholtz model."""
+    """Autodifferentiable multifluid Helmholtz equation of state.
+
+    Parameters
+    ----------
+    names
+        Canonical component names defining the final tensor axis.
+    critical_temperature, critical_density, molar_mass
+        Pure-component reducing constants in K, mol/m3, and kg/mol.
+    pure_terms, departure_terms
+        Pure residual and binary departure Helmholtz coefficient tables.
+    beta_temperature, gamma_temperature, beta_volume, gamma_volume
+        Symmetric binary reducing-function matrices.
+    departure_scale
+        Symmetric binary departure-function multipliers.
+    metadata
+        Exact model identity and supported-component scope.
+    trainable
+        Register coefficient arrays as trainable PyTorch parameters.
+    gas_constant
+        Model gas constant in J/(mol K).
+
+    Notes
+    -----
+    Property kernels preserve leading batches and gradients. Density inversion
+    and root selection are iterative; failure raises
+    :class:`~torch_flash.exceptions.ConvergenceError`. Float64 is the
+    reference precision, especially near critical or coalescing roots.
+    """
 
     critical_temperature: Tensor
     critical_density: Tensor
@@ -422,7 +512,19 @@ class MultiFluidEOS(nn.Module):
             self.register_buffer(f"ideal_{name}", getattr(terms, name).clone())
 
     def reducing_functions(self, composition: Tensor) -> tuple[Tensor, Tensor]:
-        """Return mixture reducing temperature and molar density."""
+        """Evaluate composition-dependent mixture reducing functions.
+
+        Parameters
+        ----------
+        composition
+            Mole fractions with components on the final axis.
+
+        Returns
+        -------
+        tuple
+            Reducing temperature in K and reducing molar density in mol/m3,
+            with the broadcast leading shape.
+        """
         x = normalize_composition(composition)
         xi = x[..., :, None]
         xj = x[..., None, :]
@@ -526,7 +628,22 @@ class MultiFluidEOS(nn.Module):
     def alpha_residual(
         self, temperature: Tensor, molar_density: Tensor, composition: Tensor
     ) -> Tensor:
-        """Return dimensionless molar residual Helmholtz energy."""
+        """Evaluate dimensionless molar residual Helmholtz energy.
+
+        Parameters
+        ----------
+        temperature
+            Temperature in K.
+        molar_density
+            Molar density in mol/m3.
+        composition
+            Mole fractions with components on the final axis.
+
+        Returns
+        -------
+        Tensor
+            Dimensionless ``alpha^r = a^r/(RT)``.
+        """
         x = normalize_composition(composition)
         reducing_temperature, reducing_density = self.reducing_functions(x)
         tau = reducing_temperature / temperature
@@ -571,7 +688,27 @@ class MultiFluidEOS(nn.Module):
     def alpha_ideal(
         self, temperature: Tensor, molar_density: Tensor, composition: Tensor
     ) -> Tensor:
-        """Return dimensionless molar ideal-gas Helmholtz energy."""
+        """Evaluate dimensionless molar ideal-gas Helmholtz energy.
+
+        Parameters
+        ----------
+        temperature
+            Temperature in K.
+        molar_density
+            Molar density in mol/m3.
+        composition
+            Mole fractions with components on the final axis.
+
+        Returns
+        -------
+        Tensor
+            Dimensionless ideal contribution ``alpha^0``.
+
+        Raises
+        ------
+        RuntimeError
+            If the model was constructed without ideal Helmholtz terms.
+        """
         if not self.has_ideal_terms:
             raise RuntimeError("this multifluid model has no ideal Helmholtz coefficient table")
         x = normalize_composition(composition)
@@ -612,20 +749,65 @@ class MultiFluidEOS(nn.Module):
     def alpha_total(
         self, temperature: Tensor, molar_density: Tensor, composition: Tensor
     ) -> Tensor:
-        """Return dimensionless total molar Helmholtz energy."""
+        """Evaluate total dimensionless molar Helmholtz energy.
+
+        Parameters
+        ----------
+        temperature
+            Temperature in K.
+        molar_density
+            Molar density in mol/m3.
+        composition
+            Mole fractions on the final axis.
+
+        Returns
+        -------
+        Tensor
+            ``alpha^0 + alpha^r``.
+        """
         return self.alpha_ideal(temperature, molar_density, composition) + self.alpha_residual(
             temperature, molar_density, composition
         )
 
     def residual_helmholtz_rt(self, temperature: Tensor, volume: Tensor, moles: Tensor) -> Tensor:
-        """Return extensive residual Helmholtz energy divided by ``RT``."""
+        """Evaluate extensive reduced residual Helmholtz energy.
+
+        Parameters
+        ----------
+        temperature
+            Temperature in K.
+        volume
+            Total volume in m3.
+        moles
+            Component amounts in mol on the final axis.
+
+        Returns
+        -------
+        Tensor
+            Dimensionless extensive ``A^R/(RT)``.
+        """
         total = moles.sum(dim=-1)
         x = moles / total[..., None]
         density = total / volume
         return total * self.alpha_residual(temperature, density, x)
 
     def helmholtz_rt(self, temperature: Tensor, volume: Tensor, moles: Tensor) -> Tensor:
-        """Return extensive total Helmholtz energy divided by ``RT``."""
+        """Evaluate extensive total reduced Helmholtz energy.
+
+        Parameters
+        ----------
+        temperature
+            Temperature in K.
+        volume
+            Total volume in m3.
+        moles
+            Component amounts in mol on the final axis.
+
+        Returns
+        -------
+        Tensor
+            Dimensionless extensive ``A/(RT)``.
+        """
         total = moles.sum(dim=-1)
         x = moles / total[..., None]
         return total * self.alpha_total(temperature, total / volume, x)
@@ -633,7 +815,18 @@ class MultiFluidEOS(nn.Module):
     def molar_helmholtz_energy(
         self, temperature: Tensor, molar_density: Tensor, composition: Tensor
     ) -> Tensor:
-        """Return total molar Helmholtz energy in J/mol."""
+        """Return total molar Helmholtz energy.
+
+        Parameters
+        ----------
+        temperature, molar_density, composition
+            Temperature in K, density in mol/m3, and final-axis mole fractions.
+
+        Returns
+        -------
+        Tensor
+            Molar Helmholtz energy in J/mol.
+        """
         return (
             self.gas_constant
             * temperature
@@ -643,7 +836,18 @@ class MultiFluidEOS(nn.Module):
     def molar_entropy(
         self, temperature: Tensor, molar_density: Tensor, composition: Tensor
     ) -> Tensor:
-        """Return total molar entropy in J/(mol K)."""
+        """Return total molar entropy by temperature differentiation.
+
+        Parameters
+        ----------
+        temperature, molar_density, composition
+            Temperature in K, fixed density in mol/m3, and mole fractions.
+
+        Returns
+        -------
+        Tensor
+            Molar entropy in J/(mol K).
+        """
         derivative: Tensor = torch.func.grad(
             lambda current: self.molar_helmholtz_energy(
                 current,
@@ -656,14 +860,36 @@ class MultiFluidEOS(nn.Module):
     def molar_internal_energy(
         self, temperature: Tensor, molar_density: Tensor, composition: Tensor
     ) -> Tensor:
-        """Return total molar internal energy in J/mol."""
+        """Return total molar internal energy.
+
+        Parameters
+        ----------
+        temperature, molar_density, composition
+            Temperature in K, density in mol/m3, and mole fractions.
+
+        Returns
+        -------
+        Tensor
+            Molar internal energy in J/mol.
+        """
         helmholtz = self.molar_helmholtz_energy(temperature, molar_density, composition)
         return helmholtz + temperature * self.molar_entropy(temperature, molar_density, composition)
 
     def molar_heat_capacity_cv(
         self, temperature: Tensor, molar_density: Tensor, composition: Tensor
     ) -> Tensor:
-        """Return isochoric molar heat capacity in J/(mol K)."""
+        """Return isochoric molar heat capacity.
+
+        Parameters
+        ----------
+        temperature, molar_density, composition
+            Temperature in K, fixed density in mol/m3, and mole fractions.
+
+        Returns
+        -------
+        Tensor
+            ``C_v`` in J/(mol K).
+        """
         derivative: Tensor = torch.func.grad(
             lambda current: self.molar_internal_energy(
                 current,
@@ -676,7 +902,18 @@ class MultiFluidEOS(nn.Module):
     def molar_heat_capacity_cp(
         self, temperature: Tensor, molar_density: Tensor, composition: Tensor
     ) -> Tensor:
-        """Return isobaric molar heat capacity in J/(mol K)."""
+        """Return isobaric molar heat capacity from Helmholtz derivatives.
+
+        Parameters
+        ----------
+        temperature, molar_density, composition
+            Temperature in K, density in mol/m3, and mole fractions.
+
+        Returns
+        -------
+        Tensor
+            ``C_p`` in J/(mol K).
+        """
         volume = molar_density.reciprocal()
         cv = self.molar_heat_capacity_cv(temperature, molar_density, composition)
         dp_dt: Tensor = torch.func.grad(
@@ -694,7 +931,18 @@ class MultiFluidEOS(nn.Module):
     def molar_enthalpy(
         self, temperature: Tensor, molar_density: Tensor, composition: Tensor
     ) -> Tensor:
-        """Return total molar enthalpy in J/mol."""
+        """Return total molar enthalpy.
+
+        Parameters
+        ----------
+        temperature, molar_density, composition
+            Temperature in K, density in mol/m3, and mole fractions.
+
+        Returns
+        -------
+        Tensor
+            Molar enthalpy in J/mol.
+        """
         volume = molar_density.reciprocal()
         return (
             self.molar_internal_energy(temperature, molar_density, composition)
@@ -704,7 +952,18 @@ class MultiFluidEOS(nn.Module):
     def molar_gibbs_energy(
         self, temperature: Tensor, molar_density: Tensor, composition: Tensor
     ) -> Tensor:
-        """Return total molar Gibbs energy in J/mol."""
+        """Return total molar Gibbs energy.
+
+        Parameters
+        ----------
+        temperature, molar_density, composition
+            Temperature in K, density in mol/m3, and mole fractions.
+
+        Returns
+        -------
+        Tensor
+            Molar Gibbs energy in J/mol.
+        """
         volume = molar_density.reciprocal()
         return (
             self.molar_helmholtz_energy(temperature, molar_density, composition)
@@ -714,7 +973,22 @@ class MultiFluidEOS(nn.Module):
     def chemical_potentials(
         self, temperature: Tensor, molar_volume: Tensor, composition: Tensor
     ) -> Tensor:
-        """Return total component chemical potentials in J/mol."""
+        """Return total component chemical potentials.
+
+        Parameters
+        ----------
+        temperature
+            Temperature in K.
+        molar_volume
+            Homogeneous molar volume in m3/mol.
+        composition
+            Mole fractions on the final axis.
+
+        Returns
+        -------
+        Tensor
+            Component chemical potentials in J/mol.
+        """
         x = normalize_composition(composition)
         reduced: Tensor = torch.func.grad(
             lambda moles: self.helmholtz_rt(
@@ -728,7 +1002,18 @@ class MultiFluidEOS(nn.Module):
     def speed_of_sound(
         self, temperature: Tensor, molar_density: Tensor, composition: Tensor
     ) -> Tensor:
-        """Return homogeneous-phase speed of sound in m/s."""
+        """Return homogeneous-phase speed of sound.
+
+        Parameters
+        ----------
+        temperature, molar_density, composition
+            Temperature in K, density in mol/m3, and mole fractions.
+
+        Returns
+        -------
+        Tensor
+            Speed of sound in m/s.
+        """
         x = normalize_composition(composition)
         dp_drho: Tensor = torch.func.grad(
             lambda density: self.pressure(
@@ -1165,7 +1450,22 @@ class MultiFluidEOS(nn.Module):
         composition: Tensor,
         phase: PhaseKind = "stable",
     ) -> Tensor:
-        """Return compressibility factor."""
+        """Return the compressibility factor for a selected density root.
+
+        Parameters
+        ----------
+        temperature, pressure
+            Temperature in K and pressure in Pa.
+        composition
+            Mole fractions on the final axis.
+        phase
+            Liquid, vapor, or stable-root request.
+
+        Returns
+        -------
+        Tensor
+            Dimensionless ``Z = Pv/(RT)``.
+        """
         volume = self.molar_volume(temperature, pressure, composition, phase)
         return pressure * volume / (self.gas_constant * temperature)
 
@@ -1176,7 +1476,27 @@ class MultiFluidEOS(nn.Module):
         composition: Tensor,
         phase: PhaseKind = "stable",
     ) -> Tensor:
-        """Return log fugacity coefficients from composition derivatives."""
+        """Return component log fugacity coefficients.
+
+        Parameters
+        ----------
+        temperature, pressure
+            Temperature in K and pressure in Pa.
+        composition
+            Mole fractions on the final axis.
+        phase
+            Liquid, vapor, or stable-root request.
+
+        Returns
+        -------
+        Tensor
+            Dimensionless ``ln(phi_i)`` with a final component axis.
+
+        Notes
+        -----
+        Residual chemical potentials are obtained by differentiating the
+        extensive residual Helmholtz energy at fixed volume.
+        """
         x = normalize_composition(composition)
         volume = self.molar_volume(temperature, pressure, x, phase)
         residual_mu: Tensor = torch.func.grad(

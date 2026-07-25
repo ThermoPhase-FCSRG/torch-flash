@@ -95,6 +95,28 @@ class ModelParameterSet:
     custom YAML path, or selected from the bundled database by identifier.
     The stored mappings are recursively read-only. Use :meth:`as_dict` when a
     mutable deep copy is needed.
+
+    Attributes
+    ----------
+    identifier:
+        Stable lowercase parameter-set identifier.
+    model_kind:
+        Scientific domain such as ``"cubic"``, ``"activity"``, or
+        ``"multifluid"``.
+    model:
+        Model/form name declared by the document.
+    version:
+        Parameter-set version or revision.
+    parameters:
+        Recursively read-only numerical/scientific payload.
+    units:
+        Recursively read-only units mapping.
+    references:
+        Source records for equations, coefficients, or fits.
+    description:
+        Human-readable parameter-set scope.
+    source:
+        Bundled resource label, custom path, or ``"<api>"``.
     """
 
     identifier: str
@@ -156,7 +178,27 @@ class ModelParameterSet:
         *,
         source: str = "<api>",
     ) -> ModelParameterSet:
-        """Validate a model-parameter YAML document represented as a mapping."""
+        """Validate a model-parameter YAML document represented as a mapping.
+
+        Parameters
+        ----------
+        document:
+            Parsed YAML mapping following the torch-flash model-parameter
+            schema.
+        source:
+            Label used in diagnostics and stored provenance.
+
+        Returns
+        -------
+        ModelParameterSet
+            Immutable validated parameter document.
+
+        Raises
+        ------
+        ParameterDatabaseError
+            If required headers, identifiers, mappings, units, or references
+            are invalid.
+        """
         _validate_header(document, _MODEL_FORMAT, source)
         parameters = document.get("parameters")
         if not isinstance(parameters, Mapping):
@@ -183,7 +225,14 @@ class ModelParameterSet:
         )
 
     def as_dict(self) -> dict[str, Any]:
-        """Return a mutable deep copy of the numerical parameter payload."""
+        """Return a mutable deep copy of the numerical parameter payload.
+
+        Returns
+        -------
+        dict
+            Deeply mutable copy. Mutating it cannot alter the cached parameter
+            set or any existing model tensors.
+        """
         return cast(dict[str, Any], _thaw(self.parameters))
 
 
@@ -257,6 +306,26 @@ def load_model_parameters(source: ParameterSource) -> ModelParameterSet:
     Parsed bundled and custom files are cached by identifier or resolved path.
     Call :func:`clear_parameter_caches` after intentionally modifying a custom
     file in a long-running process.
+
+    Parameters
+    ----------
+    source:
+        Bundled identifier or alias, custom YAML path, or an explicit
+        :class:`ModelParameterSet`.
+
+    Returns
+    -------
+    ModelParameterSet
+        Immutable validated parameter set.
+
+    Raises
+    ------
+    KeyError
+        If a string is neither a bundled identifier/alias nor a YAML path.
+    FileNotFoundError
+        If a custom YAML path does not exist.
+    ParameterDatabaseError
+        If the document does not satisfy the schema.
     """
     if isinstance(source, ModelParameterSet):
         return source
@@ -274,7 +343,20 @@ def load_model_parameters(source: ParameterSource) -> ModelParameterSet:
 
 
 def available_parameter_sets(*, model_kind: str | None = None) -> tuple[str, ...]:
-    """Return bundled parameter-set identifiers, optionally filtered by kind."""
+    """Return bundled parameter-set identifiers, optionally filtered by kind.
+
+    Parameters
+    ----------
+    model_kind:
+        Exact model-kind filter, for example ``"cubic"`` or ``"activity"``.
+        ``None`` returns every bundled identifier.
+
+    Returns
+    -------
+    tuple[str, ...]
+        Sorted immutable tuple of matching identifiers. An unknown kind yields
+        an empty tuple.
+    """
     entries, _ = _index()
     identifiers = tuple(sorted(entries))
     if model_kind is None:
@@ -287,7 +369,16 @@ def available_parameter_sets(*, model_kind: str | None = None) -> tuple[str, ...
 
 
 def clear_parameter_caches() -> None:
-    """Clear parsed YAML caches, primarily for custom-file development."""
+    """Clear parsed model-parameter YAML caches.
+
+    Use this after intentionally modifying a custom file in a long-running
+    process. Existing model instances and tensors are unaffected.
+
+    Returns
+    -------
+    None
+        The next parameter load reparses its source.
+    """
     _load_builtin.cache_clear()
     _load_path.cache_clear()
     _index.cache_clear()

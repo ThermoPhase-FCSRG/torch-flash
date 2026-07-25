@@ -56,6 +56,7 @@ GERG2008_COMPONENTS = (
     "n_nonane",
     "n_decane",
 )
+"""Canonical 21-component inventory supported by bundled GERG-2008."""
 
 EOSCG2021_COMPONENTS = (
     "carbon_dioxide",
@@ -75,6 +76,7 @@ EOSCG2021_COMPONENTS = (
     "ammonia",
     "mdea",
 )
+"""Canonical 16-component inventory supported by bundled EOS-CG-2021."""
 
 _GERG_TO_CANONICAL = {
     "carbondioxide": "carbon_dioxide",
@@ -759,7 +761,32 @@ def multifluid_eos(
     device: torch.device | str | None = None,
     trainable: bool = False,
 ) -> MultiFluidEOS:
-    """Construct a native multifluid EoS from YAML or explicit parameters."""
+    """Construct a native multifluid EOS from versioned parameters.
+
+    Parameters
+    ----------
+    parameter_set
+        Bundled identifier, custom YAML path, mapping, or loaded multifluid
+        parameter set.
+    names
+        Optional ordered component subset. Omitting it selects the complete
+        inventory defined by the parameter set.
+    dtype, device
+        Tensor placement, defaulting to runtime configuration.
+    trainable
+        Register supported coefficient tensors as trainable parameters.
+
+    Returns
+    -------
+    MultiFluidEOS
+        GERG-family or EOS-CG model selected from the source identity.
+
+    Raises
+    ------
+    ParameterDatabaseError
+        If the source is not a supported multifluid model or its coefficient
+        inventory is malformed.
+    """
     dtype, device = resolve_tensor_options(dtype, device)
     loaded = load_model_parameters(parameter_set)
     if loaded.model_kind != "multifluid":
@@ -798,7 +825,23 @@ def gerg2008(
 ) -> MultiFluidEOS:
     """Construct the complete native 21-component GERG-2008 Helmholtz model.
 
-    Reference: Kunz and Wagner (2012), doi:10.1021/je300655b.
+    Parameters
+    ----------
+    names
+        Optional ordered subset of the 21 supported components.
+    dtype, device
+        Tensor placement.
+    trainable
+        Register supported coefficient tensors as trainable parameters.
+    parameter_set
+        GERG-2008 parameter source, overridable for an explicitly versioned
+        compatible document.
+
+    Returns
+    -------
+    MultiFluidEOS
+        Native GERG-2008 model. The defining reference is Kunz and Wagner
+        (2012), doi:10.1021/je300655b.
     """
     dtype, device = resolve_tensor_options(dtype, device)
     loaded = load_model_parameters(parameter_set)
@@ -825,8 +868,22 @@ def eoscg2021(
 ) -> MultiFluidEOS:
     """Construct the complete native 16-component EOS-CG-2021 Helmholtz model.
 
-    Reference: Neumann et al. (2023),
-    doi:10.1007/s10765-023-03263-6, including its supplementary tables.
+    Parameters
+    ----------
+    names
+        Optional ordered subset of the 16 supported components.
+    dtype, device
+        Tensor placement.
+    trainable
+        Register supported coefficient tensors as trainable parameters.
+    parameter_set
+        EOS-CG-2021 parameter source.
+
+    Returns
+    -------
+    MultiFluidEOS
+        Native EOS-CG-2021 model defined by Neumann et al. (2023),
+        doi:10.1007/s10765-023-03263-6, including its supplementary tables.
     """
     dtype, device = resolve_tensor_options(dtype, device)
     loaded = load_model_parameters(parameter_set)

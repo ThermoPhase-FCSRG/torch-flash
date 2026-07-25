@@ -42,7 +42,29 @@ CubicMixing = QuadraticMixing | TemperatureDependentQuadraticMixing | PPR78Mixin
 
 @dataclass(frozen=True)
 class CubicConstants:
-    """Definition of a generalized cubic EoS."""
+    """Immutable constants defining a generalized two-parameter cubic EOS.
+
+    Attributes
+    ----------
+    name
+        Human-readable model name.
+    omega_a, omega_b
+        Dimensionless critical constraints for the attraction and covolume
+        parameters.
+    delta1, delta2
+        Dimensionless denominator-shape constants in the generalized cubic
+        pressure equation.
+    alpha_kind
+        Identifier selecting the SRK, PR76, or PR78 alpha correlation.
+    alpha_low, alpha_high
+        Polynomial coefficients mapping acentric factor to the alpha-function
+        exponent. ``alpha_high`` is used only by PR78 above ``alpha_switch``.
+    alpha_switch
+        PR78 acentric-factor switch, or ``None`` for models without a second
+        coefficient branch.
+    parameter_set
+        Versioned parameter-set identifier when loaded from the database.
+    """
 
     name: str
     omega_a: float
@@ -57,7 +79,25 @@ class CubicConstants:
 
 
 def cubic_constants(source: ParameterSource) -> CubicConstants:
-    """Construct typed cubic constants from YAML or an explicit parameter set."""
+    """Load and validate generalized cubic EOS constants.
+
+    Parameters
+    ----------
+    source
+        Bundled parameter-set identifier, YAML path, mapping, or an already
+        loaded model parameter set.
+
+    Returns
+    -------
+    CubicConstants
+        Typed, immutable constants retaining the source identifier.
+
+    Raises
+    ------
+    ParameterDatabaseError
+        If the source is not a cubic parameter set or required alpha and
+        critical-constraint entries are missing or malformed.
+    """
     parameter_set = load_model_parameters(source)
     if parameter_set.model_kind != "cubic":
         raise ParameterDatabaseError(
@@ -172,7 +212,40 @@ def cubic_real_roots(c2: Tensor, c1: Tensor, c0: Tensor) -> Tensor:
 
 
 class CubicEOS(nn.Module):
-    """Generalized cubic equation of state with differentiable parameters."""
+    """Generalized cubic equation of state with differentiable parameters.
+
+    Parameters
+    ----------
+    components
+        Ordered component set supplying critical temperatures in K, critical
+        pressures in Pa, acentric factors, and molar masses in kg/mol.
+    constants
+        Cubic family constants and alpha-function definition.
+    mixing
+        Mixing-rule module. The default is quadratic mixing with zero binary
+        interactions.
+    volume_translation
+        Additive component molar-volume shifts in m3/mol, or a
+        temperature-dependent :class:`VolumeTranslation` object.
+
+    Attributes
+    ----------
+    names
+        Canonical component names in tensor component-axis order.
+    critical_temperature, critical_pressure, acentric_factor, molar_mass
+        Per-component model buffers.
+    mixing
+        Active mixing-rule module; its trainable tensors remain registered
+        PyTorch parameters.
+    volume_translation
+        Reference additive shifts in m3/mol.
+
+    Notes
+    -----
+    Public calculations preserve leading batch dimensions, device, dtype, and
+    gradients. A requested ``"stable"`` root is the admissible root with the
+    lowest residual Gibbs energy; root selection does not perform a flash.
+    """
 
     critical_temperature: Tensor
     critical_pressure: Tensor
@@ -237,11 +310,29 @@ class CubicEOS(nn.Module):
 
     @property
     def ncomponents(self) -> int:
-        """Number of modeled components."""
+        """Return the number of components on the final tensor axis.
+
+        Returns
+        -------
+        int
+            Length of :attr:`names`.
+        """
         return len(self.names)
 
     def component_volume_translation(self, temperature: Tensor) -> Tensor:
-        """Return additive component volume shifts at ``temperature``."""
+        """Evaluate additive component volume shifts.
+
+        Parameters
+        ----------
+        temperature
+            Temperature in K with arbitrary leading batch dimensions.
+
+        Returns
+        -------
+        Tensor
+            Shifts in m3/mol with shape ``temperature.shape +
+            (ncomponents,)``.
+        """
         return (
             self.volume_translation
             + (temperature[..., None] - self.volume_translation_reference_temperature)
@@ -268,7 +359,24 @@ class CubicEOS(nn.Module):
         return torch.where(omega <= self.constants.alpha_switch, low, high)
 
     def pure_parameters(self, temperature: Tensor) -> tuple[Tensor, Tensor]:
-        """Return temperature-dependent pure ``a_i`` and constant ``b_i``."""
+        """Evaluate pure-component attraction and covolume parameters.
+
+        Parameters
+        ----------
+        temperature
+            Positive temperature in K.
+
+        Returns
+        -------
+        tuple
+            Attraction parameters ``a_i`` in Pa m6/mol2 and covolumes ``b_i``
+            in m3/mol, each with a final component axis.
+
+        Raises
+        ------
+        InvalidStateError
+            If any temperature is nonpositive.
+        """
         if bool((temperature <= 0.0).any()):
             raise InvalidStateError("temperature must be positive")
         reduced = temperature[..., None] / self.critical_temperature
@@ -284,7 +392,22 @@ class CubicEOS(nn.Module):
         return a, b
 
     def mixture_parameters(self, temperature: Tensor, composition: Tensor) -> tuple[Tensor, Tensor]:
-        """Return mixed attraction and covolume parameters."""
+        """Mix pure parameters at a homogeneous composition.
+
+        Parameters
+        ----------
+        temperature
+            Temperature in K.
+        composition
+            Mole fractions with components on the final axis; normalized
+            internally.
+
+        Returns
+        -------
+        tuple
+            Mixture attraction ``a`` in Pa m6/mol2 and covolume ``b`` in
+            m3/mol, with the broadcast batch shape.
+        """
         x = normalize_composition(composition)
         pure_a, pure_b = self.pure_parameters(temperature)
         result: tuple[Tensor, Tensor] = self.mixing(temperature, x, pure_a, pure_b)
@@ -293,14 +416,49 @@ class CubicEOS(nn.Module):
     def dimensionless_parameters(
         self, temperature: Tensor, pressure: Tensor, composition: Tensor
     ) -> tuple[Tensor, Tensor]:
-        """Return conventional cubic parameters ``A`` and ``B``."""
+        """Return conventional dimensionless cubic parameters ``A`` and ``B``.
+
+        Parameters
+        ----------
+        temperature
+            Positive temperature in K.
+        pressure
+            Positive pressure in Pa.
+        composition
+            Mole fractions with components on the final axis.
+
+        Returns
+        -------
+        tuple
+            ``A = aP/(RT)^2`` and ``B = bP/(RT)``.
+
+        Raises
+        ------
+        InvalidStateError
+            If pressure is nonpositive, or temperature is rejected by the
+            pure-parameter calculation.
+        """
         if bool((pressure <= 0.0).any()):
             raise InvalidStateError("pressure must be positive")
         am, bm = self.mixture_parameters(temperature, composition)
         return am * pressure / (R * temperature).square(), bm * pressure / (R * temperature)
 
     def z_factors(self, temperature: Tensor, pressure: Tensor, composition: Tensor) -> Tensor:
-        """Return sorted real compressibility-factor roots."""
+        """Return all sorted real compressibility-factor root slots.
+
+        Parameters
+        ----------
+        temperature, pressure
+            Homogeneous-state temperature in K and pressure in Pa.
+        composition
+            Mole fractions with components on the final axis.
+
+        Returns
+        -------
+        Tensor
+            Three sorted root slots on the final axis. For a polynomial with
+            one real root, that root is repeated in all three slots.
+        """
         a, b = self.dimensionless_parameters(temperature, pressure, composition)
         u = self.constants.delta1 + self.constants.delta2
         w = self.constants.delta1 * self.constants.delta2
@@ -326,7 +484,30 @@ class CubicEOS(nn.Module):
         composition: Tensor,
         phase: PhaseKind = "stable",
     ) -> Tensor:
-        """Select a physical liquid, vapor, or minimum-Gibbs root."""
+        """Select an admissible liquid, vapor, or minimum-Gibbs root.
+
+        Parameters
+        ----------
+        temperature, pressure
+            Homogeneous-state temperature in K and pressure in Pa.
+        composition
+            Mole fractions with components on the final axis.
+        phase
+            ``"liquid"`` selects the smallest admissible root, ``"vapor"``
+            the largest, and ``"stable"`` the minimum-residual-Gibbs root.
+
+        Returns
+        -------
+        Tensor
+            Selected dimensionless compressibility factor for each state.
+
+        Raises
+        ------
+        ValueError
+            If ``phase`` is unknown.
+        InvalidStateError
+            If no root exceeds the mixture covolume.
+        """
         roots = self.z_factors(temperature, pressure, composition)
         _, b = self.dimensionless_parameters(temperature, pressure, composition)
         valid = roots > b[..., None] * (1.0 + 32.0 * torch.finfo(roots.dtype).eps)
@@ -352,7 +533,22 @@ class CubicEOS(nn.Module):
         composition: Tensor,
         phase: PhaseKind = "stable",
     ) -> Tensor:
-        """Return translated molar volume in m3/mol."""
+        """Return translated homogeneous-phase molar volume.
+
+        Parameters
+        ----------
+        temperature, pressure
+            Temperature in K and pressure in Pa.
+        composition
+            Mole fractions with components on the final axis.
+        phase
+            Cubic root-selection request.
+
+        Returns
+        -------
+        Tensor
+            Physical molar volume in m3/mol.
+        """
         x = normalize_composition(composition)
         z = self.select_z(temperature, pressure, x, phase)
         unshifted = z * R * temperature / pressure
@@ -360,7 +556,27 @@ class CubicEOS(nn.Module):
         return unshifted + torch.sum(x * translation, dim=-1)
 
     def pressure(self, temperature: Tensor, molar_volume: Tensor, composition: Tensor) -> Tensor:
-        """Evaluate pressure at a homogeneous ``T, v, x`` state."""
+        """Evaluate pressure at a supplied homogeneous ``T-v-x`` state.
+
+        Parameters
+        ----------
+        temperature
+            Temperature in K.
+        molar_volume
+            Physical, volume-translated molar volume in m3/mol.
+        composition
+            Mole fractions with components on the final axis.
+
+        Returns
+        -------
+        Tensor
+            Pressure in Pa.
+
+        Raises
+        ------
+        InvalidStateError
+            If the parent-EOS volume does not exceed the mixture covolume.
+        """
         x = normalize_composition(composition)
         shift = torch.sum(x * self.component_volume_translation(temperature), dim=-1)
         volume = molar_volume - shift
@@ -372,7 +588,27 @@ class CubicEOS(nn.Module):
         return R * temperature / (volume - bm) - am / ((volume + d1 * bm) * (volume + d2 * bm))
 
     def residual_helmholtz_rt(self, temperature: Tensor, volume: Tensor, moles: Tensor) -> Tensor:
-        """Return extensive residual Helmholtz energy divided by ``RT``."""
+        """Evaluate the extensive reduced residual Helmholtz energy.
+
+        Parameters
+        ----------
+        temperature
+            Temperature in K.
+        volume
+            Physical extensive volume in m3.
+        moles
+            Component amounts in mol on the final axis.
+
+        Returns
+        -------
+        Tensor
+            Dimensionless extensive residual Helmholtz energy ``A^R/(RT)``.
+
+        Notes
+        -----
+        The ideal-gas reference-volume correction retains thermodynamic
+        consistency when additive volume translation is active.
+        """
         total = moles.sum(dim=-1)
         x = moles / total[..., None]
         translation = self.component_volume_translation(temperature)
@@ -522,6 +758,39 @@ def cubic_eos(
 ) -> CubicEOS:
     """Construct a cubic EoS from bundled YAML or explicit typed constants.
 
+    Parameters
+    ----------
+    components
+        Ordered component set.
+    parameter_set
+        Cubic parameter source or prevalidated :class:`CubicConstants`.
+    kij
+        Optional constant dimensionless attraction interactions.
+    kij_a, kij_b
+        Optional temperature-dependent form ``kij(T) = kij_a + kij_b/T``;
+        both matrices are required together.
+    lij
+        Optional dimensionless cross-covolume interactions.
+    trainable, trainable_lij
+        Register attraction or covolume interactions as trainable parameters.
+    mixing
+        Explicit mixing module, mutually exclusive with interaction controls.
+    volume_translation
+        Additive shifts in m3/mol or a :class:`VolumeTranslation`.
+
+    Returns
+    -------
+    CubicEOS
+        Configured model on the component set's dtype and device.
+
+    Raises
+    ------
+    ValueError
+        If mutually exclusive interaction/mixing options are combined or
+        matrix shapes are inconsistent.
+
+    Notes
+    -----
     Supply ``kij`` for a constant quadratic interaction matrix, or both
     ``kij_a`` and ``kij_b`` for ``kij(T) = kij_a + kij_b/T``. The latter
     coefficients are dimensionless and kelvin, respectively. Supply ``lij``
@@ -564,7 +833,28 @@ def soave_redlich_kwong(
     mixing: CubicMixing | None = None,
     volume_translation: Tensor | VolumeTranslation | None = None,
 ) -> CubicEOS:
-    """Construct the 1972 Soave-Redlich-Kwong equation of state."""
+    """Construct the 1972 Soave--Redlich--Kwong equation of state.
+
+    Parameters
+    ----------
+    components
+        Ordered component set.
+    kij, kij_a, kij_b, lij
+        Optional constant or ``a + b/T`` attraction interactions and optional
+        covolume interactions. Matrix axes follow ``components.names``.
+    trainable, trainable_lij
+        Register supplied/default attraction or covolume interactions as
+        trainable PyTorch parameters.
+    mixing
+        Explicit mixing rule, mutually exclusive with interaction arguments.
+    volume_translation
+        Optional additive shifts in m3/mol.
+
+    Returns
+    -------
+    CubicEOS
+        Configured SRK model on the component set's dtype and device.
+    """
     return cubic_eos(
         components,
         SRK,
@@ -591,7 +881,27 @@ def peng_robinson_1976(
     mixing: CubicMixing | None = None,
     volume_translation: Tensor | VolumeTranslation | None = None,
 ) -> CubicEOS:
-    """Construct the original 1976 Peng-Robinson equation of state."""
+    """Construct the original 1976 Peng--Robinson equation of state.
+
+    Parameters
+    ----------
+    components
+        Ordered component set.
+    kij, kij_a, kij_b, lij
+        Optional constant or ``a + b/T`` attraction interactions and optional
+        covolume interactions.
+    trainable, trainable_lij
+        Make attraction or covolume interaction tensors trainable.
+    mixing
+        Explicit mixing rule, mutually exclusive with interaction arguments.
+    volume_translation
+        Optional additive shifts in m3/mol.
+
+    Returns
+    -------
+    CubicEOS
+        Configured PR76 model.
+    """
     return cubic_eos(
         components,
         PR76,
@@ -618,7 +928,27 @@ def peng_robinson_1978(
     mixing: CubicMixing | None = None,
     volume_translation: Tensor | VolumeTranslation | None = None,
 ) -> CubicEOS:
-    """Construct the 1978 Peng-Robinson acentric-factor variant."""
+    """Construct the 1978 Peng--Robinson acentric-factor variant.
+
+    Parameters
+    ----------
+    components
+        Ordered component set.
+    kij, kij_a, kij_b, lij
+        Optional constant or ``a + b/T`` attraction interactions and optional
+        covolume interactions.
+    trainable, trainable_lij
+        Make attraction or covolume interaction tensors trainable.
+    mixing
+        Explicit mixing rule, mutually exclusive with interaction arguments.
+    volume_translation
+        Optional additive shifts in m3/mol.
+
+    Returns
+    -------
+    CubicEOS
+        Configured PR78 model.
+    """
     return cubic_eos(
         components,
         PR78,
@@ -643,6 +973,27 @@ def predictive_peng_robinson_1978(
 ) -> CubicEOS:
     """Construct PPR78 with group-contribution ``kij(T)``.
 
+    Parameters
+    ----------
+    components
+        Ordered component set.
+    parameter_set
+        PPR78 group-contribution parameter source.
+    group_counts
+        Optional explicit component group decompositions.
+    trainable
+        Register universal off-diagonal A/B group interactions as trainable
+        parameters.
+    volume_translation
+        Optional additive volume translation.
+
+    Returns
+    -------
+    CubicEOS
+        PR78 model with :class:`~torch_flash.mixing.PPR78Mixing`.
+
+    Notes
+    -----
     The default parameter set is the original six-group saturated-hydrocarbon
     fit of Jaubert and Mutelet (2004), doi:10.1016/j.fluid.2004.06.059.
     Custom YAML parameter sets and explicit component group counts use the

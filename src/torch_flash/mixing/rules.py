@@ -38,6 +38,15 @@ class QuadraticMixing(nn.Module):
     a dedicated O(N) evaluation path.
     This convention is also exposed by ThermoPack's ``get_lij``/``set_lij``
     cubic interface.
+
+    Parameters
+    ----------
+    kij
+        Symmetric dimensionless attraction-interaction matrix.
+    lij
+        Optional symmetric dimensionless cross-covolume interactions.
+    trainable, trainable_lij
+        Register attraction or covolume interactions as trainable parameters.
     """
 
     def __init__(
@@ -131,6 +140,17 @@ class TemperatureDependentQuadraticMixing(nn.Module):
     Yan et al. for petroleum CPA calculations involving light hydrocarbons
     and water (Fluid Phase Equilibria 276, 2009, 75-85,
     doi:10.1016/j.fluid.2008.10.007).
+
+    Parameters
+    ----------
+    a
+        Symmetric dimensionless ``Aij`` matrix.
+    b
+        Symmetric ``Bij`` matrix in K.
+    lij
+        Optional symmetric dimensionless cross-covolume interactions.
+    trainable, trainable_lij
+        Register attraction or covolume interactions as trainable parameters.
     """
 
     def __init__(
@@ -259,6 +279,20 @@ class PPR78Mixing(nn.Module):
     avoiding redundant degrees of freedom during fitting. The paper derives
     the correlation with the conventional linear covolume rule, which this
     class preserves.
+
+    Parameters
+    ----------
+    group_fractions
+        Normalized component-by-group fraction matrix.
+    group_a, group_b
+        Symmetric pressure-valued universal interaction matrices in Pa.
+    reference_temperature
+        Positive correlation reference temperature in K.
+    trainable
+        Register unique off-diagonal group interactions as trainable
+        parameters.
+    parameter_set
+        Optional source parameter-set identifier.
     """
 
     group_fractions: Tensor
@@ -457,6 +491,13 @@ class HuronVidalMixing(nn.Module):
     doi:10.1016/0378-3812(79)80001-1. The implementation convention follows
     Michelsen and Mollerup, *Thermodynamic Models*, 2nd ed. (2007),
     chapter 7, ISBN 978-87-989961-3-2.
+
+    Parameters
+    ----------
+    activity_model
+        Excess-Gibbs model compatible with the HV infinite-pressure reference.
+    delta1, delta2
+        Distinct generalized-cubic denominator-shape constants.
     """
 
     def __init__(

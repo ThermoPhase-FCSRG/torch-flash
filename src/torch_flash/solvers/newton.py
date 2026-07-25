@@ -11,7 +11,21 @@ from torch import Tensor
 
 @dataclass(frozen=True)
 class NewtonResult:
-    """Solution and convergence diagnostics from :func:`damped_newton`."""
+    """Solution and diagnostics from :func:`damped_newton`.
+
+    Attributes
+    ----------
+    solution
+        Final iterate.
+    residual
+        Residual vector evaluated at ``solution``.
+    residual_norm
+        Maximum absolute residual component.
+    iterations
+        Number of outer Newton iterations executed.
+    converged
+        Whether ``residual_norm <= tolerance``.
+    """
 
     solution: Tensor
     residual: Tensor
@@ -30,7 +44,35 @@ def damped_newton(
     lower_bound: Tensor | None = None,
     upper_bound: Tensor | None = None,
 ) -> NewtonResult:
-    """Solve a square nonlinear system with autodiff and backtracking."""
+    """Solve a square nonlinear system with autodiff and backtracking.
+
+    Parameters
+    ----------
+    residual_function
+        Differentiable mapping from the variable tensor to an equally sized
+        residual tensor.
+    initial
+        Initial variable tensor; dtype and device are preserved.
+    tolerance
+        Absolute infinity-norm convergence threshold.
+    max_iterations
+        Maximum Newton iterations.
+    max_line_search
+        Maximum residual-decreasing backtracking trials per iteration.
+    lower_bound, upper_bound
+        Optional elementwise projection bounds broadcastable to ``initial``.
+
+    Returns
+    -------
+    NewtonResult
+        Final iterate and explicit convergence diagnostics.
+
+    Notes
+    -----
+    A singular square solve falls back to a least-squares step. Failure to
+    converge is reported in the result and is never silently converted into a
+    successful solve.
+    """
     variables = initial.clone()
 
     def project(candidate: Tensor) -> Tensor:

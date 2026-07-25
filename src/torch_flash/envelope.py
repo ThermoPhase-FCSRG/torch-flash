@@ -24,7 +24,27 @@ SaturationKind = Literal["bubble", "dew"]
 
 @dataclass(frozen=True)
 class SaturationPoint:
-    """One bubble- or dew-point solution."""
+    """One bubble- or dew-point solution.
+
+    Attributes
+    ----------
+    temperature:
+        Specified absolute temperature in K.
+    pressure:
+        Solved saturation pressure in Pa.
+    incipient_composition:
+        Normalized composition of the incipient phase.
+    k_values:
+        Final equilibrium ratios in feed-component order.
+    kind:
+        ``"bubble"`` or ``"dew"``.
+    iterations:
+        Number of Newton iterations reported by the final solve.
+    converged:
+        Whether the complete equilibrium/closure residual met tolerance.
+    residual_norm:
+        Maximum absolute dimensionless residual.
+    """
 
     temperature: Tensor
     pressure: Tensor
@@ -38,7 +58,22 @@ class SaturationPoint:
 
 @dataclass(frozen=True)
 class BinaryVLEPoint:
-    """Coexisting binary phase compositions at specified temperature and pressure."""
+    """Coexisting binary liquid and vapor compositions at fixed ``T`` and ``P``.
+
+    Attributes
+    ----------
+    temperature, pressure:
+        Specified temperature in K and pressure in Pa.
+    liquid_composition, vapor_composition:
+        Two-component normalized mole-fraction vectors.
+    iterations:
+        Number of nonlinear iterations performed.
+    converged:
+        Whether fugacity equality converged and the phases remain separated by
+        the requested minimum distance.
+    residual_norm:
+        Maximum absolute dimensionless equilibrium residual.
+    """
 
     temperature: Tensor
     pressure: Tensor
@@ -51,7 +86,22 @@ class BinaryVLEPoint:
 
 @dataclass(frozen=True)
 class BinaryBubblePoint:
-    """Binary bubble pressure and incipient-vapor composition at specified ``T, x``."""
+    """Binary bubble pressure and incipient vapor at specified ``T, x``.
+
+    Attributes
+    ----------
+    temperature:
+        Specified temperature in K.
+    pressure:
+        Solved bubble pressure in Pa.
+    liquid_composition:
+        Specified normalized binary liquid composition.
+    vapor_composition:
+        Solved normalized incipient-vapor composition.
+    iterations, converged, residual_norm:
+        Nonlinear iteration count, convergence status, and maximum absolute
+        dimensionless residual.
+    """
 
     temperature: Tensor
     pressure: Tensor
@@ -64,7 +114,20 @@ class BinaryBubblePoint:
 
 @dataclass(frozen=True)
 class BinaryPhaseEquilibriumPoint:
-    """Coexisting binary compositions for any requested pair of phase roots."""
+    """Coexisting binary compositions for a requested pair of phase roots.
+
+    Attributes
+    ----------
+    temperature, pressure:
+        Specified temperature in K and pressure in Pa.
+    phase1_composition, phase2_composition:
+        Solved normalized binary phase compositions.
+    phase_kinds:
+        Algebraic root requested for each phase.
+    iterations, converged, residual_norm:
+        Nonlinear iteration count, convergence/separation status, and maximum
+        absolute dimensionless residual.
+    """
 
     temperature: Tensor
     pressure: Tensor
@@ -78,7 +141,23 @@ class BinaryPhaseEquilibriumPoint:
 
 @dataclass(frozen=True)
 class BinaryCriticalPoint:
-    """Binary mixture critical point at a specified overall composition."""
+    """Binary-mixture critical point at a specified overall composition.
+
+    Attributes
+    ----------
+    temperature, pressure:
+        Solved critical temperature in K and pressure in Pa.
+    molar_volume:
+        Solved critical molar volume in m3/mol.
+    composition:
+        Specified normalized binary composition.
+    iterations:
+        Number of nonlinear iterations performed.
+    converged:
+        Whether the criticality residual met tolerance.
+    residual_norm:
+        Maximum absolute scaled criticality residual.
+    """
 
     temperature: Tensor
     pressure: Tensor
@@ -110,6 +189,44 @@ def saturation_point(
 ) -> SaturationPoint:
     """Calculate an isothermal bubble or dew point with full Newton updates.
 
+    Parameters
+    ----------
+    model
+        Homogeneous-state model providing liquid and vapor fugacity
+        coefficients and critical constants for default initialization.
+    temperature
+        Scalar temperature in K.
+    composition
+        Feed-phase mole-fraction vector.
+    kind
+        ``"bubble"`` for an incipient vapor or ``"dew"`` for an incipient
+        liquid.
+    initial_pressure
+        Optional positive pressure estimate in Pa.
+    initial_k_values
+        Optional positive vapor-to-liquid equilibrium-ratio vector.
+    tolerance
+        Maximum absolute equilibrium/closure residual.
+    max_iterations
+        Maximum nonlinear iterations.
+    substitution_iterations
+        Number of Michelsen substitution passes before Newton. ``None`` uses
+        up to 20 passes.
+
+    Returns
+    -------
+    SaturationPoint
+        Pressure, incipient composition, K values, and explicit nonlinear
+        convergence diagnostics.
+
+    Raises
+    ------
+    ValueError
+        If kind, initialization, component data, or iteration controls are
+        invalid.
+
+    Notes
+    -----
     ``substitution_iterations=None`` applies up to 20 Michelsen successive-
     substitution steps before Newton. A continuation driver with a nearby
     converged state can reduce this count; :func:`phase_envelope` does so only
@@ -257,6 +374,28 @@ def phase_envelope(
 ) -> dict[SaturationKind, tuple[SaturationPoint, ...]]:
     """Trace bubble/dew branches over a specified temperature grid.
 
+    Parameters
+    ----------
+    model
+        Homogeneous-state model for saturation calculations.
+    temperatures
+        One-dimensional temperature sequence in K, in desired continuation
+        order.
+    composition
+        Feed mole-fraction vector.
+    kinds
+        Bubble and/or dew branches to trace.
+    accelerated
+        Use two-point secant prediction after two converged points.
+
+    Returns
+    -------
+    dict
+        Mapping from saturation kind to one :class:`SaturationPoint` per input
+        temperature. Failed points remain present and marked non-converged.
+
+    Notes
+    -----
     After two converged points, a secant predictor extrapolates ``ln(K)`` and
     ``ln(P)`` to the next temperature. Two successive-substitution corrections
     then keep the estimate on the physical branch before Newton. This avoids
@@ -353,6 +492,38 @@ def continue_saturation_branch(
 ) -> tuple[SaturationPoint, ...]:
     """Continue a saturation branch using one ``ln(K_i)`` as coordinate.
 
+    Parameters
+    ----------
+    model
+        Homogeneous-state model for saturation fugacity coefficients.
+    composition
+        Feed mole-fraction vector.
+    initial_point
+        Converged bubble or dew point defining the initial branch.
+    target_log_k_values
+        One-dimensional continuation coordinates in requested traversal order.
+    controlled_component
+        Component index whose log K value defines the coordinate.
+    tolerance
+        Maximum absolute augmented-system residual.
+    max_iterations
+        Maximum Newton iterations per target.
+    accelerated
+        Use a two-point secant predictor when available.
+
+    Returns
+    -------
+    tuple
+        One :class:`SaturationPoint` per target coordinate, including explicit
+        non-converged points.
+
+    Raises
+    ------
+    ValueError
+        If shapes, component index, or initial saturation kind are invalid.
+
+    Notes
+    -----
     Temperature continuation becomes singular at a cricondentherm and can
     jump to the algebraic ``K=1`` solution near a mixture critical point.
     Replacing temperature by a selected log-K value yields a square
@@ -522,6 +693,34 @@ def binary_critical_point(
 ) -> BinaryCriticalPoint:
     """Solve the binary mixture criticality conditions with autodiff.
 
+    Parameters
+    ----------
+    model
+        Smooth homogeneous-state model providing stable-root Gibbs properties.
+    composition
+        Strictly interior two-component mole-fraction vector.
+    initial_temperature, initial_pressure
+        Optional positive scalar estimates in K and Pa. Composition-weighted
+        critical constants are used when omitted.
+    tolerance
+        Maximum absolute scaled criticality residual.
+    max_iterations
+        Maximum damped-Newton iterations.
+
+    Returns
+    -------
+    BinaryCriticalPoint
+        Solved temperature, pressure, volume, composition, and convergence
+        diagnostics.
+
+    Raises
+    ------
+    ValueError
+        If composition is not binary/interior or initial estimates are not
+        positive scalars.
+
+    Notes
+    -----
     At fixed ``T`` and ``P``, the second and third derivatives of the reduced
     molar Gibbs energy of mixing with respect to the first mole fraction both
     vanish at a binary critical point. Newton's Jacobian therefore uses up to
@@ -615,6 +814,36 @@ def binary_phase_equilibrium_point(
 ) -> BinaryPhaseEquilibriumPoint:
     """Solve binary phase coexistence at fixed ``T`` and ``P``.
 
+    Parameters
+    ----------
+    model
+        Homogeneous-state fugacity model.
+    temperature, pressure
+        Scalar temperature in K and pressure in Pa.
+    initial_phase1_composition, initial_phase2_composition
+        Initial two-component mole-fraction vectors.
+    phase_kinds
+        Root request for each coexisting phase.
+    tolerance
+        Maximum absolute component log-fugacity residual.
+    max_iterations
+        Maximum substitution/Newton iterations.
+    minimum_phase_separation
+        Minimum absolute mole-fraction separation needed to reject the
+        homogeneous algebraic solution.
+
+    Returns
+    -------
+    BinaryPhaseEquilibriumPoint
+        Coexisting compositions, root requests, and convergence diagnostics.
+
+    Raises
+    ------
+    ValueError
+        If roots, shapes, or the separation threshold are invalid.
+
+    Notes
+    -----
     ``("stable", "stable")`` is appropriate for mutual-solubility work where
     the hydrocarbon-rich phase may switch between liquid and vapor with
     conditions. Explicit roots support LLE (``"liquid", "liquid"``) and VLE
@@ -725,7 +954,38 @@ def binary_vle_point(
     max_iterations: int = 30,
     minimum_phase_separation: float = 1.0e-6,
 ) -> BinaryVLEPoint:
-    """Solve binary liquid-vapor coexistence at fixed ``T`` and ``P``."""
+    """Solve a binary liquid-vapor coexistence point at fixed ``T`` and ``P``.
+
+    Parameters
+    ----------
+    model
+        Homogeneous-state model used for liquid and vapor fugacity
+        coefficients.
+    temperature
+        Scalar temperature in K.
+    pressure
+        Scalar pressure in Pa.
+    initial_liquid_composition, initial_vapor_composition
+        Initial two-component mole-fraction vectors.
+    tolerance
+        Maximum absolute component log-fugacity residual.
+    max_iterations
+        Maximum substitution/Newton iterations.
+    minimum_phase_separation
+        Minimum absolute mole-fraction difference required to reject the
+        algebraic homogeneous solution.
+
+    Returns
+    -------
+    BinaryVLEPoint
+        Liquid and vapor compositions plus convergence diagnostics.
+
+    Notes
+    -----
+    A result is converged only when fugacity equality passes and the two
+    compositions remain separated by more than
+    ``minimum_phase_separation``.
+    """
     result = binary_phase_equilibrium_point(
         model,
         temperature,
@@ -762,6 +1022,39 @@ def binary_bubble_point(
 ) -> BinaryBubblePoint:
     """Solve binary bubble pressure and vapor composition at fixed ``T, x``.
 
+    Parameters
+    ----------
+    model
+        Homogeneous-state fugacity model with critical constants for default
+        initialization.
+    temperature
+        Scalar temperature in K.
+    liquid_composition
+        Strictly positive binary liquid mole fractions.
+    initial_pressure
+        Optional positive pressure estimate in Pa.
+    initial_vapor_composition
+        Optional strictly positive binary vapor estimate.
+    minimum_pressure, maximum_pressure
+        Optional positive pressure bounds in Pa.
+    tolerance
+        Maximum absolute component log-fugacity residual.
+    max_iterations
+        Maximum damped-Newton iterations.
+
+    Returns
+    -------
+    BinaryBubblePoint
+        Bubble pressure, liquid/vapor compositions, and convergence
+        diagnostics.
+
+    Raises
+    ------
+    ValueError
+        If composition, initialization, or pressure bounds are invalid.
+
+    Notes
+    -----
     The two unknowns are the log pressure and the logit of the first vapor
     mole fraction.  Unlike a fixed-``T,P`` coexistence calculation, this
     formulation remains well posed at a homogeneous azeotrope where

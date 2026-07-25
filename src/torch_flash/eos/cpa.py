@@ -40,6 +40,31 @@ class CPAComponent:
     ``critical_pressure``, ``acentric_factor``, and ``molar_mass`` normally
     come from the shared component database. Petroleum pseudo-components can
     instead carry those three initialization properties directly.
+
+    Attributes
+    ----------
+    name
+        Canonical or pseudo-component identifier.
+    critical_temperature
+        Critical temperature in K.
+    a0
+        CPA/SRK attraction parameter in Pa m6/mol2.
+    b
+        CPA/SRK covolume in m3/mol.
+    c1
+        Dimensionless CPA alpha-function coefficient.
+    association_energy
+        Pure association energy in J/mol.
+    association_volume
+        Dimensionless pure association volume.
+    scheme
+        Association-site scheme.
+    critical_pressure
+        Optional critical pressure in Pa for initialization.
+    acentric_factor
+        Optional dimensionless acentric factor for initialization.
+    molar_mass
+        Optional molar mass in kg/mol.
     """
 
     name: str
@@ -72,7 +97,38 @@ def _site_types(scheme: str) -> tuple[int, int, int, int]:
 
 
 class CPAEOS(nn.Module):
-    """SRK cubic-plus-association mixture model."""
+    """SRK cubic-plus-association mixture model.
+
+    Parameters
+    ----------
+    parameters
+        Ordered pure-component CPA records. Component order defines every
+        composition and interaction tensor axis.
+    kij, kij_a, kij_b
+        Constant attraction interactions or the temperature-dependent form
+        ``kij(T) = kij_a + kij_b/T``.
+    lij
+        Optional dimensionless SRK cross-covolume interactions.
+    cross_association_energy, cross_association_volume
+        Optional symmetric pair overrides in J/mol and dimensionless
+        association volume. Both matrices must be supplied together.
+    combining_rule
+        Published ``"CR1"`` or ``"ECR"`` cross-association rule.
+    trainable, trainable_lij
+        Register attraction/association or covolume interaction tensors as
+        trainable PyTorch parameters.
+    association_iterations, association_newton_iterations
+        Fixed-point and Newton passes used for association site fractions.
+    dtype, device
+        Tensor placement, defaulting to runtime configuration.
+
+    Notes
+    -----
+    The current volume-root and fugacity path accepts one scalar TP state.
+    Site-fraction calculations support leading batches. Association
+    non-convergence raises :class:`~torch_flash.exceptions.ConvergenceError`;
+    it is not returned as a valid thermodynamic state.
+    """
 
     critical_temperature: Tensor
     critical_pressure: Tensor
@@ -308,23 +364,66 @@ class CPAEOS(nn.Module):
 
     @property
     def ncomponents(self) -> int:
-        """Number of mixture components."""
+        """Return the number of modeled components.
+
+        Returns
+        -------
+        int
+            Length of the canonical component-name tuple.
+        """
         return len(self.names)
 
     def pure_parameters(self, temperature: Tensor) -> tuple[Tensor, Tensor]:
-        """Return CPA's fitted SRK energy and covolume parameters."""
+        """Evaluate CPA's fitted pure SRK parameters.
+
+        Parameters
+        ----------
+        temperature
+            Temperature in K.
+
+        Returns
+        -------
+        tuple
+            Attraction ``a_i(T)`` in Pa m6/mol2 and covolume ``b_i`` in
+            m3/mol, with a final component axis.
+        """
         reduced = temperature[..., None] / self.critical_temperature
         a = self.a0 * (1.0 + self.c1 * (1.0 - torch.sqrt(reduced))).square()
         return a, self.b
 
     def mixture_parameters(self, temperature: Tensor, composition: Tensor) -> tuple[Tensor, Tensor]:
-        """Return conventionally mixed physical-term parameters."""
+        """Mix physical-term attraction and covolume parameters.
+
+        Parameters
+        ----------
+        temperature
+            Temperature in K.
+        composition
+            Component mole fractions on the final axis.
+
+        Returns
+        -------
+        tuple
+            Mixture ``a`` in Pa m6/mol2 and ``b`` in m3/mol.
+        """
         pure_a, pure_b = self.pure_parameters(temperature)
         result: tuple[Tensor, Tensor] = self.mixing(temperature, composition, pure_a, pure_b)
         return result
 
     def binary_interaction(self, temperature: Tensor) -> Tensor:
-        """Return the symmetric physical-term ``kij`` matrix at ``temperature``."""
+        """Evaluate the symmetric physical-term attraction interactions.
+
+        Parameters
+        ----------
+        temperature
+            Temperature in K.
+
+        Returns
+        -------
+        Tensor
+            Dimensionless ``kij`` matrix, with temperature batch dimensions
+            when temperature-dependent interactions are active.
+        """
         if isinstance(self.mixing, TemperatureDependentQuadraticMixing):
             return self.mixing.kij(temperature)
         return self.mixing.kij
@@ -332,7 +431,23 @@ class CPAEOS(nn.Module):
     def association_strength(
         self, temperature: Tensor, molar_density: Tensor, composition: Tensor
     ) -> Tensor:
-        """Return ``Delta[i, A, j, B]`` association strengths in m3/mol."""
+        """Evaluate component-site association strengths.
+
+        Parameters
+        ----------
+        temperature
+            Temperature in K.
+        molar_density
+            Homogeneous molar density in mol/m3.
+        composition
+            Mole fractions on the final component axis.
+
+        Returns
+        -------
+        Tensor
+            Association strengths in m3/mol with trailing axes
+            ``(component_i, site_A, component_j, site_B)``.
+        """
         x = normalize_composition(composition)
         _, bm = self.mixture_parameters(temperature, x)
         packing_fraction = 0.25 * bm * molar_density
@@ -383,6 +498,31 @@ class CPAEOS(nn.Module):
     ) -> Tensor:
         """Solve the CPA mass-action equations for unbonded site fractions.
 
+        Parameters
+        ----------
+        temperature
+            Temperature in K.
+        molar_density
+            Homogeneous molar density in mol/m3.
+        composition
+            Mole fractions with a final component axis.
+
+        Returns
+        -------
+        Tensor
+            Dimensionless unbonded fractions with trailing axes
+            ``(ncomponents, nsites)``. Inactive site slots equal one.
+
+        Raises
+        ------
+        ValueError
+            If the composition component count is inconsistent.
+        ConvergenceError
+            If the configured fixed-point/Newton iterations do not solve the
+            mass-action residual.
+
+        Notes
+        -----
         Leading dimensions are broadcast as independent homogeneous states.
         The component axis is the final composition dimension.
         """
@@ -467,7 +607,23 @@ class CPAEOS(nn.Module):
         return site_fraction
 
     def residual_helmholtz_rt(self, temperature: Tensor, volume: Tensor, moles: Tensor) -> Tensor:
-        """Return extensive ``Ares/(RT)`` for the combined CPA model."""
+        """Return extensive reduced residual Helmholtz energy.
+
+        Parameters
+        ----------
+        temperature
+            Scalar temperature in K.
+        volume
+            Scalar total volume in m3.
+        moles
+            Component amounts in mol.
+
+        Returns
+        -------
+        Tensor
+            Dimensionless extensive ``A^R/(RT)`` for physical and association
+            contributions.
+        """
         if moles.ndim != 1 or volume.ndim != 0:
             raise ValueError("CPA Helmholtz kernel currently accepts one homogeneous state")
         total = moles.sum()
@@ -491,7 +647,22 @@ class CPAEOS(nn.Module):
         return physical + association
 
     def pressure(self, temperature: Tensor, molar_volume: Tensor, composition: Tensor) -> Tensor:
-        """Evaluate the published CPA pressure equation."""
+        """Evaluate CPA pressure at a homogeneous ``T-v-x`` state.
+
+        Parameters
+        ----------
+        temperature
+            Temperature in K.
+        molar_volume
+            Molar volume in m3/mol.
+        composition
+            Mole fractions on the final axis.
+
+        Returns
+        -------
+        Tensor
+            Pressure in Pa.
+        """
         x = normalize_composition(composition)
         am, bm = self.mixture_parameters(temperature, x)
         density = molar_volume.reciprocal()
@@ -599,7 +770,30 @@ class CPAEOS(nn.Module):
         composition: Tensor,
         phase: PhaseKind = "stable",
     ) -> Tensor:
-        """Solve the CPA volume root for a specified phase."""
+        """Solve a scalar CPA molar-volume root.
+
+        Parameters
+        ----------
+        temperature, pressure
+            Scalar temperature in K and pressure in Pa.
+        composition
+            One component mole-fraction vector.
+        phase
+            Smallest root (``"liquid"``), largest root (``"vapor"``), or
+            minimum-Gibbs admissible root (``"stable"``).
+
+        Returns
+        -------
+        Tensor
+            Molar volume in m3/mol.
+
+        Raises
+        ------
+        ValueError
+            If the state is batched or ``phase`` is unknown.
+        ConvergenceError
+            If the pressure-root scan finds no admissible root.
+        """
         if temperature.ndim != 0 or pressure.ndim != 0 or composition.ndim != 1:
             raise ValueError("CPA volume solver currently accepts one scalar T-P state")
         x = normalize_composition(composition)
@@ -635,7 +829,22 @@ class CPAEOS(nn.Module):
         composition: Tensor,
         phase: PhaseKind = "stable",
     ) -> Tensor:
-        """Return the CPA compressibility factor."""
+        """Return the CPA compressibility factor for a selected root.
+
+        Parameters
+        ----------
+        temperature, pressure
+            Scalar temperature in K and pressure in Pa.
+        composition
+            One mole-fraction vector.
+        phase
+            Root-selection request.
+
+        Returns
+        -------
+        Tensor
+            Dimensionless ``Z = Pv/(RT)``.
+        """
         volume = self.molar_volume(temperature, pressure, composition, phase)
         return pressure * volume / (R * temperature)
 
@@ -646,7 +855,27 @@ class CPAEOS(nn.Module):
         composition: Tensor,
         phase: PhaseKind = "stable",
     ) -> Tensor:
-        """Return CPA log fugacity coefficients from Helmholtz derivatives."""
+        """Return CPA component log fugacity coefficients.
+
+        Parameters
+        ----------
+        temperature, pressure
+            Scalar temperature in K and pressure in Pa.
+        composition
+            One mole-fraction vector.
+        phase
+            Root-selection request.
+
+        Returns
+        -------
+        Tensor
+            Dimensionless ``ln(phi_i)`` in component order.
+
+        Notes
+        -----
+        Component residual chemical potentials are obtained by differentiating
+        the extensive CPA residual Helmholtz energy at fixed volume.
+        """
         x = normalize_composition(composition)
         volume = self.molar_volume(temperature, pressure, x, phase)
 
@@ -825,6 +1054,39 @@ def cpa_eos(
 ) -> CPAEOS:
     """Construct CPA from a bundled/custom YAML set or use :class:`CPAEOS`.
 
+    Parameters
+    ----------
+    names
+        Component names in model tensor order.
+    parameter_set
+        Bundled identifier, custom YAML path, mapping, or loaded CPA set.
+    kij, kij_a, kij_b, lij
+        Optional physical-term interaction overrides.
+    cross_association_energy, cross_association_volume
+        Optional cross-association pair overrides.
+    combining_rule
+        Override the parameter set's CR1/ECR default.
+    trainable, trainable_lij
+        Enable fitting of attraction/association or covolume interactions.
+    association_iterations, association_newton_iterations
+        Site-fraction solver iteration budgets.
+    dtype, device
+        Tensor placement.
+
+    Returns
+    -------
+    CPAEOS
+        Configured CPA model.
+
+    Raises
+    ------
+    KeyError
+        If a requested component has no pure parameters.
+    ParameterDatabaseError
+        If the source model, parameter records, or combining rule is invalid.
+
+    Notes
+    -----
     Direct construction with a tuple of :class:`CPAComponent` remains the
     explicit in-memory API for fitting new species or parameterizations.
     ``lij`` optionally modifies the physical SRK co-volume rule;
@@ -909,7 +1171,24 @@ def cpa_folas_2005(
 ) -> CPAEOS:
     """Construct CPA with the Folas et al. (2005), Table 1, pure parameters.
 
-    Reference: doi:10.1021/ie048832j.
+    Parameters
+    ----------
+    names
+        Component names in model order.
+    kij, lij
+        Optional physical-term attraction and covolume interactions.
+    combining_rule
+        ``"CR1"`` or ``"ECR"`` association combining rule.
+    trainable, trainable_lij
+        Enable interaction-parameter fitting.
+    dtype, device
+        Tensor placement.
+
+    Returns
+    -------
+    CPAEOS
+        Configured Folas-2005 parameterization defined by
+        doi:10.1021/ie048832j.
     """
     return cpa_eos(
         names,
@@ -938,6 +1217,27 @@ def cpa_oliveira_2007(
 ) -> CPAEOS:
     """Construct the hydrocarbon-water CPA parameterization of Oliveira et al.
 
+    Parameters
+    ----------
+    names
+        Component names in model order.
+    kij, lij
+        Optional physical-term interaction overrides.
+    cross_association_energy, cross_association_volume
+        Optional modified-CR1 solvation overrides in J/mol and dimensionless
+        association volume.
+    trainable, trainable_lij
+        Enable interaction-parameter fitting.
+    dtype, device
+        Tensor placement.
+
+    Returns
+    -------
+    CPAEOS
+        Configured Oliveira-2007 hydrocarbon-water parameterization.
+
+    Notes
+    -----
     Pure parameters and constant physical-term interactions are from Tables
     1-3 of Oliveira, Coutinho, and Queimada, Fluid Phase Equilibria 258
     (2007) 58-66, doi:10.1016/j.fluid.2007.05.023. Aromatic-water solvation
@@ -972,8 +1272,24 @@ def cpa_yan_2009(
 ) -> CPAEOS:
     """Construct reservoir-fluid CPA with Yan et al.'s ``A + B/T`` water BIPs.
 
-    Reference: Yan, Kontogeorgis, and Stenby, Fluid Phase Equilibria 276
-    (2009) 75-85, doi:10.1016/j.fluid.2008.10.007.
+    Parameters
+    ----------
+    names
+        Component names in model order.
+    kij, kij_a, kij_b, lij
+        Optional constant or ``A + B/T`` attraction interactions and optional
+        covolume interactions.
+    trainable, trainable_lij
+        Enable interaction-parameter fitting.
+    dtype, device
+        Tensor placement.
+
+    Returns
+    -------
+    CPAEOS
+        Yan-2009 reservoir-fluid parameterization from *Fluid Phase
+        Equilibria* 276 (2009) 75-85,
+        doi:10.1016/j.fluid.2008.10.007.
     """
     return cpa_eos(
         names,

@@ -46,6 +46,35 @@ def pedersen_logarithmic_split(
     balances (Pedersen et al., 2024, Eqs. 5.10-5.12). Molecular weights use
     Eq. 5.22. Measured extended compositions should be preferred whenever
     available, as emphasized by the source.
+
+    Parameters
+    ----------
+    plus_mole_fraction:
+        Positive scalar mole fraction represented by the plus cut.
+    plus_molar_mass:
+        Positive scalar average molar mass in kg/mol.
+    first_carbon_number, max_carbon_number:
+        Inclusive SCN label range. The default maximum comes from the
+        parameter set.
+    parameter_set:
+        Pedersen characterization parameter source.
+    dtype, device:
+        Output tensor options; omitted values use runtime configuration.
+
+    Returns
+    -------
+    SCNDistribution
+        Finite distribution preserving total plus moles and average molar mass.
+
+    Raises
+    ------
+    ValueError
+        If scalar inputs or carbon bounds are invalid, or the requested mean
+        mass lies outside the finite SCN range.
+    ConvergenceError
+        If the moment-constrained solve does not close the mass balance.
+    ParameterDatabaseError
+        If the selected parameter document lacks required coefficients.
     """
     dtype, device = resolve_tensor_options(dtype, device)
     parameters, source = _characterization_parameters(parameter_set)
@@ -137,6 +166,36 @@ def pedersen_density_split(
     Density inputs and results are SI (kg/m3). If no measured anchor is
     provided, Pedersen's suggested C6 density ratio is applied to the carbon
     number immediately preceding the plus fraction.
+
+    Parameters
+    ----------
+    distribution:
+        SCN distribution whose moles and molar masses are retained.
+    plus_density:
+        Positive scalar target bulk density in kg/m3.
+    anchor_density:
+        Optional positive measured density in kg/m3 at
+        ``anchor_carbon_number``.
+    anchor_carbon_number:
+        Positive anchor label. By default, the number immediately before the
+        first SCN is used.
+    parameter_set:
+        Pedersen characterization parameter source.
+
+    Returns
+    -------
+    SCNDistribution
+        New distribution with per-cut densities matching the bulk
+        ideal-volume balance.
+
+    Raises
+    ------
+    ValueError
+        If target/anchor values or the anchor label are invalid.
+    ConvergenceError
+        If a positive density trend cannot satisfy the volume balance.
+    ParameterDatabaseError
+        If the selected document does not define the density rule.
     """
     parameters, source = _characterization_parameters(parameter_set)
     split = parameters.get("plus_split")
@@ -216,6 +275,36 @@ def whitson_gamma_split(
     weight, so total moles and average molar mass are preserved exactly apart
     from floating-point roundoff. ``shape=1`` gives the exponential special
     case discussed by both Whitson and Pedersen.
+
+    Parameters
+    ----------
+    plus_mole_fraction:
+        Positive scalar mole fraction represented by the plus cut.
+    plus_molar_mass:
+        Positive scalar average molar mass in kg/mol.
+    first_carbon_number, max_carbon_number:
+        Inclusive nominal bin labels. The final bin contains the complete
+        remaining gamma tail.
+    shape:
+        Positive gamma shape parameter. ``None`` uses the source default.
+    minimum_molar_mass:
+        Positive shifted-gamma lower bound in kg/mol, below the average.
+    parameter_set:
+        Whitson characterization parameter source.
+    dtype, device:
+        Output tensor options; omitted values use runtime configuration.
+
+    Returns
+    -------
+    SCNDistribution
+        Discrete distribution preserving total moles and mean molar mass.
+
+    Raises
+    ------
+    ValueError
+        If scalar values, bounds, shape, or minimum mass are invalid.
+    ParameterDatabaseError
+        If the selected document lacks required gamma parameters.
     """
     dtype, device = resolve_tensor_options(dtype, device)
     parameters, source = _characterization_parameters(parameter_set)

@@ -44,8 +44,38 @@ def rachford_rice(
 ) -> RachfordRiceResult:
     """Solve the two-phase material balance with safeguarded Newton steps.
 
+    Parameters
+    ----------
+    composition
+        Overall mole fractions with shape ``(..., ncomponents)``. Leading
+        dimensions are independent states and are normalized internally.
+    k_values
+        Positive vapor-to-liquid equilibrium ratios with the same shape,
+        dtype, and device as ``composition``.
+    tolerance
+        Absolute residual tolerance. The default is eight machine epsilons for
+        the input dtype.
+    max_iterations
+        Maximum safeguarded Newton iterations.
+
+    Returns
+    -------
+    RachfordRiceResult
+        Vapor and liquid fractions, phase compositions, iteration count,
+        per-state convergence flags, and the final material-balance residual.
+
+    Raises
+    ------
+    ValueError
+        If shapes differ, K values are nonpositive or nonfinite, or any state
+        lacks a finite root between the nearest denominator singularities.
+
+    Notes
+    -----
     Leading dimensions are treated as independent batches. Computation remains
     on the input device and is differentiable through the executed iterations.
+    Fractions outside ``[0, 1]`` represent a negative flash; the solver does
+    not classify phase stability.
     """
     z, k = _validate_inputs(composition, k_values)
     eps = torch.finfo(z.dtype).eps
@@ -100,6 +130,34 @@ def rachford_rice_numpy(
 ) -> tuple[int, NDArray[np.float64], NDArray[np.float64], float, float]:
     """NumPy compatibility wrapper matching the Whitson contest signature.
 
+    Parameters
+    ----------
+    composition
+        One-dimensional overall mole-fraction array.
+    k_values
+        One-dimensional positive vapor-to-liquid equilibrium ratios with the
+        same length as ``composition``.
+    tolerance
+        Accepted for signature compatibility; the delegated double-double
+        solver controls its internal stopping criterion.
+    max_iterations
+        Accepted for signature compatibility and not used by the delegated
+        solver.
+
+    Returns
+    -------
+    tuple
+        ``(iterations, vapor_composition, liquid_composition,
+        vapor_fraction, liquid_fraction)``. The compatibility iteration count
+        is always one.
+
+    Raises
+    ------
+    ValueError
+        If inputs are not equally sized vectors or no finite root is bracketed.
+
+    Notes
+    -----
     This exact-compatibility path delegates to the MIT-licensed
     ``chemicals`` dependency. Its implementation applies double-double
     arithmetic to the transformed/bounded formulation of Leibovici and Neoschil,

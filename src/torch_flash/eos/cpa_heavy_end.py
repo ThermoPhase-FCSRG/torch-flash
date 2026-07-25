@@ -27,7 +27,23 @@ from torch_flash.exceptions import ConvergenceError, ParameterDatabaseError
 
 @dataclass(frozen=True)
 class CPAHeavyEndCorrelations:
-    """Published coefficients used by the CPA C7+ monomer correlations."""
+    """Published coefficients used by the CPA C7+ monomer correlations.
+
+    Attributes
+    ----------
+    normal_boiling_pressure
+        Normal boiling pressure in Pa.
+    srk_omega_a, srk_omega_b, srk_m
+        SRK critical constraints and acentric-factor polynomial coefficients.
+    normal_alkane_temperature, log_normal_alkane_pressure_bar
+        Coefficients for the reference normal-alkane vapor-pressure mapping.
+    normal_alkane_acentric, normal_alkane_specific_gravity
+        Reference normal-alkane property correlations.
+    critical_temperature_numerator, critical_temperature_denominator
+        Rational critical-temperature-ratio coefficients.
+    log_critical_pressure_ratio
+        Critical-pressure-ratio coefficients.
+    """
 
     normal_boiling_pressure: float
     srk_omega_a: float
@@ -44,7 +60,28 @@ class CPAHeavyEndCorrelations:
 
 @dataclass(frozen=True)
 class CPAMonomerProperties:
-    """Intermediate and final CPA monomer characterization results."""
+    """Intermediate and final CPA monomer characterization results.
+
+    Attributes
+    ----------
+    normal_boiling_temperature
+        Cut normal boiling temperature in K.
+    specific_gravity
+        Cut specific gravity relative to water at the source reference state.
+    normal_alkane_specific_gravity, specific_gravity_perturbation
+        Reference-alkane value and cut departure used by the correlation.
+    normal_alkane_temperature, normal_alkane_pressure
+        Mapped reference-alkane state in K and Pa.
+    critical_temperature, critical_pressure
+        Predicted critical constants in K and Pa.
+    acentric_factor
+        Predicted dimensionless acentric factor.
+    used_boiling_point_match
+        Whether acentric factor was obtained by matching the normal boiling
+        condition.
+    correlations
+        Exact coefficient set used.
+    """
 
     normal_boiling_temperature: float
     specific_gravity: float
@@ -84,7 +121,17 @@ class CPAMonomerProperties:
 
 @dataclass(frozen=True)
 class CPACharacterizedComponents:
-    """Characterized pseudo-components and their normalized cut fractions."""
+    """CPA pseudo-components created from analyzed heavy-end cuts.
+
+    Attributes
+    ----------
+    components
+        Non-associating CPA component records in input-cut order.
+    mole_fractions
+        Normalized internal cut fractions on the requested dtype and device.
+    monomer_properties
+        Full characterization diagnostics corresponding to ``components``.
+    """
 
     components: tuple[CPAComponent, ...]
     mole_fractions: Tensor
@@ -115,7 +162,25 @@ def _numeric_tuple(
 def cpa_heavy_end_correlations(
     parameter_set: ParameterSource = "cpa.yan-2009-reservoir-fluids",
 ) -> CPAHeavyEndCorrelations:
-    """Load and validate CPA heavy-end correlation coefficients."""
+    """Load and validate CPA heavy-end correlation coefficients.
+
+    Parameters
+    ----------
+    parameter_set
+        CPA parameter source containing a ``heavy_end_correlations`` block.
+
+    Returns
+    -------
+    CPAHeavyEndCorrelations
+        Typed coefficient inventory in the SI conventions declared by the
+        parameter document.
+
+    Raises
+    ------
+    ParameterDatabaseError
+        If the model kind or any required coefficient is missing, nonnumeric,
+        nonfinite, or outside its required positive domain.
+    """
     loaded = load_model_parameters(parameter_set)
     if loaded.model_kind != "cpa":
         raise ParameterDatabaseError(f"{loaded.identifier!r} is not a CPA parameter set")
@@ -320,6 +385,22 @@ def cpa_monomer_properties(
     specific_gravity
         Dimensionless liquid specific gravity used by the source
         characterization.
+    parameter_set
+        CPA parameter source containing heavy-end correlation coefficients.
+
+    Returns
+    -------
+    CPAMonomerProperties
+        Intermediate reference-alkane quantities and characterized critical,
+        acentric, attraction, and covolume properties.
+
+    Raises
+    ------
+    ValueError
+        If inputs are nonpositive/nonfinite or the correlation leaves its
+        physical domain.
+    ConvergenceError
+        If the normal-boiling-point acentric-factor match cannot be solved.
     """
     tb = float(normal_boiling_temperature)
     sg = float(specific_gravity)
@@ -398,7 +479,32 @@ def cpa_pseudocomponent(
     molar_mass: float,
     parameter_set: ParameterSource = "cpa.yan-2009-reservoir-fluids",
 ) -> CPAComponent:
-    """Create a non-associating CPA pseudo-component for a heavy-end cut."""
+    """Create a non-associating CPA pseudo-component for one heavy-end cut.
+
+    Parameters
+    ----------
+    name
+        Nonempty pseudo-component identifier.
+    normal_boiling_temperature
+        Normal boiling temperature in K.
+    specific_gravity
+        Dimensionless specific gravity used by the selected correlation.
+    molar_mass
+        Molar mass in kg/mol.
+    parameter_set
+        CPA parameter source containing the heavy-end correlations.
+
+    Returns
+    -------
+    CPAComponent
+        Characterized monomer with zero association sites.
+
+    Raises
+    ------
+    ValueError
+        If the name or molar mass is invalid, or the cut lies outside the
+        correlation's physical domain.
+    """
     if not isinstance(name, str) or not name.strip():
         raise ValueError("pseudo-component name must be a non-empty string")
     mass = float(molar_mass)
@@ -430,6 +536,29 @@ def cpa_components_from_cuts(
 ) -> CPACharacterizedComponents:
     """Characterize analyzed C7+ cuts and normalize their internal fractions.
 
+    Parameters
+    ----------
+    cuts
+        Measured/estimated heavy-end cuts in desired component order.
+    parameter_set
+        CPA parameter source containing Yan-style heavy-end correlations.
+    dtype, device
+        Placement of the normalized fraction tensor.
+
+    Returns
+    -------
+    CPACharacterizedComponents
+        CPA records, normalized internal cut fractions, and complete monomer
+        characterization diagnostics.
+
+    Raises
+    ------
+    ValueError
+        If no cuts are supplied or their fractions do not define a positive
+        finite distribution.
+
+    Notes
+    -----
     This function covers the EoS-parameter step of a plus-fraction workflow.
     It deliberately does not invent a carbon-number distribution when only a
     bulk C7+ molecular weight is known; splitting or lumping must be performed

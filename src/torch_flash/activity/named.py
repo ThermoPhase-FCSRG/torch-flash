@@ -68,6 +68,38 @@ def activity_model(
 ) -> ActivityModel:
     """Construct NRTL, HV-NRTL, Wilson, or original UNIFAC from YAML.
 
+    Parameters
+    ----------
+    parameter_set
+        Bundled identifier, YAML path, mapping, or loaded activity parameter
+        set.
+    names
+        Optional requested component order. Omitting it uses the stored order.
+    dtype, device
+        Tensor placement, defaulting to runtime configuration.
+    trainable
+        Register supported interaction tensors as PyTorch parameters.
+    covolumes
+        Optional HV-NRTL component covolumes in m3/mol.
+    group_assignments
+        Optional explicit UNIFAC subgroup counts, one mapping per component.
+
+    Returns
+    -------
+    ActivityModel
+        Model matching the parameter document's exact identity.
+
+    Raises
+    ------
+    KeyError
+        If requested components or UNIFAC groups are unsupported.
+    ValueError
+        If component order or model-specific overrides are inconsistent.
+    ParameterDatabaseError
+        If model identity, units, or parameter records are malformed.
+
+    Notes
+    -----
     The requested component order may differ from the stored order; vectors
     and matrices are permuted consistently. For custom fitting workflows, the
     model classes continue to accept explicit tensors directly. UNIFAC uses

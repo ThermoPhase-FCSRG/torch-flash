@@ -104,7 +104,20 @@ def _bwr_coefficients(temperature: Tensor) -> Tensor:
 
 
 def methane_bwr_pressure(temperature: Tensor, density_mol_l: Tensor) -> Tensor:
-    """Return McCarty BWR methane pressure in atm."""
+    """Evaluate the McCarty BWR methane pressure correlation.
+
+    Parameters
+    ----------
+    temperature
+        Scalar temperature in K.
+    density_mol_l
+        Methane molar density in mol/L.
+
+    Returns
+    -------
+    Tensor
+        Pressure in atm.
+    """
     coefficients = _bwr_coefficients(temperature)
     low_powers = torch.arange(1, 10, dtype=temperature.dtype, device=temperature.device)
     high_powers = torch.arange(3, 14, 2, dtype=temperature.dtype, device=temperature.device)
@@ -123,7 +136,29 @@ def methane_bwr_density(
     *,
     phase: Literal["liquid", "vapor"] = "vapor",
 ) -> Tensor:
-    """Solve the methane BWR density in mol/L at SI pressure."""
+    """Solve the McCarty BWR methane density at SI pressure.
+
+    Parameters
+    ----------
+    temperature
+        Positive scalar temperature in K.
+    pressure
+        Positive scalar pressure in Pa.
+    phase
+        Select the lowest-density vapor root or highest-density liquid root.
+
+    Returns
+    -------
+    Tensor
+        Methane molar density in mol/L.
+
+    Raises
+    ------
+    InvalidStateError
+        If the state is nonpositive or the density scan finds no pressure root.
+    ValueError
+        If ``phase`` is not ``"liquid"`` or ``"vapor"``.
+    """
     if bool((temperature <= 0.0).any()) or bool((pressure <= 0.0).any()):
         raise InvalidStateError("temperature and pressure must be positive")
     if phase not in ("liquid", "vapor"):
@@ -175,6 +210,20 @@ def methane_viscosity(
 ) -> Tensor:
     """Return methane dynamic viscosity in Pa s from Eq. 10.6.
 
+    Parameters
+    ----------
+    temperature
+        Temperature in K.
+    density_mol_l
+        Methane molar density in mol/L.
+
+    Returns
+    -------
+    Tensor
+        Dynamic viscosity in Pa s.
+
+    Notes
+    -----
     Although the 2024 textbook prose labels the correlation density as mol/L,
     the published Hanley coefficients require mass density in kg/L (numerically
     equal to g/cm3). Using molar density inside the fractional powers produces
@@ -230,7 +279,40 @@ def pedersen_viscosity(
     *,
     phase: Literal["liquid", "vapor"] = "vapor",
 ) -> Tensor:
-    """Return Pedersen CSP mixture viscosity in Pa s."""
+    """Evaluate Pedersen corresponding-states mixture viscosity.
+
+    Parameters
+    ----------
+    temperature
+        Positive scalar temperature in K.
+    pressure
+        Positive scalar pressure in Pa.
+    composition
+        One mixture mole-fraction vector.
+    components
+        Ordered critical-property and molar-mass data matching ``composition``.
+    phase
+        Methane-reference density root, ``"liquid"`` or ``"vapor"``.
+
+    Returns
+    -------
+    Tensor
+        Mixture dynamic viscosity in Pa s.
+
+    Raises
+    ------
+    ValueError
+        If the composition is not one vector or its component count differs
+        from ``components``.
+    InvalidStateError
+        If a required methane reference-state density cannot be solved.
+
+    Notes
+    -----
+    This is a homogeneous-phase correlation and does not perform phase
+    equilibrium. Supply the composition and phase root returned by the
+    relevant state or flash calculation.
+    """
     if composition.ndim != 1:
         raise ValueError("Pedersen viscosity currently accepts one composition vector")
     if composition.numel() != components.ncomponents:
@@ -266,6 +348,25 @@ def lbc_pseudocomponent_critical_volume(
 ) -> Tensor:
     """Estimate a C7+ critical molar volume from Pedersen Eq. 10.41.
 
+    Parameters
+    ----------
+    molar_mass
+        Pseudo-component molar mass in kg/mol.
+    standard_liquid_density
+        Standard liquid mass density in kg/m3.
+
+    Returns
+    -------
+    Tensor
+        Estimated critical molar volume in m3/mol.
+
+    Raises
+    ------
+    ValueError
+        If either input is nonfinite or nonpositive.
+
+    Notes
+    -----
     Parameters are SI: molar mass in kg/mol and liquid density in kg/m3.
     The returned critical molar volume is in m3/mol. The underlying empirical
     equation uses g/mol, g/cm3, and ft3/lbmol.
@@ -318,6 +419,20 @@ def lbc_viscosity(
     coefficients
         Optional trainable or fitted ``a1...a5`` tensor replacing the original
         LBC constants.
+
+    Returns
+    -------
+    Tensor
+        Mixture dynamic viscosity in Pa s.
+
+    Raises
+    ------
+    ValueError
+        If component shapes, critical volumes, or coefficient tensors are
+        inconsistent.
+    InvalidStateError
+        If temperature/density or a required reducing property is outside its
+        physical domain.
 
     Notes
     -----

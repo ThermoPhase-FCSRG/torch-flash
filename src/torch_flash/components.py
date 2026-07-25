@@ -58,6 +58,25 @@ class Component:
     restricted to a model-specific multifluid equation. Such a record can be
     resolved by name but cannot be used to construct a cubic EoS until the user
     supplies a complete custom component database or :class:`ComponentSet`.
+
+    Attributes
+    ----------
+    name:
+        Canonical lowercase snake-case component identifier.
+    critical_temperature:
+        Critical temperature in K.
+    critical_pressure:
+        Critical pressure in Pa.
+    acentric_factor:
+        Dimensionless acentric factor, or ``None`` when unavailable.
+    molar_mass:
+        Molar mass in kg/mol.
+    critical_volume:
+        Critical molar volume in m3/mol, or ``None`` when unavailable.
+    aliases:
+        Accepted alternative names, normalized only at API lookup boundaries.
+    critical_density:
+        Critical molar density in mol/m3, or ``None`` when unavailable.
     """
 
     name: str
@@ -72,7 +91,29 @@ class Component:
 
 @dataclass(frozen=True)
 class ComponentDatabase:
-    """Validated canonical component database loaded from YAML."""
+    """Validated immutable canonical component database.
+
+    Attributes
+    ----------
+    identifier:
+        Stable database identifier.
+    revision:
+        Database revision string.
+    components:
+        Pure-component records in database order.
+    units:
+        Read-only mapping of property names to declared SI units.
+    references:
+        Read-only source records applying to the database.
+    source:
+        Bundled resource label, custom YAML path, or ``"<api>"``.
+
+    Raises
+    ------
+    ParameterDatabaseError
+        If identifiers, units, records, aliases, or required positive
+        properties are invalid.
+    """
 
     identifier: str
     revision: str
@@ -137,11 +178,34 @@ class ComponentDatabase:
 
     @property
     def names(self) -> tuple[str, ...]:
-        """Canonical component names in database order."""
+        """Return canonical component names in database order.
+
+        Returns
+        -------
+        tuple
+            Immutable sequence of canonical identifiers.
+        """
         return tuple(record.name for record in self.components)
 
     def lookup(self, name: str) -> Component:
-        """Resolve a canonical name or alias."""
+        """Resolve a canonical name or alias.
+
+        Parameters
+        ----------
+        name:
+            Name or alias; matching is case-insensitive and treats spaces and
+            hyphens as underscores.
+
+        Returns
+        -------
+        Component
+            Matching immutable component record.
+
+        Raises
+        ------
+        KeyError
+            If no component or alias matches.
+        """
         normalized = _normalize_name(name)
         aliases: dict[str, Component] = {}
         for record in self.components:
@@ -157,7 +221,29 @@ class ComponentDatabase:
 
 @dataclass(frozen=True)
 class ComponentSet:
-    """Vectorized component constants for use by PyTorch models."""
+    """Vectorized component constants used by native PyTorch models.
+
+    All tensor fields have shape ``(ncomponents,)`` and share a dtype/device.
+    Component order defines the final axis of every associated composition
+    tensor.
+
+    Attributes
+    ----------
+    names:
+        Canonical component names in tensor order.
+    critical_temperature:
+        Critical temperatures in K.
+    critical_pressure:
+        Critical pressures in Pa.
+    acentric_factor:
+        Dimensionless acentric factors.
+    molar_mass:
+        Molar masses in kg/mol.
+    critical_volume:
+        Critical molar volumes in m3/mol, or ``None``.
+    critical_density:
+        Critical molar densities in mol/m3, or ``None``.
+    """
 
     names: tuple[str, ...]
     critical_temperature: Tensor
@@ -169,7 +255,13 @@ class ComponentSet:
 
     @property
     def ncomponents(self) -> int:
-        """Number of components."""
+        """Return the component-axis length.
+
+        Returns
+        -------
+        int
+            Number of entries in :attr:`names`.
+        """
         return len(self.names)
 
     def to(
@@ -178,7 +270,20 @@ class ComponentSet:
         dtype: torch.dtype | None = None,
         device: torch.device | str | None = None,
     ) -> ComponentSet:
-        """Move all tensors to a common dtype and device."""
+        """Return a component set with all tensors converted together.
+
+        Parameters
+        ----------
+        dtype:
+            Target floating dtype. ``None`` preserves the current dtype.
+        device:
+            Target PyTorch device. ``None`` preserves the current device.
+
+        Returns
+        -------
+        ComponentSet
+            New immutable record; the original is unchanged.
+        """
         return ComponentSet(
             self.names,
             self.critical_temperature.to(dtype=dtype, device=device),
@@ -302,7 +407,27 @@ def _component_database_from_path(path_string: str) -> ComponentDatabase:
 def load_component_database(
     source: str | Path | ComponentDatabase | None = None,
 ) -> ComponentDatabase:
-    """Load the bundled or a custom SI component YAML database once."""
+    """Load and validate a bundled, custom, or explicit component database.
+
+    Parameters
+    ----------
+    source:
+        ``None``, ``"default"``, or ``"components.default"`` selects the
+        bundled database. A path reads a custom torch-flash component YAML
+        document. An existing :class:`ComponentDatabase` is returned unchanged.
+
+    Returns
+    -------
+    ComponentDatabase
+        Immutable validated database. Parsed files are cached by resolved path.
+
+    Raises
+    ------
+    FileNotFoundError
+        If a custom path does not exist.
+    ParameterDatabaseError
+        If the YAML schema, unit declarations, or component records are invalid.
+    """
     if source is None or source in ("default", "components.default"):
         return _default_component_database()
     if isinstance(source, ComponentDatabase):
@@ -311,14 +436,27 @@ def load_component_database(
 
 
 def clear_component_caches() -> None:
-    """Clear cached component YAML documents."""
+    """Clear cached bundled and custom component YAML documents.
+
+    Use this after intentionally modifying a custom database in a long-running
+    process. Existing :class:`ComponentSet` and model instances are unaffected.
+
+    Returns
+    -------
+    None
+        The next database load reparses its source.
+    """
     _default_component_database.cache_clear()
     _component_database_from_path.cache_clear()
 
 
 DEFAULT_COMPONENT_DATABASE = load_component_database()
+"""Validated bundled component database used by default constructors."""
+
 _COMPONENTS = DEFAULT_COMPONENT_DATABASE.components
 COMPONENTS: dict[str, Component] = {}
+"""Canonical-name and alias lookup mapping for bundled component records."""
+
 for _component in _COMPONENTS:
     COMPONENTS[_component.name] = _component
     for _alias in _component.aliases:
@@ -331,7 +469,29 @@ def canonical_component_name(
     database: str | Path | ComponentDatabase | None = None,
     strict: bool = True,
 ) -> str:
-    """Return the canonical torch-flash name for a name or alias."""
+    """Resolve a component name or alias to the canonical identifier.
+
+    Parameters
+    ----------
+    name:
+        Canonical name or declared alias.
+    database:
+        Bundled/custom database selection accepted by
+        :func:`load_component_database`.
+    strict:
+        If ``True``, unknown names raise. If ``False``, an unknown name is
+        normalized to lowercase snake case without asserting database presence.
+
+    Returns
+    -------
+    str
+        Canonical database name or, in non-strict mode, normalized input.
+
+    Raises
+    ------
+    KeyError
+        If ``name`` is unknown and ``strict=True``.
+    """
     selected = load_component_database(database)
     try:
         return selected.lookup(name).name
@@ -346,7 +506,25 @@ def component(
     *,
     database: str | Path | ComponentDatabase | None = None,
 ) -> Component:
-    """Look up a component by canonical name or alias."""
+    """Look up one pure-component record by canonical name or alias.
+
+    Parameters
+    ----------
+    name:
+        Canonical name or alias to resolve.
+    database:
+        Bundled/custom database selection.
+
+    Returns
+    -------
+    Component
+        Immutable record from the selected database.
+
+    Raises
+    ------
+    KeyError
+        If the component is absent from the selected database.
+    """
     return load_component_database(database).lookup(name)
 
 
@@ -361,6 +539,30 @@ def component_set(
 
     Omitted tensor options follow the process-wide :mod:`torch_flash.config`
     policy. Explicit dtype or device arguments override that policy.
+
+    Parameters
+    ----------
+    names:
+        Nonempty iterable of canonical names or aliases. Order is preserved.
+    dtype, device:
+        Tensor options. Omitted values use the configured runtime policy.
+    database:
+        Bundled/custom database selection.
+
+    Returns
+    -------
+    ComponentSet
+        Vectorized SI constants in the requested order.
+
+    Raises
+    ------
+    ValueError
+        If no components are requested.
+    KeyError
+        If a name is unknown.
+    ParameterDatabaseError
+        If a requested component lacks the acentric factor required by cubic
+        EoS construction.
     """
     dtype, device = resolve_tensor_options(dtype, device)
     items = tuple(component(name, database=database) for name in names)

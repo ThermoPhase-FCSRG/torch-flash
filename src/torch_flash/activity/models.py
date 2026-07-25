@@ -36,11 +36,20 @@ def _huron_vidal_excess_gibbs_rt(
 
 
 class NRTL(nn.Module):
-    """Non-random two-liquid excess Gibbs energy model.
+    r"""Non-random two-liquid excess Gibbs energy model.
 
-    ``interaction`` stores :math:`g_{ij}-g_{jj}` in J/mol and may be made
-    trainable. ``nonrandomness`` is the dimensionless :math:`alpha_{ij}`.
-    See Renon and Prausnitz, *AIChE Journal* 14 (1968), 135-144,
+    Parameters
+    ----------
+    interaction
+        Matrix storing :math:`g_{ij}-g_{jj}` in J/mol.
+    nonrandomness
+        Dimensionless :math:`\alpha_{ij}` matrix.
+    trainable
+        Register the interaction-energy matrix as a trainable parameter.
+
+    References
+    ----------
+    Renon and Prausnitz, *AIChE Journal* 14 (1968), 135-144,
     doi:10.1002/aic.690140124.
     """
 
@@ -65,7 +74,20 @@ class NRTL(nn.Module):
         self.register_buffer("nonrandomness", nonrandomness.clone())
 
     def excess_gibbs_rt(self, temperature: Tensor, composition: Tensor) -> Tensor:
-        """Return dimensionless molar excess Gibbs energy, ``gE/(RT)``."""
+        """Evaluate dimensionless molar excess Gibbs energy.
+
+        Parameters
+        ----------
+        temperature
+            Temperature in K.
+        composition
+            Mole fractions with components on the final axis.
+
+        Returns
+        -------
+        Tensor
+            Dimensionless ``g^E/(RT)`` with the broadcast leading shape.
+        """
         x = normalize_composition(composition)
         tau = self.interaction / (R * temperature[..., None, None])
         weights = torch.exp(-self.nonrandomness * tau)
@@ -74,7 +96,21 @@ class NRTL(nn.Module):
         return torch.sum(x * numerator / denominator, dim=-1)
 
     def log_activity_coefficients(self, temperature: Tensor, composition: Tensor) -> Tensor:
-        """Return ``log(gamma)`` from an autodifferentiated extensive ``gE``."""
+        """Return component log activity coefficients.
+
+        Parameters
+        ----------
+        temperature
+            Temperature in K.
+        composition
+            Mole fractions with components on the final axis.
+
+        Returns
+        -------
+        Tensor
+            Dimensionless ``ln(gamma_i)`` obtained from derivatives of the
+            extensive excess Gibbs energy.
+        """
         x = normalize_composition(composition)
 
         def extensive(moles: Tensor) -> Tensor:
@@ -105,6 +141,19 @@ class HuronVidalNRTL(nn.Module):
 
     Reference: Huron and Vidal, *Fluid Phase Equilibria* 3 (1979), 255-271,
     doi:10.1016/0378-3812(79)80001-1.
+
+    Parameters
+    ----------
+    energy_over_r
+        Matrix ``A`` in K.
+    temperature_coefficient
+        Dimensionless matrix ``B``.
+    nonrandomness
+        Dimensionless NRTL nonrandomness matrix.
+    covolumes
+        Positive component cubic covolumes in m3/mol.
+    trainable
+        Register ``A`` and ``B`` as trainable parameters.
     """
 
     energy_over_r: Tensor
@@ -143,11 +192,35 @@ class HuronVidalNRTL(nn.Module):
         self.register_buffer("covolumes", covolumes.clone())
 
     def tau_matrix(self, temperature: Tensor) -> Tensor:
-        """Return the dimensionless, temperature-dependent interaction matrix."""
+        """Evaluate the dimensionless HV-NRTL interaction matrix.
+
+        Parameters
+        ----------
+        temperature
+            Temperature in K.
+
+        Returns
+        -------
+        Tensor
+            ``tau(T) = A/T + B`` with trailing component-pair axes.
+        """
         return self.energy_over_r / temperature[..., None, None] + self.temperature_coefficient
 
     def excess_gibbs_rt(self, temperature: Tensor, composition: Tensor) -> Tensor:
-        """Return the covolume-weighted HV excess Gibbs energy, ``gE/(RT)``."""
+        """Evaluate covolume-weighted HV excess Gibbs energy.
+
+        Parameters
+        ----------
+        temperature
+            Temperature in K.
+        composition
+            Mole fractions on the final axis.
+
+        Returns
+        -------
+        Tensor
+            Dimensionless molar ``g^E/(RT)``.
+        """
         x = normalize_composition(composition)
         tau = self.tau_matrix(temperature)
         return _huron_vidal_excess_gibbs_rt(
@@ -158,7 +231,21 @@ class HuronVidalNRTL(nn.Module):
         )
 
     def log_activity_coefficients(self, temperature: Tensor, composition: Tensor) -> Tensor:
-        """Return ``log(gamma)`` by differentiating the extensive HV ``gE``."""
+        """Return HV-NRTL component log activity coefficients.
+
+        Parameters
+        ----------
+        temperature
+            Temperature in K.
+        composition
+            Mole fractions on the final axis.
+
+        Returns
+        -------
+        Tensor
+            Dimensionless ``ln(gamma_i)`` from the extensive HV excess Gibbs
+            energy derivative.
+        """
         x = normalize_composition(composition)
 
         def extensive(moles: Tensor) -> Tensor:
@@ -184,6 +271,21 @@ class AnchoredHuronVidalNRTL(nn.Module):
     explicit open bounds by a sigmoid transform. Diagonal interactions remain
     exactly zero. Call :meth:`freeze` after fitting to obtain the standard
     :class:`HuronVidalNRTL` representation used by parameter databases.
+
+    Parameters
+    ----------
+    tau_at_lower_temperature, tau_at_upper_temperature
+        Dimensionless interaction matrices at the two anchors.
+    nonrandomness
+        Fixed or initially bounded-symmetric nonrandomness matrix.
+    covolumes
+        Positive component cubic covolumes in m3/mol.
+    lower_temperature, upper_temperature
+        Positive increasing anchor temperatures in K.
+    trainable_nonrandomness
+        Fit the symmetric nonrandomness matrix through a bounded transform.
+    nonrandomness_bounds
+        Open lower/upper bounds for fitted off-diagonal nonrandomness.
     """
 
     raw_tau_at_lower_temperature: nn.Parameter
@@ -325,7 +427,23 @@ class AnchoredHuronVidalNRTL(nn.Module):
         return self.tau_at_lower_temperature - self.energy_over_r / self.lower_temperature
 
     def tau_matrix(self, temperature: Tensor) -> Tensor:
-        """Return the interaction matrix, interpolated linearly in inverse ``T``."""
+        """Evaluate interactions by interpolation in inverse temperature.
+
+        Parameters
+        ----------
+        temperature
+            Positive temperature in K.
+
+        Returns
+        -------
+        Tensor
+            Dimensionless interaction matrices with trailing component axes.
+
+        Raises
+        ------
+        ValueError
+            If any temperature is nonpositive.
+        """
         if bool((temperature <= 0.0).any()):
             raise ValueError("HV-NRTL temperature must be positive")
         inverse_fraction = (temperature.reciprocal() - self.upper_temperature.reciprocal()) / (
@@ -337,7 +455,20 @@ class AnchoredHuronVidalNRTL(nn.Module):
         )
 
     def excess_gibbs_rt(self, temperature: Tensor, composition: Tensor) -> Tensor:
-        """Return the covolume-weighted HV excess Gibbs energy, ``gE/(RT)``."""
+        """Evaluate anchored HV dimensionless excess Gibbs energy.
+
+        Parameters
+        ----------
+        temperature
+            Positive temperature in K.
+        composition
+            Mole fractions on the final axis.
+
+        Returns
+        -------
+        Tensor
+            Dimensionless molar ``g^E/(RT)``.
+        """
         x = normalize_composition(composition)
         return _huron_vidal_excess_gibbs_rt(
             x,
@@ -347,7 +478,20 @@ class AnchoredHuronVidalNRTL(nn.Module):
         )
 
     def log_activity_coefficients(self, temperature: Tensor, composition: Tensor) -> Tensor:
-        """Return ``log(gamma)`` by differentiating the extensive HV ``gE``."""
+        """Return anchored HV component log activity coefficients.
+
+        Parameters
+        ----------
+        temperature
+            Positive temperature in K.
+        composition
+            Mole fractions on the final axis.
+
+        Returns
+        -------
+        Tensor
+            Dimensionless ``ln(gamma_i)``.
+        """
         x = normalize_composition(composition)
 
         def extensive(moles: Tensor) -> Tensor:
@@ -359,7 +503,14 @@ class AnchoredHuronVidalNRTL(nn.Module):
         return result
 
     def freeze(self) -> HuronVidalNRTL:
-        """Return a detached standard HV-NRTL model for prediction or storage."""
+        """Convert fitted anchor parameters to a detached standard HV model.
+
+        Returns
+        -------
+        HuronVidalNRTL
+            Prediction/storage model containing detached ``A``, ``B``,
+            nonrandomness, and covolume tensors.
+        """
         return HuronVidalNRTL(
             self.energy_over_r.detach(),
             self.temperature_coefficient.detach(),
@@ -371,7 +522,18 @@ class AnchoredHuronVidalNRTL(nn.Module):
 class Wilson(nn.Module):
     """Wilson excess Gibbs model with energy and molar-volume parameters.
 
-    See Wilson, *Journal of the American Chemical Society* 86 (1964), 127-130,
+    Parameters
+    ----------
+    interaction
+        Square energy-difference matrix in J/mol.
+    molar_volumes
+        Positive pure-liquid molar volumes in m3/mol.
+    trainable
+        Register ``interaction`` as a trainable PyTorch parameter.
+
+    References
+    ----------
+    Wilson, *Journal of the American Chemical Society* 86 (1964), 127-130,
     doi:10.1021/ja01056a002.
     """
 
@@ -397,19 +559,56 @@ class Wilson(nn.Module):
         self.register_buffer("molar_volumes", molar_volumes.clone())
 
     def lambda_matrix(self, temperature: Tensor) -> Tensor:
-        """Return the temperature-dependent Wilson Lambda matrix."""
+        """Evaluate the temperature-dependent Wilson Lambda matrix.
+
+        Parameters
+        ----------
+        temperature
+            Temperature in K.
+
+        Returns
+        -------
+        Tensor
+            Dimensionless Lambda matrices with trailing component-pair axes.
+        """
         volume_ratio = self.molar_volumes[None, :] / self.molar_volumes[:, None]
         return volume_ratio * torch.exp(-self.interaction / (R * temperature[..., None, None]))
 
     def excess_gibbs_rt(self, temperature: Tensor, composition: Tensor) -> Tensor:
-        """Return dimensionless molar excess Gibbs energy, ``gE/(RT)``."""
+        """Evaluate dimensionless molar excess Gibbs energy.
+
+        Parameters
+        ----------
+        temperature
+            Temperature in K.
+        composition
+            Mole fractions on the final axis.
+
+        Returns
+        -------
+        Tensor
+            Dimensionless ``g^E/(RT)``.
+        """
         x = normalize_composition(composition)
         lambda_matrix = self.lambda_matrix(temperature)
         sums = torch.einsum("...j,...ij->...i", x, lambda_matrix)
         return -torch.sum(x * torch.log(sums), dim=-1)
 
     def log_activity_coefficients(self, temperature: Tensor, composition: Tensor) -> Tensor:
-        """Return the analytical Wilson ``log(gamma)`` expression."""
+        """Evaluate analytical Wilson log activity coefficients.
+
+        Parameters
+        ----------
+        temperature
+            Temperature in K.
+        composition
+            Mole fractions on the final axis.
+
+        Returns
+        -------
+        Tensor
+            Dimensionless ``ln(gamma_i)``.
+        """
         x = normalize_composition(composition)
         lambda_matrix = self.lambda_matrix(temperature)
         row_sums = torch.einsum("...j,...ij->...i", x, lambda_matrix)

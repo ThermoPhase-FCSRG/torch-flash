@@ -14,7 +14,25 @@ from torch_flash.types import PhaseKind, normalize_composition
 
 @dataclass(frozen=True)
 class FitResult:
-    """Optimization history and final convergence diagnostics."""
+    """Optimization history and final convergence diagnostics.
+
+    Attributes
+    ----------
+    losses
+        Scalar objective value after each Adam iteration.
+    converged
+        Whether successive objective values met the relative stopping test.
+    iterations
+        Number of optimizer iterations executed.
+    final_loss
+        Last objective value.
+
+    Notes
+    -----
+    Optimizer convergence does not establish parameter identifiability or
+    model validation. Inspect sensitivities, parameter correlations, and
+    independent holdout behavior separately.
+    """
 
     losses: tuple[float, ...]
     converged: bool
@@ -29,7 +47,26 @@ def least_squares_loss(
     scale: Tensor | float = 1.0,
     weights: Tensor | None = None,
 ) -> Tensor:
-    """Return a dimensionless weighted mean-square residual."""
+    """Return a dimensionless weighted mean-square residual.
+
+    Parameters
+    ----------
+    prediction, observation
+        Broadcast-compatible model predictions and observations in matching
+        physical units.
+    scale
+        Positive residual scale in the same units. Scalar or broadcastable
+        tensor.
+    weights
+        Optional nonnegative statistical weights, broadcastable to the
+        residual shape.
+
+    Returns
+    -------
+    Tensor
+        Scalar mean of the squared, scaled residuals; weights enter through
+        their square roots.
+    """
     residual = (prediction - observation) / scale
     if weights is not None:
         residual = residual * torch.sqrt(weights)
@@ -47,6 +84,30 @@ def phase_equilibrium_residual(
 ) -> Tensor:
     """Return component log-fugacity equalities for measured phase pairs.
 
+    Parameters
+    ----------
+    model
+        Homogeneous-state fugacity model.
+    temperature, pressure
+        Scalar or batched temperatures in K and pressures in Pa.
+    phase1_composition, phase2_composition
+        Equally shaped, strictly positive phase mole fractions.
+    phase_kinds
+        Root request corresponding to each measured phase.
+
+    Returns
+    -------
+    Tensor
+        Dimensionless component residual
+        ``ln(x1_i phi1_i) - ln(x2_i phi2_i)``.
+
+    Raises
+    ------
+    ValueError
+        If phase compositions differ in shape or are nonpositive/nonfinite.
+
+    Notes
+    -----
     Inputs may contain independent batched states.  The residual is
     dimensionless and is zero when every component has equal fugacity in the
     two requested phases.  Strictly positive compositions are required
@@ -91,6 +152,33 @@ def fit_parameters(
 ) -> FitResult:
     """Fit arbitrary PyTorch thermodynamic parameters with Adam.
 
+    Parameters
+    ----------
+    parameters
+        Trainable tensors to pass to :class:`torch.optim.Adam`.
+    closure
+        Zero-argument function that recomputes one finite differentiable
+        scalar loss.
+    learning_rate
+        Adam learning rate.
+    max_iterations
+        Maximum optimizer steps.
+    tolerance
+        Relative successive-loss stopping threshold.
+
+    Returns
+    -------
+    FitResult
+        Loss history and explicit stopping diagnostics.
+
+    Raises
+    ------
+    ValueError
+        If no parameters are supplied or the closure returns a nonfinite or
+        nonscalar loss.
+
+    Notes
+    -----
     The closure must recompute and return a scalar differentiable loss. Bounds
     can be imposed by parameterizing physical values through sigmoid/softplus
     transforms in the model.
@@ -116,3 +204,11 @@ def fit_parameters(
             break
         previous = current
     return FitResult(tuple(history), converged, _iteration, history[-1])
+
+
+__all__ = [
+    "FitResult",
+    "fit_parameters",
+    "least_squares_loss",
+    "phase_equilibrium_residual",
+]

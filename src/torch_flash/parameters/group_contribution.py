@@ -26,7 +26,23 @@ DEFAULT_PPR78_GROUP_CONTRIBUTION = "group-contribution.ppr78-jaubert-mutelet-200
 
 @dataclass(frozen=True)
 class PPR78GroupContributionParameters:
-    """Selected PPR78 group fractions and universal interaction tensors."""
+    """Selected PPR78 group decompositions and universal interactions.
+
+    Attributes
+    ----------
+    group_names
+        Ordered group identifiers.
+    group_fractions
+        Normalized component group fractions with shape
+        ``(ncomponents, ngroups)``.
+    group_a, group_b
+        Symmetric universal interaction matrices in Pa with shape
+        ``(ngroups, ngroups)``.
+    reference_temperature
+        Positive interaction reference temperature in K.
+    parameter_set
+        Versioned parameter-set identifier.
+    """
 
     group_names: tuple[str, ...]
     group_fractions: Tensor
@@ -165,6 +181,35 @@ def ppr78_group_contribution_parameters(
 ) -> PPR78GroupContributionParameters:
     """Load PPR78 group parameters for ``components``.
 
+    Parameters
+    ----------
+    components
+        Ordered component set defining selected decompositions, dtype, and
+        device.
+    source
+        Bundled identifier, custom YAML path, mapping, or loaded parameter set.
+    group_counts
+        Optional component-by-group counts as a mapping or tensor. Values are
+        normalized into group fractions and override only source component
+        decompositions.
+
+    Returns
+    -------
+    PPR78GroupContributionParameters
+        Selected fractions and complete universal interaction tensors.
+
+    Raises
+    ------
+    KeyError
+        If a requested component lacks a decomposition.
+    ValueError
+        If explicit counts have invalid shapes or values.
+    ParameterDatabaseError
+        If source identity, units, group inventory, or interactions are
+        malformed.
+
+    Notes
+    -----
     ``source`` may be the bundled identifier, a custom YAML path, or an
     in-memory :class:`~torch_flash.database.ModelParameterSet`. Explicit
     ``group_counts`` override only the component decompositions; the source
@@ -226,7 +271,26 @@ def ppr78_mixing(
     group_counts: Mapping[str, Mapping[str, float]] | Tensor | None = None,
     trainable: bool = False,
 ) -> PPR78Mixing:
-    """Construct PPR78 mixing from bundled, custom-file, or API parameters."""
+    """Construct a differentiable PPR78 group-contribution mixing rule.
+
+    Parameters
+    ----------
+    components
+        Ordered component set.
+    source
+        PPR78 parameter source.
+    group_counts
+        Optional explicit component group counts overriding stored
+        decompositions.
+    trainable
+        Register the independent universal A/B group interactions as PyTorch
+        parameters.
+
+    Returns
+    -------
+    PPR78Mixing
+        Mixing-rule module on the component set's dtype and device.
+    """
     parameters = ppr78_group_contribution_parameters(
         components,
         source,

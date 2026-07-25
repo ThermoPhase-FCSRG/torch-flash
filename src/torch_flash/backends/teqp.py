@@ -24,6 +24,20 @@ class TeqpBackend:
     so this adapter is for validation rather than differentiable production
     calculations. The GERG constructor uses the published hard-coded
     GERG-2008 residual coefficient set shipped by teqp.
+
+    Parameters
+    ----------
+    names
+        Canonical component names in composition-axis order.
+    model
+        Constructed teqp residual model object.
+    exact_model
+        Explicit coefficient/model identity reported through capabilities.
+
+    Notes
+    -----
+    Inputs cross a CPU/NumPy boundary. Returned tensors match the caller's
+    dtype/device but are not differentiable.
     """
 
     _GERG_NAMES: ClassVar[dict[str, str]] = {

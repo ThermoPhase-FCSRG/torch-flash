@@ -25,8 +25,36 @@ def solve_generalized_rachford_rice(
 ) -> tuple[Tensor, Tensor, int, bool]:
     """Solve multiphase material balance for phase ratios to a reference phase.
 
-    ``k_values`` has shape ``(nphases - 1, ncomponents)``. The returned phase
-    fractions place the reference phase first.
+    Parameters
+    ----------
+    composition
+        Overall mole fractions with shape ``(ncomponents,)``. The vector is
+        normalized internally.
+    k_values
+        Positive ratios to the reference-phase composition, with shape
+        ``(nphases - 1, ncomponents)``.
+    tolerance
+        Convergence threshold for the maximum absolute generalized
+        Rachford--Rice residual.
+    max_iterations
+        Maximum safeguarded Newton iterations.
+
+    Returns
+    -------
+    tuple
+        ``(phase_fractions, phase_compositions, iterations, converged)``.
+        Fractions have shape ``(nphases,)`` and place the reference phase
+        first. Compositions have shape ``(nphases, ncomponents)``.
+
+    Raises
+    ------
+    ValueError
+        If shapes are inconsistent or any equilibrium ratio is nonpositive.
+
+    Notes
+    -----
+    ``converged`` reports the material-balance solve only. Fugacity equality
+    must be checked separately by the enclosing multiphase flash.
     """
     if composition.ndim != 1 or k_values.ndim != 2:
         raise ValueError("expected a composition vector and a K-value matrix")
@@ -146,9 +174,49 @@ def multiphase_flash(
 ) -> FlashResult:
     """Solve a fixed-phase-count PT flash by generalized substitution.
 
-    The initial release supports arbitrary fixed phase counts but automated
-    phase discovery is conservative. For VLL/VLW work, supplying physically
-    informed initial K values remains recommended.
+    Parameters
+    ----------
+    model
+        Homogeneous-state model providing phase fugacity coefficients and
+        properties.
+    state
+        Feed state with temperature in K, pressure in Pa, and a
+        one-dimensional overall mole-fraction vector.
+    initial_k_values
+        Positive composition ratios to the reference liquid phase, with shape
+        ``(nphases - 1, ncomponents)``. Omitting this argument requests a
+        three-phase heuristic containing vapor-like and aqueous-like trials.
+    tolerance
+        Convergence threshold for the maximum absolute log-fugacity residual.
+    max_iterations
+        Maximum generalized substitution/Newton iterations.
+
+    Returns
+    -------
+    FlashResult
+        Fractions, phase properties, convergence status, fugacity residual,
+        and generalized material-balance diagnostics.
+
+    Raises
+    ------
+    ValueError
+        If the composition is batched or default K values cannot be generated.
+
+    Warns
+    -----
+    ExperimentalModelWarning
+        On every call, because automatic phase discovery is not yet a global
+        stability algorithm.
+    ConvergenceWarning
+        If the fixed-phase-count equilibrium iterations do not converge.
+
+    Notes
+    -----
+    The number of phases is fixed by ``initial_k_values``; this routine does
+    not prove that the selected phase count is globally stable. For VLL or VLW
+    calculations, supply physically informed initial ratios and inspect
+    ``FlashResult.converged``, the residual, phase fractions, material balance,
+    and an independent stability analysis.
     """
     warnings.warn(
         "automatic multiphase phase discovery is experimental; inspect stability "

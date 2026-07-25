@@ -21,6 +21,18 @@ class CoolPropBackend:
     machinery with GERG-style reducing/departure functions but is not labeled
     as the published GERG-2008 coefficient set. Exact GERG through REFPROP
     requires a licensed REFPROP installation configured by the user.
+
+    Parameters
+    ----------
+    names
+        Canonical component names in composition-axis order.
+    backend
+        CoolProp ``"HEOS"`` or user-configured ``"REFPROP"`` backend.
+
+    Notes
+    -----
+    Inputs are copied through CPU scalars/lists. Returned tensors match the
+    caller's dtype/device but are detached from PyTorch autograd.
     """
 
     _ALIASES: ClassVar[dict[str, str]] = {

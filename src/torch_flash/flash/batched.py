@@ -75,8 +75,44 @@ def batched_two_phase_flash(
 
     The hybrid algorithm performs vectorized successive substitution followed
     by block-diagonal Newton updates obtained with PyTorch autodiff. Inputs
-    must have ``Kmin < 1 < Kmax`` for every state. ``converged`` is reported
-    per state and additionally requires a physical vapor fraction in [0, 1].
+    must have ``Kmin < 1 < Kmax`` for every state.
+
+    Parameters
+    ----------
+    model
+        Homogeneous-state model supporting batched log fugacity coefficients.
+    state
+        Temperatures in K and pressures in Pa as one-dimensional tensors of
+        shape ``(batch,)``. Composition may have shape ``(ncomponents,)`` for
+        a common feed or ``(batch, ncomponents)`` for state-specific feeds.
+    initial_k_values
+        Optional positive vapor-to-liquid ratios of shape
+        ``(batch, ncomponents)``. Wilson estimates are used when omitted.
+    tolerance
+        Per-state convergence threshold for the maximum absolute
+        log-fugacity residual.
+    substitution_iterations
+        Maximum vectorized successive-substitution passes.
+    newton_iterations
+        Maximum block-diagonal Newton passes after substitution.
+
+    Returns
+    -------
+    BatchedTwoPhaseFlashResult
+        Per-state phase fractions, compositions, K values, convergence flags,
+        residuals, and the shared number of executed iteration passes.
+
+    Raises
+    ------
+    ValueError
+        If batch shapes are inconsistent, iteration controls are invalid,
+        initial K values are invalid, or a state does not satisfy
+        ``Kmin < 1 < Kmax``.
+
+    Notes
+    -----
+    ``converged`` is reported per state and additionally requires a physical
+    vapor fraction in ``[0, 1]``.
 
     This routine does not perform tangent-plane stability analysis. That
     separation is intentional: an envelope or another phase classifier can

@@ -11,7 +11,21 @@ from torch import Tensor
 
 @dataclass(frozen=True)
 class PseudoComponentCut:
-    """One measured or estimated heavy-end cut, using SI units."""
+    """One measured or estimated heavy-end cut in SI units.
+
+    Attributes
+    ----------
+    name:
+        Nonempty pseudo-component identifier.
+    mole_fraction:
+        Nonnegative fraction of the complete fluid composition.
+    normal_boiling_temperature:
+        Normal boiling temperature in K.
+    specific_gravity:
+        Dimensionless liquid specific gravity under the source convention.
+    molar_mass:
+        Molar mass in kg/mol.
+    """
 
     name: str
     mole_fraction: float
@@ -40,7 +54,20 @@ class PseudoComponentCut:
 
 @dataclass(frozen=True)
 class SCNDistribution:
-    """Discrete single-carbon-number representation of a plus fraction."""
+    """Discrete single-carbon-number representation of a plus fraction.
+
+    Attributes
+    ----------
+    carbon_numbers:
+        Strictly increasing one-dimensional integer-like carbon-number labels.
+    mole_fractions:
+        Nonnegative cut mole fractions; their sum is the represented plus
+        fraction, not generally one.
+    molar_masses:
+        Positive cut molar masses in kg/mol.
+    densities:
+        Optional positive cut mass densities in kg/m3.
+    """
 
     carbon_numbers: Tensor
     mole_fractions: Tensor
@@ -75,17 +102,35 @@ class SCNDistribution:
 
     @property
     def total_mole_fraction(self) -> Tensor:
-        """Return the total mole fraction represented by the distribution."""
+        """Return the total feed fraction represented by all SCN cuts.
+
+        Returns
+        -------
+        Tensor
+            Scalar sum of ``mole_fractions``.
+        """
         return self.mole_fractions.sum()
 
     @property
     def average_molar_mass(self) -> Tensor:
-        """Return the mole-average molar mass in kg/mol."""
+        """Return the mole-average molar mass.
+
+        Returns
+        -------
+        Tensor
+            Plus-fraction average in kg/mol.
+        """
         return torch.sum(self.mole_fractions * self.molar_masses) / self.total_mole_fraction
 
     @property
     def bulk_density(self) -> Tensor | None:
-        """Return ideal-volume-mixed bulk density in kg/m3, when available."""
+        """Return ideal-volume-mixed bulk mass density.
+
+        Returns
+        -------
+        Tensor or None
+            Density in kg/m3, or ``None`` when cut densities are unavailable.
+        """
         if self.densities is None:
             return None
         mass = self.mole_fractions * self.molar_masses
@@ -97,7 +142,20 @@ class SCNDistribution:
         dtype: torch.dtype | None = None,
         device: torch.device | str | None = None,
     ) -> SCNDistribution:
-        """Move continuous values to a common dtype/device."""
+        """Return the distribution on a common dtype and device.
+
+        Parameters
+        ----------
+        dtype:
+            Target floating dtype for fractions, masses, and densities.
+        device:
+            Target device for every tensor.
+
+        Returns
+        -------
+        SCNDistribution
+            New immutable distribution. Carbon numbers retain integer dtype.
+        """
         return SCNDistribution(
             self.carbon_numbers.to(device=device),
             self.mole_fractions.to(dtype=dtype, device=device),
@@ -108,7 +166,23 @@ class SCNDistribution:
 
 @dataclass(frozen=True)
 class LumpedDistribution:
-    """Contiguous pseudo-components produced by a lumping rule."""
+    """Contiguous pseudo-components produced by a lumping rule.
+
+    Attributes
+    ----------
+    names:
+        Pseudo-component labels in increasing carbon-number order.
+    carbon_number_bounds:
+        Inclusive lower/upper carbon-number bounds for each lump.
+    mole_fractions:
+        Lump mole fractions.
+    molar_masses:
+        Mole-averaged lump molar masses in kg/mol.
+    densities:
+        Ideal-volume-preserving lump densities in kg/m3, or ``None``.
+    properties:
+        Additional named, mass-weighted property tensors.
+    """
 
     names: tuple[str, ...]
     carbon_number_bounds: tuple[tuple[int, int], ...]

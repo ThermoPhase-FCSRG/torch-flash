@@ -25,6 +25,25 @@ def equal_weight_lump(
     Critical properties supplied through ``properties`` use Pedersen's
     weight-average rule (2024, Eqs. 5.29-5.31). Molar mass is mole averaged;
     density, when present, preserves ideal mixed volume.
+
+    Parameters
+    ----------
+    distribution:
+        Ordered SCN distribution to combine.
+    groups:
+        Number of nonempty contiguous lumps, from one through the SCN count.
+    properties:
+        Optional named per-SCN tensors to aggregate by mass weighting.
+
+    Returns
+    -------
+    LumpedDistribution
+        Contiguous pseudo-components preserving total moles and mass.
+
+    Raises
+    ------
+    ValueError
+        If ``groups`` is invalid or a supplied property name/shape is invalid.
     """
     count = distribution.carbon_numbers.numel()
     if not isinstance(groups, int) or groups < 1 or groups > count:
