@@ -299,6 +299,87 @@ def test_phase_response_autodiff_recovers_ideal_gas_derivatives():
     )
 
 
+def test_batched_phase_response_matches_scalar_reverse_mode_oracle():
+    components = component_set(("methane", "carbon_dioxide"), dtype=torch.float64)
+    model = peng_robinson_1978(
+        components,
+        kij=torch.tensor([[0.0, 0.08], [0.08, 0.0]], dtype=torch.float64),
+    )
+    state = ChemicalState(
+        torch.tensor([180.0, 320.0], dtype=torch.float64),
+        torch.tensor([3.0e6, 1.0e6], dtype=torch.float64),
+        torch.tensor([[0.5, 0.5], [0.3, 0.7]], dtype=torch.float64),
+    )
+    batched = phase_response_derivatives(model, state)
+
+    oracle_rows = []
+    for index in range(state.temperature.numel()):
+        temperature = state.temperature[index]
+        pressure = state.pressure[index]
+        composition = state.composition[index]
+        volume = model.molar_volume(
+            temperature,
+            pressure,
+            composition,
+            "stable",
+        )
+
+        def pressure_at_tv(
+            current_temperature,
+            current_volume,
+            current_composition=composition,
+        ):
+            return model.pressure(
+                current_temperature,
+                current_volume,
+                current_composition,
+            )
+
+        def response_at_tv(current_temperature, current_volume):
+            pressure_temperature, pressure_volume = torch.func.grad(
+                pressure_at_tv,
+                argnums=(0, 1),
+            )(current_temperature, current_volume)
+            volume_temperature = -pressure_temperature / pressure_volume
+            return torch.stack(
+                (
+                    -1.0 / (current_volume * pressure_volume),
+                    volume_temperature / current_volume,
+                    volume_temperature,
+                )
+            )
+
+        response = response_at_tv(temperature, volume)
+        response_temperature, response_volume = torch.func.jacrev(
+            response_at_tv,
+            argnums=(0, 1),
+        )(temperature, volume)
+        oracle_rows.append(
+            torch.stack(
+                (
+                    volume,
+                    response[0],
+                    response[1],
+                    response_temperature[0] + response_volume[0] * response[2],
+                    response_temperature[1] + response_volume[1] * response[2],
+                )
+            )
+        )
+
+    oracle = torch.stack(oracle_rows)
+    calculated = torch.stack(
+        (
+            batched.molar_volume,
+            batched.isothermal_compressibility,
+            batched.thermal_expansion_coefficient,
+            batched.isothermal_compressibility_temperature_derivative,
+            batched.thermal_expansion_temperature_derivative,
+        ),
+        dim=-1,
+    )
+    torch.testing.assert_close(calculated, oracle, rtol=2.0e-12, atol=1.0e-18)
+
+
 def test_phase_identification_parameter_matches_analytic_van_der_waals_derivatives():
     temperature = torch.tensor(300.0, dtype=torch.float64)
     volume = 3.0e-4
@@ -392,6 +473,28 @@ def test_derivative_identification_retains_trainable_model_gradient():
     assert raw_kij.grad is not None
     assert torch.isfinite(raw_kij.grad).all()
     assert float(raw_kij.grad[0, 1].abs()) > 0.0
+
+    batched_temperature = torch.tensor(
+        [180.0, 240.0],
+        dtype=torch.float64,
+        requires_grad=True,
+    )
+    batched_response = phase_response_derivatives(
+        model,
+        ChemicalState(
+            batched_temperature,
+            torch.tensor([3.0e6, 2.0e6], dtype=torch.float64),
+            torch.tensor([[0.5, 0.5], [0.3, 0.7]], dtype=torch.float64),
+        ),
+    )
+    temperature_gradient, interaction_gradient = torch.autograd.grad(
+        batched_response.thermal_expansion_temperature_derivative.sum(),
+        (batched_temperature, model.mixing.raw_kij),
+    )
+    assert torch.isfinite(temperature_gradient).all()
+    assert torch.isfinite(interaction_gradient).all()
+    assert float(temperature_gradient.abs().max()) > 0.0
+    assert float(interaction_gradient[0, 1].abs()) > 0.0
 
 
 def test_phase_identification_parameter_retains_state_and_model_gradients():
@@ -515,13 +618,41 @@ def test_new_method_input_validation_and_unavailable_results():
             )
     with pytest.raises(TypeError, match="critical constants"):
         negative_flash_residual(object(), _state(300.0))
-    with pytest.raises(ValueError, match="scalar T-P"):
+    response_temperature = torch.tensor([300.0, 310.0])
+    response_pressure = torch.tensor([1.0e5, 2.0e5])
+    batched_response = phase_response_derivatives(
+        _IdealGasResponseModel(),
+        ChemicalState(
+            response_temperature,
+            response_pressure,
+            torch.tensor([[0.5, 0.5], [0.4, 0.6]]),
+        ),
+    )
+    torch.testing.assert_close(
+        batched_response.isothermal_compressibility,
+        response_pressure.reciprocal(),
+    )
+    torch.testing.assert_close(
+        batched_response.thermal_expansion_coefficient,
+        response_temperature.reciprocal(),
+    )
+    torch.testing.assert_close(
+        batched_response.isothermal_compressibility_temperature_derivative,
+        torch.zeros_like(response_temperature),
+        atol=5.0e-15,
+        rtol=0.0,
+    )
+    torch.testing.assert_close(
+        batched_response.thermal_expansion_temperature_derivative,
+        -response_temperature.reciprocal().square(),
+    )
+    with pytest.raises(ValueError, match="shapes"):
         phase_response_derivatives(
             _IdealGasResponseModel(),
             ChemicalState(
                 torch.tensor([300.0, 310.0]),
-                torch.tensor([1.0e5, 1.0e5]),
-                torch.tensor([[0.5, 0.5], [0.4, 0.6]]),
+                torch.tensor([1.0e5, 1.0e5, 1.0e5]),
+                torch.ones((2, 1)),
             ),
         )
     with pytest.raises(TypeError, match="pressure and molar_volume"):
@@ -571,6 +702,16 @@ def test_new_method_input_validation_and_unavailable_results():
             _FixedVolumePathologicalModel("unstable"),
             _state(300.0),
         )
+    for behavior, message in (
+        ("invalid-volume", "finite positive"),
+        ("nonfinite", "nonfinite"),
+        ("unstable", "mechanically stable"),
+    ):
+        with pytest.raises(ValueError, match=message):
+            phase_response_derivatives(
+                _FixedVolumePathologicalModel(behavior),
+                _state(300.0),
+            )
 
     singular_state = ChemicalState(
         torch.tensor(300.0, dtype=torch.float64),

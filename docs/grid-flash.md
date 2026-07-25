@@ -286,6 +286,12 @@ passed to one nested forward-mode JVP evaluation of the
 Venkatarathnam-Oellrich parameter. It is a memory/performance control only:
 states remain independent and the equations are unchanged.
 
+`response_autodiff_chunk_size` applies the same memory/performance separation
+to either response-derivative criterion. Pedersen \(V/b\) evaluates all active
+phase roots in one leading batch. Each requested method remains a complete,
+independent pass: timings do not assume that another identification method was
+evaluated or that derivative work was shared between methods.
+
 Configure process-wide dtype, device, and threads once before model
 construction. `flash_grid` never changes global PyTorch runtime settings.
 

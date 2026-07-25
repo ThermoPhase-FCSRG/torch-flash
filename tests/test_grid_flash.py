@@ -5,6 +5,7 @@ from dataclasses import replace
 import pytest
 import torch
 
+import torch_flash.properties.phase_identification as phase_identification_module
 from torch_flash import (
     ChemicalState,
     ComponentSet,
@@ -13,6 +14,7 @@ from torch_flash import (
     flash_grid,
     flash_grid_oracle,
     identify_grid_phases,
+    identify_phase,
     peng_robinson_1978,
     soave_redlich_kwong,
     solve_binary_three_phase_invariant,
@@ -121,6 +123,7 @@ def test_grid_flash_recovers_published_north_ward_estes_three_phase_state():
         model,
         result,
         pip_autodiff_chunk_size=1,
+        response_autodiff_chunk_size=1,
     )
     assert identification.region_codes.shape == (6, 1)
     assert identification.region_codes[:, 0].tolist() == [4, 4, 4, 4, 4, 4]
@@ -130,6 +133,25 @@ def test_grid_flash_recovers_published_north_ward_estes_three_phase_state():
         identification.phase_identity_codes[3],
         identification.phase_identity_codes[5],
     )
+    for method_index in (1, 3, 4, 5):
+        method = identification.methods[method_index]
+        for phase_index in range(3):
+            scalar = identify_phase(
+                model,
+                ChemicalState(
+                    result.temperatures[0],
+                    result.pressures[0],
+                    result.phase_compositions[0, phase_index],
+                ),
+                method=method,
+            )
+            assert scalar.criterion_value is not None
+            torch.testing.assert_close(
+                identification.criterion_values[method_index, 0, phase_index],
+                scalar.criterion_value,
+                rtol=2.0e-12,
+                atol=1.0e-18,
+            )
     assert len(identification.method_elapsed_seconds) == len(identification.methods)
     assert all(seconds >= 0.0 for seconds in identification.method_elapsed_seconds)
     assert sum(identification.method_elapsed_seconds) <= identification.elapsed_seconds
@@ -298,6 +320,24 @@ def test_grid_flash_and_identification_validate_batch_inputs():
             equilibrium,
             pip_autodiff_chunk_size=0,
         )
+    with pytest.raises(ValueError, match="chunk"):
+        identify_grid_phases(
+            model,
+            equilibrium,
+            response_autodiff_chunk_size=0,
+        )
+    for options, message in (
+        ({"volume_to_covolume_threshold": 0.0}, "threshold"),
+        ({"pseudo_critical_temperature_factor": 0.0}, "factor"),
+        ({"ambiguity_relative_tolerance": -1.0}, "ambiguity"),
+        ({"pip_denominator_relative_tolerance": -1.0}, "PIP"),
+    ):
+        with pytest.raises(ValueError, match=message):
+            identify_grid_phases(
+                model,
+                equilibrium,
+                **options,
+            )
     pip_method: tuple[PhaseIdentificationCriterion, ...] = (
         "venkatarathnam-oellrich-phase-identification-parameter",
     )
@@ -313,12 +353,88 @@ def test_grid_flash_and_identification_validate_batch_inputs():
         equilibrium,
         converged=torch.zeros_like(equilibrium.converged),
     )
-    unavailable = identify_grid_phases(
+    for nonconverged_method in (
+        "pedersen-volume-to-covolume",
+        "pasad-isothermal-compressibility-derivative",
+        "venkatarathnam-oellrich-phase-identification-parameter",
+    ):
+        unavailable = identify_grid_phases(
+            model,
+            nonconverged,
+            methods=(nonconverged_method,),
+        )
+        assert unavailable.region_codes.tolist() == [[5]]
+    for unavailable_method in (
+        "pasad-isothermal-compressibility-derivative",
+        "bennett-thermal-expansion-derivative",
+        "venkatarathnam-oellrich-phase-identification-parameter",
+    ):
+        unavailable = identify_grid_phases(
+            object(),  # type: ignore[arg-type]
+            equilibrium,
+            methods=(unavailable_method,),
+        )
+        assert unavailable.region_codes.tolist() == [[5]]
+
+
+def test_grid_phase_identification_falls_back_after_batched_physical_failure(monkeypatch):
+    model = _binary_model()
+    equilibrium = flash_grid(
         model,
-        nonconverged,
-        methods=pip_method,
+        ChemicalState(
+            torch.tensor([180.0], dtype=torch.float64),
+            torch.tensor([2.0e6], dtype=torch.float64),
+            torch.tensor([0.5, 0.5], dtype=torch.float64),
+        ),
     )
-    assert unavailable.region_codes.tolist() == [[5]]
+
+    original_ratio = phase_identification_module.volume_to_covolume_ratio
+
+    def scalar_only_ratio(model, state, phase="stable"):
+        if state.temperature.ndim > 0:
+            raise ValueError("forced batched physical failure")
+        return original_ratio(model, state, phase)
+
+    monkeypatch.setattr(
+        phase_identification_module,
+        "volume_to_covolume_ratio",
+        scalar_only_ratio,
+    )
+    pedersen = identify_grid_phases(
+        model,
+        equilibrium,
+        methods=("pedersen-volume-to-covolume",),
+    )
+    assert pedersen.region_codes.tolist() != [[5]]
+
+    monkeypatch.setattr(
+        phase_identification_module,
+        "volume_to_covolume_ratio",
+        original_ratio,
+    )
+    original_response = phase_identification_module._phase_response_details
+
+    def scalar_only_response(model, state, phase="stable", *, molar_volume=None):
+        if state.temperature.ndim > 0:
+            raise ValueError("forced batched physical failure")
+        return original_response(
+            model,
+            state,
+            phase,
+            molar_volume=molar_volume,
+        )
+
+    monkeypatch.setattr(
+        phase_identification_module,
+        "_phase_response_details",
+        scalar_only_response,
+    )
+    response = identify_grid_phases(
+        model,
+        equilibrium,
+        methods=("pasad-isothermal-compressibility-derivative",),
+    )
+    assert response.region_codes.tolist() != [[5]]
 
 
 def test_binary_invariant_validates_inputs():

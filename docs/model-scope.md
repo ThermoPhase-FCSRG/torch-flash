@@ -237,14 +237,15 @@ translations are excluded from \(V\) because they are not part of the
 repulsive EoS volume. Li's criterion requires supplied critical molar volumes
 and does not infer missing values.
 
-`phase_response_derivatives` evaluates one scalar, mechanically stable
-homogeneous root and uses first- and second-order PyTorch autodiff on the
-model's explicit \(P(T,V,x)\) function. It returns \(V\), \(\kappa_T\),
-\(\alpha_P\), \((\partial\kappa_T/\partial T)_P\), and
-\((\partial\alpha_P/\partial T)_P\) without a finite-difference step. The
-response and identification criterion tensors retain their gradient path to
-differentiable model parameters; only the discrete identity and ambiguity
-flags are detached decisions.
+`phase_response_derivatives` evaluates a scalar mechanically stable
+homogeneous root or a matching leading state batch and uses nested
+forward-mode JVPs on the model's explicit \(P(T,V,x)\) function. It returns
+\(V\), \(\kappa_T\), \(\alpha_P\),
+\((\partial\kappa_T/\partial T)_P\), and
+\((\partial\alpha_P/\partial T)_P\) without a finite-difference step or a
+dense cross-state Jacobian. The response and identification criterion tensors
+retain their gradient path to differentiable model parameters; only the
+discrete identity and ambiguity flags are detached decisions.
 
 `phase_identification_parameter` evaluates \(\Pi\) directly from the explicit
 EoS pressure with nested `torch.func.jvp` calls. It accepts scalar or matching

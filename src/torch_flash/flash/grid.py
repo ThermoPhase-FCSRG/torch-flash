@@ -7,6 +7,7 @@ A full multistart Gibbs calculation remains available as a correctness oracle.
 
 from __future__ import annotations
 
+import math
 import time
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
@@ -363,6 +364,7 @@ def identify_grid_phases(
     ambiguity_relative_tolerance: float = 0.05,
     pip_denominator_relative_tolerance: float | None = None,
     pip_autodiff_chunk_size: int = 2048,
+    response_autodiff_chunk_size: int = 2048,
 ) -> GridPhaseIdentification:
     """Identify each equilibrium phase and summarize paper-style regions.
 
@@ -405,6 +407,11 @@ def identify_grid_phases(
         Venkatarathnam-Oellrich parameter. Smaller chunks reduce temporary
         memory; larger chunks may reduce Python overhead. This setting does
         not couple states or change the defining equations.
+    response_autodiff_chunk_size
+        Positive maximum number of independent equilibrium phases passed to
+        one batched forward-mode autodiff evaluation of either response
+        derivative criterion. Each requested method is evaluated
+        independently; work is not shared between methods.
 
     Returns
     -------
@@ -436,16 +443,34 @@ def identify_grid_phases(
     :func:`identify_phase` API retains its autodiff graph.
     """
     from torch_flash.properties.phase_identification import (
+        _phase_response_details,
         identify_phase,
         phase_identification_parameter,
+        volume_to_covolume_ratio,
     )
 
     if not methods:
         raise ValueError("at least one phase-identification method is required")
     if len(set(methods)) != len(methods):
         raise ValueError("phase-identification methods must be unique")
+    if not math.isfinite(volume_to_covolume_threshold) or volume_to_covolume_threshold <= 0.0:
+        raise ValueError("volume-to-covolume threshold must be finite and positive")
+    if (
+        not math.isfinite(pseudo_critical_temperature_factor)
+        or pseudo_critical_temperature_factor <= 0.0
+    ):
+        raise ValueError("pseudo-critical-temperature factor must be finite and positive")
+    if not math.isfinite(ambiguity_relative_tolerance) or ambiguity_relative_tolerance < 0.0:
+        raise ValueError("ambiguity relative tolerance must be finite and non-negative")
+    if pip_denominator_relative_tolerance is not None and (
+        not math.isfinite(pip_denominator_relative_tolerance)
+        or pip_denominator_relative_tolerance < 0.0
+    ):
+        raise ValueError("PIP denominator relative tolerance must be finite and non-negative")
     if pip_autodiff_chunk_size < 1:
         raise ValueError("pip_autodiff_chunk_size must be positive")
+    if response_autodiff_chunk_size < 1:
+        raise ValueError("response_autodiff_chunk_size must be positive")
     state_count = equilibrium.temperatures.numel()
     if equilibrium.phase_counts.shape != (state_count,):
         raise ValueError("equilibrium phase counts do not match the state batch")
@@ -472,14 +497,166 @@ def identify_grid_phases(
     )
     started = time.perf_counter()
     method_elapsed_seconds = []
+
+    def active_phase_indices() -> tuple[Tensor, Tensor, Tensor]:
+        active = equilibrium.converged[:, None] & (
+            torch.arange(MAX_PHASES, device=equilibrium.feeds.device)[None, :]
+            < equilibrium.phase_counts[:, None]
+        )
+        state_indices, phase_indices = torch.nonzero(active, as_tuple=True)
+        return active, state_indices, phase_indices
+
+    def store_batched_identification(
+        method_index: int,
+        active: Tensor,
+        state_indices: Tensor,
+        phase_indices: Tensor,
+        criterion: Tensor,
+        threshold: Tensor,
+        *,
+        vapor_if_positive: bool,
+        ambiguity_margin: Tensor,
+        ambiguity_limit: Tensor,
+    ) -> None:
+        positive = criterion > threshold
+        vapor = positive if vapor_if_positive else ~positive
+        identities[method_index, state_indices, phase_indices] = vapor.to(torch.int8)
+        criterion_values[method_index, state_indices, phase_indices] = criterion.detach()
+        thresholds[method_index, state_indices, phase_indices] = torch.broadcast_to(
+            threshold,
+            criterion.shape,
+        ).detach()
+        ambiguous[method_index, state_indices, phase_indices] = (
+            ambiguity_margin.abs() <= ambiguity_limit
+        ).detach()
+
+        state_identities = identities[method_index]
+        batched_has_vapor = ((state_identities == 1) & active).any(dim=-1)
+        labels = torch.where(
+            equilibrium.phase_counts == 1,
+            torch.where(batched_has_vapor, 0, 1),
+            torch.where(
+                equilibrium.phase_counts == 2,
+                torch.where(batched_has_vapor, 2, 3),
+                4,
+            ),
+        )
+        region_codes[method_index, equilibrium.converged] = labels[equilibrium.converged].to(
+            torch.int8
+        )
+
     for method_index, method in enumerate(methods):
         method_started = time.perf_counter()
-        if method == "venkatarathnam-oellrich-phase-identification-parameter":
-            active = equilibrium.converged[:, None] & (
-                torch.arange(MAX_PHASES, device=equilibrium.feeds.device)[None, :]
-                < equilibrium.phase_counts[:, None]
+        if (
+            method == "pedersen-volume-to-covolume"
+            and callable(getattr(model, "select_z", None))
+            and callable(getattr(model, "mixture_parameters", None))
+        ):
+            active, state_indices, phase_indices = active_phase_indices()
+            if state_indices.numel() == 0:
+                method_elapsed_seconds.append(time.perf_counter() - method_started)
+                continue
+            batched_succeeded = True
+            try:
+                ratio = volume_to_covolume_ratio(
+                    model,
+                    ChemicalState(
+                        equilibrium.temperatures[state_indices],
+                        equilibrium.pressures[state_indices],
+                        equilibrium.phase_compositions[state_indices, phase_indices],
+                    ),
+                    phase,
+                )
+            except ValueError:
+                batched_succeeded = False
+            if batched_succeeded:
+                threshold = ratio.new_tensor(volume_to_covolume_threshold)
+                store_batched_identification(
+                    method_index,
+                    active,
+                    state_indices,
+                    phase_indices,
+                    ratio,
+                    threshold,
+                    vapor_if_positive=True,
+                    ambiguity_margin=torch.log(ratio / threshold),
+                    ambiguity_limit=torch.log1p(ratio.new_tensor(ambiguity_relative_tolerance)),
+                )
+                method_elapsed_seconds.append(time.perf_counter() - method_started)
+                continue
+
+        if (
+            method
+            in (
+                "pasad-isothermal-compressibility-derivative",
+                "bennett-thermal-expansion-derivative",
             )
-            state_indices, phase_indices = torch.nonzero(active, as_tuple=True)
+            and callable(getattr(model, "pressure", None))
+            and callable(getattr(model, "molar_volume", None))
+        ):
+            active, state_indices, phase_indices = active_phase_indices()
+            if state_indices.numel() == 0:
+                method_elapsed_seconds.append(time.perf_counter() - method_started)
+                continue
+            criterion_chunks: list[Tensor] = []
+            scale_chunks: list[Tensor] = []
+            batched_succeeded = True
+            try:
+                for start in range(0, state_indices.numel(), response_autodiff_chunk_size):
+                    stop = min(
+                        start + response_autodiff_chunk_size,
+                        state_indices.numel(),
+                    )
+                    current_states = state_indices[start:stop]
+                    current_phases = phase_indices[start:stop]
+                    response = _phase_response_details(
+                        model,
+                        ChemicalState(
+                            equilibrium.temperatures[current_states],
+                            equilibrium.pressures[current_states],
+                            equilibrium.phase_compositions[
+                                current_states,
+                                current_phases,
+                            ],
+                        ),
+                        phase,
+                    )
+                    if method == "pasad-isothermal-compressibility-derivative":
+                        criterion_chunks.append(
+                            response.values.isothermal_compressibility_temperature_derivative
+                        )
+                        scale_chunks.append(response.compressibility_derivative_scale)
+                    else:
+                        criterion_chunks.append(
+                            response.values.thermal_expansion_temperature_derivative
+                        )
+                        scale_chunks.append(response.expansion_derivative_scale)
+            except ValueError:
+                batched_succeeded = False
+            if batched_succeeded:
+                criterion = torch.cat(criterion_chunks)
+                scale = torch.cat(scale_chunks)
+                zero = criterion.new_zeros(())
+                store_batched_identification(
+                    method_index,
+                    active,
+                    state_indices,
+                    phase_indices,
+                    criterion,
+                    zero,
+                    vapor_if_positive=False,
+                    ambiguity_margin=criterion,
+                    ambiguity_limit=scale * ambiguity_relative_tolerance,
+                )
+                method_elapsed_seconds.append(time.perf_counter() - method_started)
+                continue
+
+        if (
+            method == "venkatarathnam-oellrich-phase-identification-parameter"
+            and callable(getattr(model, "pressure", None))
+            and callable(getattr(model, "molar_volume", None))
+        ):
+            active, state_indices, phase_indices = active_phase_indices()
             if state_indices.numel() == 0:
                 method_elapsed_seconds.append(time.perf_counter() - method_started)
                 continue
@@ -513,31 +690,17 @@ def identify_grid_phases(
             if batched_succeeded:
                 parameter = torch.cat(parameter_chunks)
                 one = parameter.new_tensor(1.0)
-                identities[method_index, state_indices, phase_indices] = torch.where(
-                    parameter > one,
-                    torch.zeros_like(parameter, dtype=torch.int8),
-                    torch.ones_like(parameter, dtype=torch.int8),
+                store_batched_identification(
+                    method_index,
+                    active,
+                    state_indices,
+                    phase_indices,
+                    parameter,
+                    one,
+                    vapor_if_positive=False,
+                    ambiguity_margin=parameter - one,
+                    ambiguity_limit=one * ambiguity_relative_tolerance,
                 )
-                criterion_values[method_index, state_indices, phase_indices] = parameter.detach()
-                thresholds[method_index, state_indices, phase_indices] = one
-                ambiguous[method_index, state_indices, phase_indices] = (
-                    (parameter - one).abs() <= ambiguity_relative_tolerance
-                ).detach()
-
-                state_identities = identities[method_index]
-                batched_has_vapor = ((state_identities == 1) & active).any(dim=-1)
-                labels = torch.where(
-                    equilibrium.phase_counts == 1,
-                    torch.where(batched_has_vapor, 0, 1),
-                    torch.where(
-                        equilibrium.phase_counts == 2,
-                        torch.where(batched_has_vapor, 2, 3),
-                        4,
-                    ),
-                )
-                region_codes[method_index, equilibrium.converged] = labels[
-                    equilibrium.converged
-                ].to(torch.int8)
                 method_elapsed_seconds.append(time.perf_counter() - method_started)
                 continue
 
