@@ -64,6 +64,7 @@ thermopack = ">=2.2"
 [feature.docs.dependencies]
 mkdocs = ">=1.6,<2"
 mkdocs-material = ">=9.5"
+ruff = ">=0.11"
 
 [feature.docs.pypi-dependencies]
 mkdocstrings = { version = ">=0.27", extras = ["python"] }
