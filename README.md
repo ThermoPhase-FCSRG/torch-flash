@@ -1,4 +1,10 @@
-# torch-flash
+<p align="center">
+  <img
+    src="docs/assets/branding/torch-flash-logo.svg"
+    alt="torch-flash — Differentiable Thermodynamics powered by PyTorch"
+    width="680"
+  />
+</p>
 
 [![Tests](https://github.com/ThermoPhase-FCSRG/torch-flash/actions/workflows/tests.yml/badge.svg)](https://github.com/ThermoPhase-FCSRG/torch-flash/actions/workflows/tests.yml)
 [![Coverage](https://codecov.io/gh/ThermoPhase-FCSRG/torch-flash/branch/main/graph/badge.svg)](https://codecov.io/gh/ThermoPhase-FCSRG/torch-flash)
@@ -120,7 +126,7 @@ deterministic-execution policies are set before model construction; see
 - SRK-CPA association models with configurable site schemes, cross-association
   rules, hydrocarbon/water parameters, and heavy-cut adapters
   ([Kontogeorgis et al., 1996](https://doi.org/10.1021/ie9600203)).
-- Native GERG-2008 and EOS-CG-2021 multifluid Helmholtz models
+- Native GERG-2008 and EOS-CG-2021 multiparameter Helmholtz mixture models
   ([Kunz and Wagner, 2012](https://doi.org/10.1021/je300655b);
   [Neumann et al., 2023](https://doi.org/10.1007/s10765-023-03263-6)).
 - Fugacity, chemical potential, compressibility, molar volume, Helmholtz and
@@ -155,7 +161,7 @@ from torch_flash import (
     component_set,
     cubic_eos,
     cubic_interaction_parameters,
-    multifluid_eos,
+    multiparameter_eos,
 )
 
 components = component_set(("methane", "n_decane"))
@@ -169,7 +175,7 @@ pr78 = cubic_eos(
     kij=interactions.kij,
     lij=interactions.lij,
 )
-gerg = multifluid_eos("gerg2008", ("CO2", "CH4"))
+gerg = multiparameter_eos("gerg2008", ("CO2", "CH4"))
 print(available_parameter_sets(model_kind="cubic"))
 ```
 
@@ -177,12 +183,6 @@ Parsed database documents are cached; model instances and their tensors are
 not shared. Custom schemas, canonical naming, units, cache controls, and
 trainable-parameter conventions are described in
 [Component and model parameter databases](docs/parameters.md).
-
-Bundled parameters, repository-only scientific data, and independently
-generated software baselines have distinct provenance and redistribution
-conditions. See [Licensing and scientific-data provenance](docs/licensing.md).
-Research studies and test data are not included in the PyPI wheel or source
-distribution.
 
 ## Documentation
 

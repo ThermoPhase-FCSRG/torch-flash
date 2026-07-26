@@ -1,0 +1,138 @@
+format: torch-flash-model-parameters
+schema_version: 1
+id: pure-helmholtz.leachman-2009-normal-hydrogen
+model_kind: pure_helmholtz
+model: Leachman normal hydrogen (2009)
+version: '2009'
+description: Complete thermodynamic Helmholtz equation for normal hydrogen.
+units:
+  gas_constant: J mol^-1 K^-1
+  critical_temperature: K
+  critical_pressure: Pa
+  critical_density: mol m^-3
+  molar_mass: kg mol^-1
+  helmholtz_coefficients: dimensionless unless term definition states otherwise
+references:
+- citation: Leachman et al., Journal of Physical and Chemical Reference Data 38,
+    721-748 (2009)
+  doi: 10.1063/1.3160306
+parameters:
+  component_order:
+  - hydrogen
+  components:
+    hydrogen:
+      critical_density: 15508.0
+      critical_pressure: 1296400.0
+      critical_temperature: 33.145
+      ideal:
+      - a1: -1.4579856475
+        a2: 1.888076782
+        type: IdealGasHelmholtzLead
+      - a: 1.5
+        type: IdealGasHelmholtzLogTau
+      - Tcrit: 33.145
+        Tcrit_units: K
+        n:
+        - 1.616
+        - -0.4117
+        - -0.792
+        - 0.758
+        - 1.217
+        type: IdealGasHelmholtzPlanckEinsteinFunctionT
+        v:
+        - 531
+        - 751
+        - 1989
+        - 2484
+        - 6859
+      molar_mass: 0.00201588
+      residual:
+      - d:
+        - 1
+        - 4
+        - 1
+        - 1
+        - 2
+        - 2
+        - 3
+        - 1
+        - 3
+        l:
+        - 0
+        - 0
+        - 0
+        - 0
+        - 0
+        - 0
+        - 0
+        - 1
+        - 1
+        n:
+        - -6.93643
+        - 0.01
+        - 2.1101
+        - 4.52059
+        - 0.732564
+        - -1.34086
+        - 0.130985
+        - -0.777414
+        - 0.351944
+        t:
+        - 0.6844
+        - 1
+        - 0.989
+        - 0.489
+        - 0.803
+        - 1.1444
+        - 1.409
+        - 1.754
+        - 1.311
+        type: ResidualHelmholtzPower
+      - beta:
+        - 0.171
+        - 0.2245
+        - 0.1304
+        - 0.2785
+        - 0.3967
+        d:
+        - 2
+        - 1
+        - 3
+        - 1
+        - 1
+        epsilon:
+        - 1.506
+        - 0.156
+        - 1.736
+        - 0.67
+        - 1.662
+        eta:
+        - 1.685
+        - 0.489
+        - 0.103
+        - 2.506
+        - 1.607
+        gamma:
+        - 0.7164
+        - 1.3444
+        - 1.4517
+        - 0.7204
+        - 1.5445
+        n:
+        - -0.0211716
+        - 0.0226312
+        - 0.032187
+        - -0.0231752
+        - 0.0557346
+        t:
+        - 4.187
+        - 5.646
+        - 0.791
+        - 7.249
+        - 2.986
+        type: ResidualHelmholtzGaussian
+      source: Leachman-JPCRD-2009
+      source_gas_constant: 8.314472
+  gas_constant: 8.314472
+  pairs: {}
+  reference: doi:10.1063/1.3160306

@@ -11,7 +11,7 @@ models/binary_interaction/
 models/cpa/
 models/cubic/
 models/group_contribution/
-models/multifluid/
+models/multiparameter/
 models/standard_state/
 schemas/
 ```

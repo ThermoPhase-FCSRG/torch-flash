@@ -9,8 +9,8 @@ strict: true
 theme:
   name: material
   language: en
-  logo: assets/branding/thermophase-horizontal.png
-  favicon: assets/branding/thermophase-horizontal.png
+  logo: assets/branding/torch-flash-icon.svg
+  favicon: assets/branding/torch-flash-favicon.svg
   icon:
     repo: fontawesome/brands/github
   palette:
@@ -111,7 +111,6 @@ nav:
   - Guides:
       - Runtime configuration: runtime.md
       - Parameter databases: parameters.md
-      - Model scope: model-scope.md
       - High-performance setup: performance.md
       - Batched grid flash and phase identification: grid-flash.md
   - Verification & Validation:
@@ -119,13 +118,18 @@ nav:
       - Validation reports:
           - GERG-2008 and EOS-CG: validation-reports/05-gerg-eoscg.md
           - Native EOS-CG-2021: validation-reports/08-eoscg2021.md
+          - Native GERG-2008 for H2/CH4: validation-reports/09-gerg2008-hydrogen.md
           - Thermal properties: validation-reports/15-thermal-properties.md
           - Huron-Vidal mixing: validation-reports/22-huron-vidal.md
           - Volume translation: validation-reports/24-volume-translation.md
           - Cross-co-volume interaction: validation-reports/25-covolume-interaction.md
           - Original UNIFAC: validation-reports/26-unifac.md
           - Predictive PR78: validation-reports/28-ppr78.md
+          - H2-tailored GERG (2021): validation-reports/29-hydrogen-tailored-gerg.md
+          - Hydrogen-water model comparison: validation-reports/32-hydrogen-water-all-models.md
+          - E-PPR78 for CCS mixtures: validation-reports/33-eppr78-ccs-figure2.md
   - Reference:
+      - Model scope: model-scope.md
       - Scientific references: references.md
       - API Reference:
           - Overview: api.md

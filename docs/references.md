@@ -21,6 +21,8 @@ The frozen CSV provenance is recorded in
 | PR76 | D.-Y. Peng and D. B. Robinson, "A New Two-Constant Equation of State," *Ind. Eng. Chem. Fundam.* 15 (1976) 59-64. [doi:10.1021/i160057a011](https://doi.org/10.1021/i160057a011) |
 | PR78 acentric-factor extension | D. B. Robinson and D.-Y. Peng, *The Characterization of the Heptanes and Heavier Fractions for the GPA Peng-Robinson Programs*, GPA Research Report RR-28 (1978). [Bibliographic record](https://books.google.com/books?id=bE-_HAAACAAJ) |
 | PPR78 predictive group-contribution BIPs | J.-N. Jaubert and F. Mutelet, "VLE predictions with the Peng-Robinson equation of state and temperature dependent \(k_{ij}\) calculated through a group contribution method," *Fluid Phase Equilib.* 224 (2004) 285-304. The bundled original parameterization is Table 1; Eq. 5 and Appendix A define and audit the correlation. [doi:10.1016/j.fluid.2004.06.059](https://doi.org/10.1016/j.fluid.2004.06.059) |
+| E-PPR78 global 40-group parameters | J.-N. Jaubert, J.-W. Qian, S. Lasala, and R. Privat, "The impressive impact of including enthalpy and heat capacity of mixing data when parameterising equations of state. Application to the development of the E-PPR78 model," *Fluid Phase Equilib.* 560 (2022) 113456. Equation 5 defines the correlation and supplementary Table S4 supplies the bundled 40-group inventory. [doi:10.1016/j.fluid.2022.113456](https://doi.org/10.1016/j.fluid.2022.113456) |
+| E-PPR78 for CCS fluids | X. Xu, S. Lasala, R. Privat, and J.-N. Jaubert, "E-PPR78: A proper cubic EoS for modelling fluids involved in the design and operation of carbon dioxide capture and storage (CCS) processes," *Int. J. Greenhouse Gas Control* 56 (2017) 126-154. This establishes the CCS application scope; `torch-flash` uses the later 2022 global coefficient revision. [doi:10.1016/j.ijggc.2016.11.015](https://doi.org/10.1016/j.ijggc.2016.11.015) |
 | Petroleum BIP tuning | D. L. Katz and A. Firoozabadi, "Predicting Phase Behavior of Condensate/Crude-Oil Systems Using Methane Interaction Coefficients," *J. Pet. Technol.* 30 (1978) 1649-1655. [doi:10.2118/6721-PA](https://doi.org/10.2118/6721-PA). R. Gani and A. Fredenslund, "Thermodynamics of Petroleum Mixtures Containing Heavy Hydrocarbons: An Expert Tuning System," *Ind. Eng. Chem. Res.* 26 (1987) 1304-1312. [doi:10.1021/ie00067a008](https://doi.org/10.1021/ie00067a008). [Whitson BIP workflow](https://wiki.whitson.com/eos/bips/). |
 | Cubic cross-co-volume interaction | R. Privat and J.-N. Jaubert, "The state of the art of cubic equations of state with temperature-dependent binary interaction coefficients: From correlation to prediction," *Fluid Phase Equilib.* 570 (2023) 113697. Equations 9-11 define \(b_m=\sum_i\sum_jx_i x_jb_{ij}\), \(b_{ij}=(b_i+b_j)(1-l_{ij})/2\), and its linear `lij=0` limit. [doi:10.1016/j.fluid.2022.113697](https://doi.org/10.1016/j.fluid.2022.113697) |
 | Cubic volume translation | A. Péneloux, E. Rauzy, and R. Fréze, "A consistent correction for Redlich-Kwong-Soave volumes," *Fluid Phase Equilib.* 8 (1982) 7-23. [doi:10.1016/0378-3812(82)80002-2](https://doi.org/10.1016/0378-3812%2882%2980002-2) |
@@ -42,11 +44,12 @@ The frozen CSV provenance is recorded in
 | Pedersen corresponding-states viscosity | K. S. Pedersen et al., "Viscosity of crude oils," *Chem. Eng. Sci.* 39 (1984) 1011-1016. [doi:10.1016/0009-2509(84)87009-8](https://doi.org/10.1016/0009-2509%2884%2987009-8) |
 | Lohrenz-Bray-Clark viscosity | J. Lohrenz, B. G. Bray, and C. R. Clark, "Calculating Viscosities of Reservoir Fluids From Their Compositions," *J. Pet. Technol.* 16 (1964) 1171-1176. [doi:10.2118/915-PA](https://doi.org/10.2118/915-PA). The implemented numerical form and C7+ critical-volume estimator follow Pedersen (2024), section 10.1.3, and are checked against Whitson Appendix B, Problem 7. |
 
-## Multifluid mixture models
+## Multiparameter Helmholtz mixture equations of state
 
 | Model or dataset | Primary source |
 |---|---|
 | GERG-2008 | O. Kunz and W. Wagner, "The GERG-2008 Wide-Range Equation of State for Natural Gases and Other Mixtures: An Expansion of GERG-2004," *J. Chem. Eng. Data* 57 (2012) 3032-3091. [doi:10.1021/je300655b](https://doi.org/10.1021/je300655b) |
+| GERG-2004 algorithms | O. Kunz, R. Klimeck, W. Wagner, and M. Jaeschke, *The GERG-2004 Wide-Range Equation of State for Natural Gases and Other Mixtures*, GERG Technical Monograph 15, VDI Verlag (2007), ISBN 978-3-18-355706-6. |
 | EOS-CG (2015 formulation) | J. Gernert and R. Span, "EOS-CG: A Helmholtz energy mixture model for humid gases and CCS mixtures," *J. Chem. Thermodyn.* 93 (2016) 274-293. [doi:10.1016/j.jct.2015.05.015](https://doi.org/10.1016/j.jct.2015.05.015) |
 | EOS-CG-2021 | T. Neumann et al., "EOS-CG-2021: A Mixture Model for the Calculation of Thermodynamic Properties of CCS Mixtures," *Int. J. Thermophys.* 44 (2023), article 178. [doi:10.1007/s10765-023-03263-6](https://doi.org/10.1007/s10765-023-03263-6); [supplementary coefficient and data tables](https://static-content.springer.com/esm/art%3A10.1007%2Fs10765-023-03263-6/MediaObjects/10765_2023_3263_MOESM1_ESM.pdf) |
 | MDEA pure-fluid equation and experiments | T. Neumann et al., "Thermodynamic Properties of Methyl Diethanolamine," *Int. J. Thermophys.* 43 (2022), article 10. [doi:10.1007/s10765-021-02933-7](https://doi.org/10.1007/s10765-021-02933-7) |
@@ -170,7 +173,7 @@ sources.
 ## External implementation baselines
 
 - NIST [`teqp`](https://pages.nist.gov/teqp-docs/en/main/) supplies canonical
-  cubic and multifluid numerical checks. Frozen values record the exact
+  cubic and multiparameter Helmholtz numerical checks. Frozen values record the exact
   package version used.
 - [ThermoPack](https://thermotools.github.io/thermopack/) and
   [NeqSim](https://github.com/equinor/neqsim-python) are independent

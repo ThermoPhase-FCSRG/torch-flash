@@ -34,7 +34,7 @@ jobs:
           locked: false
 
       - name: Build docs
-        run: pixi run -e docs mkdocs build --strict
+        run: pixi run -e docs docs-check
 
       - name: Upload Pages artifact
         uses: actions/upload-pages-artifact@v5

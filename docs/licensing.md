@@ -28,8 +28,8 @@ The detailed per-file scientific provenance is in the repository's
 [`tests/data/README.md`](https://github.com/ThermoPhase-FCSRG/torch-flash/blob/main/tests/data/README.md).
 The machine-readable
 [`tests/data/rights.yaml`](https://github.com/ThermoPhase-FCSRG/torch-flash/blob/main/tests/data/rights.yaml)
-ledger covers all 33 declared CSV artifacts: 5 have a verified open basis, 12
-are project-generated, and 16 are marked `not-cleared`. CI rejects an
+ledger covers all 40 declared CSV artifacts: 5 have a verified open basis, 12
+are project-generated, and 23 are marked `not-cleared`. CI rejects an
 unclassified CSV and enforces that locally present `not-cleared` inputs are
 confined to the ignored `tests/data/not-cleared/` subdirectory. Tests that
 consume those inputs skip in a public checkout where the directory is absent.
@@ -50,6 +50,10 @@ model-generated.
 - The EOS-CG-2021 article and its supplementary coefficient tables, DOI
   [10.1007/s10765-023-03263-6](https://doi.org/10.1007/s10765-023-03263-6),
   are CC BY 4.0 unless a third-party credit line says otherwise.
+- The global E-PPR78 article and supplementary 40-group parameter table, DOI
+  [10.1016/j.fluid.2022.113456](https://doi.org/10.1016/j.fluid.2022.113456),
+  are CC BY 4.0. The separately copyrighted 2017 CCS table is cited as the
+  predecessor CCS application but is not the bundled numerical source.
 - The MDEA article, experimental tables, and parameter supplement, DOI
   [10.1007/s10765-021-02933-7](https://doi.org/10.1007/s10765-021-02933-7),
   are CC BY 4.0 unless a third-party credit line says otherwise.
@@ -94,7 +98,8 @@ permission or replace them with a compatibly licensed source first.
 This unresolved group currently includes the Segovia density table, Jaubert
 binary/PPR78/Huron-Vidal subsets, Yücelen N2/CO2, Ahmadi and Wang CO2/H2O,
 Portier brine, Verschoyle H2/CO, Folas and Yan CPA tables/digitizations,
-Pedersen and Whitson book tables, and the Gernert-Span Table 8 transcription.
+Gillespie-Wilson and Bartlett hydrogen/water tables, Pedersen and Whitson book
+tables, and the Gernert-Span Table 8 transcription.
 Their scientific use in a private checkout is distinct from permission to
 redistribute the normalized tables publicly.
 
@@ -123,7 +128,8 @@ licensed software database, the software/data license is also retained:
 
 - `chemicals` 1.5.2 (MIT) for selected shared component and ideal-gas data;
 - `thermo` 0.6.0 (MIT) for the original-UNIFAC parameter table;
-- Clapeyron.jl (MIT) for cross-checking the EOS-CG coefficient inventory; and
+- Clapeyron.jl (MIT) for cross-checking the EOS-CG and E-PPR78 coefficient
+  inventories; and
 - NIST teqp 0.23.2 (NIST notice) for cross-checking the GERG inventory.
 
 Cross-checking identifies the independent numerical source; it does not mean
@@ -135,9 +141,11 @@ That scan is evidence against obvious copying, not a proof of independent
 authorship or a substitute for contributor review.
 
 Minimal parameter subsets transcribed from books and journal tables remain
-scientifically cited. Because compilation or database rights can apply even
-where individual numerical facts are not protected, larger future imports
-require an explicit license or permission before bundling.
+scientifically cited. The larger E-PPR78 inventory is bundled under the 2022
+source's CC BY 4.0 license with attribution and a modification notice.
+Because compilation or database rights can apply even where individual
+numerical facts are not protected, other larger imports require an explicit
+license or permission before bundling.
 
 ## Contribution checklist
 

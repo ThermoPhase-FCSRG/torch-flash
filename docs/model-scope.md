@@ -16,6 +16,7 @@ residual Helmholtz energy are used for non-quadratic mixing.
 
 The predictive PR78 constructor evaluates the Jaubert-Mutelet
 group-contribution correlation
+
 \[
 k_{ij}(T)=
 \frac{
@@ -27,21 +28,29 @@ k_{ij}(T)=
 2\sqrt{a_i(T)a_j(T)}/(b_i b_j)
 }.
 \]
+
 Here \(\Delta\alpha_{ij,k}=\alpha_{ik}-\alpha_{jk}\), \(T\) is in
 kelvin, and \(A_{kl},B_{kl}\) are in pascals. The squared pure-component
 term follows Eq. 5 and Appendix A of the
 [primary paper](https://doi.org/10.1016/j.fluid.2004.06.059). The bundled
-parameter set is the paper's original six-group set, while the YAML/API schema
-accepts a separately sourced, versioned larger group inventory. The
+default PPR78 parameter set is the paper's original six-group set. The
+separate `enhanced_predictive_peng_robinson_1978` constructor selects the
+global 40-group E-PPR78 revision from
+[Jaubert et al. (2022)](https://doi.org/10.1016/j.fluid.2022.113456),
+including the groups used for CCS fluids. Its 356 available and 424
+unavailable group pairs are represented explicitly; a requested unavailable
+active pair raises an error rather than becoming a zero interaction. The
 derivation uses
 \(b_m=\sum_i x_i b_i\), so PPR78 is deliberately not combined with a
 cross-co-volume `lij` in the named constructor.
 
 The implemented one-fluid co-volume convention is
+
 \[
 b_{ij}=\frac{b_i+b_j}{2}(1-l_{ij}),\qquad
 b_m=\sum_i\sum_jx_i x_jb_{ij}.
 \]
+
 It follows
 [Privat and Jaubert (2023)](https://doi.org/10.1016/j.fluid.2022.113697)
 and the independently exercised
@@ -57,10 +66,12 @@ of the parent EoS.
 
 `VolumeTranslation` supports constant or linear-in-temperature additive
 component shifts,
+
 \[
 v=v_0+\sum_i x_i d_i(T),\qquad
 d_i(T)=d_{i,0}+d_{i,1}(T-T_{\mathrm{ref}}).
 \]
+
 The residual-Helmholtz reference-volume term and
 \(P d_i(T)/(RT)\) log-fugacity correction are included consistently. The
 literature normally writes \(v=v_0-\sum_i x_i c_i\); therefore the public
@@ -96,10 +107,12 @@ and original Flory-Huggins/Staverman-Guggenheim combinatorial term with
 \(z=10\). The kernel accepts batch dimensions, runs on the configured PyTorch
 device/dtype, exposes \(\ln\gamma_i\) and \(g^E/(RT)\), and makes the directed
 main-group interaction matrix trainable on request. The extensive identity
+
 \[
 \ln\gamma_i =
 \frac{\partial\left[n g^E/(RT)\right]}{\partial n_i}
 \]
+
 is checked directly with autodiff.
 
 The bundled parameter file is original VLE-UNIFAC, not Dortmund UNIFAC,
@@ -152,16 +165,46 @@ molecular-weight tail, which preserves total moles and mass but gives that bin
 a conditional average mass above its nominal SCN label. CPA-specific mapping
 of characterized boiling-point/gravity cuts is kept in a separate adapter.
 
-## Multifluid models
+## Multiparameter mixture equations of state
 
-`MultiFluidEOS` implements differentiable ideal and residual Helmholtz
-energies, multifluid reducing functions, power/exponential/Gaussian terms,
-GERG binary terms, Gao-B terms, and Span-Wagner non-analytic terms.
+`MultiparameterEOS` implements differentiable ideal and residual Helmholtz
+energies, composition-dependent reducing functions,
+power/exponential/Gaussian terms, GERG binary terms, Gao-B terms, and
+Span-Wagner non-analytic terms. GERG formally uses a multi-fluid
+approximation; EOS-CG is described by its authors as a multiparameter mixture
+model. The shared `torch-flash` abstraction is named for the broader
+multiparameter Helmholtz EOS family.
 
 `gerg2008()` bundles the complete 21-component thermodynamic model: all pure
 ideal and residual equations, 210 binary reducing-parameter sets, and 15
 nonzero departure functions, as defined by
 [Kunz and Wagner (2012)](https://doi.org/10.1021/je300655b).
+`gerg2008_hydrogen_2021()` bundles the H2-tailored five-component model of
+[Beckmüller et al. (2021)](https://doi.org/10.1063/5.0040533). It uses the
+GERG-2008 pure-fluid equations for CH4, N2, CO, and CO2, the Leachman
+normal-hydrogen equation, and the four published H2 binary reducing and
+departure functions. Its precise scope is the paper's main parameterization;
+the supplementary alternative fitted with newer reference pure fluids is a
+different parameter set.
+
+The H2-tailored implementation is checked against all 16 single-phase states
+in the paper's Table 12. Pressure, isobaric heat capacity, speed of sound, and
+enthalpy agree at the printed precision. Entropy and Helmholtz energy retain a
+small additive reference-zero difference associated with the pure-fluid
+gas-constant convention; their derivative properties are unchanged and no
+unpublished offset is fitted.
+
+For binary Helmholtz models, `binary_helmholtz_bubble_point()` exposes a
+volume-based continuation path. The first state uses the conservative
+pressure formulation; subsequent states solve directly for vapor composition
+and both phase volumes from component-fugacity and pressure equality. This
+implements the formulation of Kunz et al. (2007, section 7.7.2) and avoids
+iterative density inversion inside every phase-equilibrium residual. Exact
+PyTorch Jacobians are refreshed periodically with safeguarded Broyden updates
+between them. Convergence and the final equilibrium residual remain explicit,
+and callers can retry a failed continuation state through the pressure
+initializer.
+
 `eoscg2021()` bundles the 16-component
 EOS-CG-2021 model: all pure ideal and residual equations, 120 binary
 reducing-parameter sets, and 21 departure functions from
@@ -218,11 +261,13 @@ and the dimensionless phase-identification parameter of
 - Bennett's thermal-expansion criterion, with liquid when
   \((\partial\alpha_P/\partial T)_P>0\); and
 - the Venkatarathnam-Oellrich parameter
-  \[
-  \Pi=V\left(\frac{P_{VT}}{P_T}-\frac{P_{VV}}{P_V}\right),
-  \]
-  with liquid when \(\Pi>1\) and vapor when \(\Pi\leq1\). Derivatives are
-  evaluated at fixed composition.
+
+    \[
+    \Pi=V\left(\frac{P_{VT}}{P_T}-\frac{P_{VV}}{P_V}\right),
+    \]
+
+    with liquid when \(\Pi>1\) and vapor when \(\Pi\leq1\). Derivatives are
+    evaluated at fixed composition.
 
 The public method names are
 `li-pseudo-critical-temperature`, `pedersen-volume-to-covolume`,
@@ -328,10 +373,12 @@ at a zero mole fraction.
 
 `log_fugacities_tv` and `fugacities_tv` independently evaluate an explicit
 \(T,V,\mathbf n\) state from the extensive residual Helmholtz energy,
+
 \[
 \ln(f_i/p^\circ)=\ln(n_iRT/(Vp^\circ))
 +\partial(A^R/RT)/\partial n_i|_{T,V,n_{j\ne i}}.
 \]
+
 They provide a direct TP/TV consistency check for any model that implements
 the residual-Helmholtz protocol.
 

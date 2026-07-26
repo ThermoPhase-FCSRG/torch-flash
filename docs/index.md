@@ -14,18 +14,24 @@
   </div>
   <div class="tp-hero__identity">
     <div class="tp-logo-plate">
-      <a
-        href="https://github.com/ThermoPhase-FCSRG"
-        class="tp-logo-plate__primary"
-      >
+      <a href="./" class="tp-logo-plate__product">
         <img
-          src="assets/branding/thermophase-horizontal.png"
-          alt="ThermoPhase — Fluid and Complex Systems Research Group"
+          src="assets/branding/torch-flash-logo.svg"
+          alt="torch-flash — Differentiable Thermodynamics powered by PyTorch"
         />
       </a>
       <div class="tp-affiliation">
-        <span>Research developed at</span>
-        <div class="tp-affiliation__logos">
+        <span>Research developed by and at</span>
+        <div class="tp-affiliation__logos tp-affiliation__logos--three">
+          <a
+            href="https://github.com/ThermoPhase-FCSRG"
+            class="tp-affiliation__logo--thermophase"
+          >
+            <img
+              src="assets/branding/thermophase-horizontal.png"
+              alt="ThermoPhase — Fluid and Complex Systems Research Group"
+            />
+          </a>
           <a href="https://www.gov.br/lncc/pt-br">
             <img
               src="assets/branding/lncc.svg"
@@ -51,7 +57,7 @@
   </div>
   <div class="tp-feature">
     <strong>Thermodynamic scope</strong>
-    <span>Cubic, association, activity-coefficient, and multifluid models behind a consistent typed interface.</span>
+    <span>Cubic, association, activity-coefficient, and multiparameter models behind a consistent typed interface.</span>
   </div>
   <div class="tp-feature">
     <strong>Auditable evidence</strong>

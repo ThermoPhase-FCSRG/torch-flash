@@ -39,8 +39,9 @@ Published model sets are separate YAML documents under
 | `binary-interaction.segovia-2017-methane-n-decane` | Segovia PR78 `kij` plus a torch-flash `lij` density fit with a disjoint validation isotherm |
 | `volume-translation.pedersen-2024` | Rackett-based SRK/PR light-component and ASTM-anchored C7+ translation coefficients |
 | `volume-translation.whitson-2000` | Whitson Tables 4.2-4.3 pure-component and heavy-family shift factors |
-| `multifluid.gerg-2008` | complete 21-component GERG-2008 inventory |
-| `multifluid.eos-cg-2021` | complete 16-component EOS-CG-2021 inventory |
+| `multiparameter.gerg-2008` | complete 21-component GERG-2008 inventory |
+| `multiparameter.gerg-2008-hydrogen-2021` | five-component H2-tailored GERG model for CH4, N2, CO, CO2, and normal H2 |
+| `multiparameter.eos-cg-2021` | complete 16-component EOS-CG-2021 inventory |
 | `standard-state.poling-2001` | ideal-gas heat-capacity polynomials |
 
 The primary sources include
@@ -52,7 +53,8 @@ The primary sources include
 [Yan et al. (2009)](https://doi.org/10.1016/j.fluid.2008.10.007),
 [Whitson and Brulé (2000)](https://books.google.com/books?id=Z4cQAQAAMAAJ),
 [Pedersen et al. (2024)](https://doi.org/10.1201/9780429457418),
-[Kunz and Wagner (2012)](https://doi.org/10.1021/je300655b), and
+[Kunz and Wagner (2012)](https://doi.org/10.1021/je300655b),
+[Beckmüller et al. (2021)](https://doi.org/10.1063/5.0040533), and
 [Neumann et al. (2023)](https://doi.org/10.1007/s10765-023-03263-6).
 Every YAML file carries its own source metadata.
 
@@ -68,7 +70,7 @@ Inspect the registry without constructing a model:
 ```python
 from torch_flash import available_parameter_sets, load_model_parameters
 
-print(available_parameter_sets(model_kind="multifluid"))
+print(available_parameter_sets(model_kind="multiparameter"))
 parameters = load_model_parameters("gerg2008")  # aliases are accepted
 print(parameters.identifier, parameters.version, parameters.units)
 ```
@@ -85,11 +87,11 @@ The same constructor accepts a bundled identifier or a custom path:
 ```python
 import torch
 
-from torch_flash import component_set, cubic_eos, multifluid_eos
+from torch_flash import component_set, cubic_eos, multiparameter_eos
 
 components = component_set(("CO2", "CH4"), dtype=torch.float64)
 pr = cubic_eos(components, "cubic.pr-1978")
-gerg = multifluid_eos("multifluid.gerg-2008", ("CO2", "CH4"))
+gerg = multiparameter_eos("multiparameter.gerg-2008", ("CO2", "CH4"))
 
 # Files using the documented schemas are handled identically.
 custom_components = component_set(
@@ -171,7 +173,7 @@ model = cubic_eos(component_set(("methane", "n_butane")), fit)
 ```
 
 `CPAEOS`, `NRTL`, `HuronVidalNRTL`, `AnchoredHuronVidalNRTL`, `Wilson`, `CubicEOS`, and
-`MultiFluidEOS` also retain their explicit tensor constructors. This is the
+`MultiparameterEOS` also retain their explicit tensor constructors. This is the
 preferred route while parameters are PyTorch `nn.Parameter` objects being
 optimized. Serialize a finalized, reviewed fit to YAML only after recording
 its units, data provenance, objective, and version.
@@ -199,7 +201,7 @@ Every model document has the following required fields:
 | `format` | exactly `torch-flash-model-parameters` |
 | `schema_version` | integer `1`; changes only for an incompatible document format |
 | `id` | stable lowercase identifier, conventionally `<kind>.<source-version>` |
-| `model_kind` | `cubic`, `cpa`, `activity`, `binary_interaction`, `group_contribution`, `characterization`, `volume_translation`, `multifluid`, or `standard_state` |
+| `model_kind` | `cubic`, `cpa`, `activity`, `binary_interaction`, `group_contribution`, `characterization`, `volume_translation`, `multiparameter`, or `standard_state` |
 | `model` | scientific model/family name, independent of the file name |
 | `version` | publication or fit version; changing coefficients requires a new version |
 | `units` | explicit unit for every dimensional parameter family |
@@ -326,10 +328,11 @@ co-volume matrices should retain their form, SI units, data domain, objective,
 and provenance in custom model metadata as demonstrated by notebooks 19, 20,
 and 25.
 
-## PPR78 group-contribution payload
+## PPR78 and E-PPR78 group-contribution payload
 
-`model_kind: group_contribution` and `model: PPR78` store the universal group
-parameters separately from the PR78 pure-component constants:
+`model_kind: group_contribution` with `model: PPR78` or `model: E-PPR78`
+stores the universal group parameters separately from the PR78 pure-component
+constants:
 
 ```yaml
 model_kind: group_contribution
@@ -352,23 +355,36 @@ parameters:
 
 `A` and `B` are pressures in pascals. A key `first|second` denotes one
 unordered pair; diagonal terms are zero by definition, reversed duplicates
-are rejected, and all \(N_g(N_g-1)/2\) off-diagonal pairs must be present.
+are rejected, and all \(N_g(N_g-1)/2\) off-diagonal pairs must be accounted
+for. A complete inventory supplies every pair under `interactions`. An
+incomplete published inventory divides them exactly between `interactions`
+and `unavailable_interactions`; an unavailable pair is never interpreted as
+a fitted zero.
 `component_groups` contains nonnegative structural counts. The constructor
 normalizes each component row to fractions
 \(\alpha_{ik}=N_{ik}/\sum_kN_{ik}\); it never guesses a missing
 decomposition or treats a missing interaction as zero.
 
-The bundled document is exactly the original six-group parameterization of
+The default PPR78 document is exactly the original six-group parameterization of
 [Jaubert and Mutelet (2004)](https://doi.org/10.1016/j.fluid.2004.06.059),
-not a later 21-group extension. A later or project-specific inventory belongs
-in a separate versioned YAML file. The generic loader places no six-group
-limit on such a file.
+not a later extension. The separate H2/N2/H2O document preserves the exact
+active submatrix from Qian et al.'s 2013 hydrogen and water extensions.
+
+The global E-PPR78 document reproduces all 40 groups, 356 available pairs, and
+424 unavailable pairs in Table S4 of
+[Jaubert et al. (2022)](https://doi.org/10.1016/j.fluid.2022.113456).
+It includes the principal CCS groups studied by
+[Xu et al. (2017)](https://doi.org/10.1016/j.ijggc.2016.11.015), but uses the
+later 2022 global coefficient revision. The 2022 article and supplement are
+CC BY 4.0; the separately copyrighted 2017 table is not duplicated in the
+runtime database.
 
 ```python
 import torch
 
 from torch_flash import (
     component_set,
+    enhanced_predictive_peng_robinson_1978,
     ppr78_group_contribution_parameters,
     predictive_peng_robinson_1978,
 )
@@ -391,6 +407,13 @@ parameters = ppr78_group_contribution_parameters(
     components,
     "project-ppr78.yaml",
 )
+
+# Global E-PPR78 for a hydrogen-bearing CCS stream.
+ccs_components = component_set(
+    ("carbon_dioxide", "hydrogen", "water"),
+    dtype=torch.float64,
+)
+ccs_model = enhanced_predictive_peng_robinson_1978(ccs_components)
 ```
 
 `trainable=True` creates 30 independent parameters for the six-group set:
@@ -399,6 +422,12 @@ diagonals are reconstructed on every evaluation. A fit of universal group
 parameters can affect every component pair using those groups, so transfer
 systems and temperature holdouts must be checked before publishing a revised
 YAML parameterization.
+
+For an E-PPR78 component selection, only active groups are materialized after
+their pairwise availability has been verified. Thus the three pure groups in
+the CCS example create three independent A/B pairs rather than 780 candidate
+pairs. A request containing an explicitly unavailable active pair raises
+`ParameterDatabaseError` with the group names.
 
 ## Volume-translation parameter payload
 
@@ -746,9 +775,12 @@ The bundled Segovia file is labeled as a local density fit. It uses
 validation data. Neither that `lij` nor any fitted BIP should be transferred
 to a new system or temperature/pressure domain without validation.
 
-## Multifluid payload
+## Multiparameter payload
 
-`model_kind: multifluid` is the native GERG/EOS-CG coefficient inventory. Its
+`model_kind: multiparameter` is the native GERG/EOS-CG coefficient inventory.
+GERG is constructed with the published multi-fluid approximation, while
+EOS-CG is classified by its authors as a multiparameter mixture model. The
+canonical parameter kind names their shared Helmholtz EOS abstraction. Its
 payload requires:
 
 - `component_order`: canonical public names and the default model order;
@@ -775,7 +807,7 @@ requested component order reverses that direction, while gamma and departure
 scales remain symmetric. Critical constants here are model parameters and
 deliberately do not inherit from the general component database.
 
-`multifluid_eos()` dispatches compatible GERG-family and EOS-CG-family files.
+`multiparameter_eos()` dispatches compatible GERG-family and EOS-CG-family files.
 The stricter `gerg2008()` and `eoscg2021()` wrappers reject a file with a
 different declared model version.
 

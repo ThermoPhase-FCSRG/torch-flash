@@ -21,6 +21,9 @@ The reports distinguish three kinds of evidence:
   compressibility factors and the complete EOS-CG Table 8 verification set.
 - [Native EOS-CG-2021](validation-reports/08-eoscg2021.md) — dense CO2/H2
   numerical verification plus experimental MDEA density and speed of sound.
+- [Native GERG-2008 for H2/CH4](validation-reports/09-gerg2008-hydrogen.md) —
+  full density and isobaric-heat-capacity verification over the 1,010-state
+  H2ThermoBank reference.
 - [Autodifferentiated thermal properties](validation-reports/15-thermal-properties.md)
   — CO2 and propane Joule-Thomson validation and homogeneous-state property
   profiles.
@@ -35,6 +38,15 @@ The reports distinguish three kinds of evidence:
   alcohol/hydrocarbon phase diagrams and activity-coefficient behavior.
 - [Predictive Peng-Robinson 1978](validation-reports/28-ppr78.md) —
   calibration-domain hydrocarbon VLE comparisons.
+- [H2-tailored GERG (2021)](validation-reports/29-hydrogen-tailored-gerg.md) —
+  Table 12 verification and reproductions of Figures 4, 7, and 16, including
+  N2/H2 and CO2/H2 phase-equilibrium results.
+- [Hydrogen-water systems across applicable models](validation-reports/32-hydrogen-water-all-models.md)
+  — H2-H2O, H2-CO-H2O, and H2-N2-H2O composition parity and water-content
+  curves, including the global 40-group E-PPR78 revision.
+- [E-PPR78 for CCS mixtures](validation-reports/33-eppr78-ccs-figure2.md) —
+  all eight panels of Xu et al. Figure 2, including N2-CH4 phase behavior and
+  mixing enthalpy plus N2-CO phase behavior.
 
 ## Publication and reproduction boundary
 

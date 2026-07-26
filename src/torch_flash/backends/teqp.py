@@ -95,12 +95,12 @@ class TeqpBackend:
 
     @classmethod
     def eoscg_2015(cls, names: tuple[str, ...]) -> TeqpBackend:
-        """Construct the complete 2015 EOS-CG multifluid model shipped by teqp.
+        """Construct the complete 2015 EOS-CG multiparameter mixture model.
 
         The six-component scope is CO2, water, nitrogen, oxygen, argon, and
         carbon monoxide.  teqp loads the pure-fluid Helmholtz equations plus
-        the Gernert--Span binary reducing and departure parameters from its
-        versioned CoolProp-format data files.
+        the Gernert--Span binary reducing and departure parameters through its
+        multifluid model factory and versioned CoolProp-format data files.
         """
         try:
             import teqp
@@ -118,7 +118,11 @@ class TeqpBackend:
             str(data_path / "dev" / "mixtures" / "mixture_binary_pairs.json"),
             departurepath=str(data_path / "dev" / "mixtures" / "mixture_departure_functions.json"),
         )
-        return cls(names, model, exact_model="EOS-CG-2015 multifluid (teqp)")
+        return cls(
+            names,
+            model,
+            exact_model="EOS-CG-2015 multiparameter mixture model (teqp)",
+        )
 
     @staticmethod
     def _numpy_state(

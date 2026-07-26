@@ -1,0 +1,47 @@
+format: torch-flash-model-parameters
+schema_version: 1
+id: group-contribution.ppr78-qian-2013-hydrogen-water
+model_kind: group_contribution
+model: PPR78
+version: "2013-h2-n2-h2o-submatrix"
+description: >-
+  Exact H2/N2/H2O submatrix of the published PPR78 group inventory. Qian
+  et al. (2013) added H2 interactions to the earlier PPR78 groups; Qian
+  et al. (2013) subsequently added H2O interactions. Because hydrogen,
+  nitrogen, and water each occupy a single named group, this three-group
+  projection produces the same PPR78 binary interactions as the full
+  21-group inventory for H2-H2O and H2-N2-H2O systems. The source fitting
+  databases span 25.10-122.04 K and 1.32-580 bar for H2-N2,
+  273.15-636.10 K and 3.45-1013.25 bar for H2-H2O, and 257.44-659.00 K
+  and 3.40-2710 bar for N2-H2O. Carbon monoxide is not a published PPR78
+  group and is outside this parameter set.
+units:
+  A: Pa
+  B: Pa
+  group_fraction: dimensionless
+  reference_temperature: K
+references:
+  - citation: >-
+      J.-W. Qian, J.-N. Jaubert, and R. Privat, Journal of Supercritical
+      Fluids 75 (2013) 58-71, Eq. (4), Tables 1 and 3
+    doi: 10.1016/j.supflu.2012.12.014
+    note: H2-N2 group interaction and H2-group fitting range.
+  - citation: >-
+      J.-W. Qian, J.-N. Jaubert, and R. Privat, Industrial & Engineering
+      Chemistry Research 52 (2013) 16457-16490, Eq. (4), Tables 1 and 3
+    doi: 10.1021/ie402541h
+    note: H2-H2O and N2-H2O interactions and water-group fitting ranges.
+parameters:
+  reference_temperature: 298.15
+  groups:
+    - H2
+    - N2
+    - H2O
+  interactions:
+    H2|N2: {A: 65200000.0, B: 70100000.0}
+    H2|H2O: {A: 830800000.0, B: -137900000.0}
+    N2|H2O: {A: 2574000000.0, B: 5490000000.0}
+  component_groups:
+    hydrogen: {H2: 1}
+    nitrogen: {N2: 1}
+    water: {H2O: 1}

@@ -261,18 +261,18 @@ class PPR78Mixing(nn.Module):
 
     This is Eq. (5) of Jaubert and Mutelet (2004),
     doi:10.1016/j.fluid.2004.06.059. For component group fractions
-    :math:`\\alpha_{ik}`, the method evaluates
+    \(\alpha_{ik}\), the method evaluates
 
-    .. math::
-
-       k_{ij}(T) =
-       \\frac{
-       -\\frac12\\sum_{kl}\\Delta\\alpha_{ij,k}\\Delta\\alpha_{ij,l}
-       A_{kl}(T_r/T)^{B_{kl}/A_{kl}-1}
-       -(\\sqrt{a_i}/b_i-\\sqrt{a_j}/b_j)^2
-       }{
-       2\\sqrt{a_i a_j}/(b_i b_j)
-       }.
+    \[
+    k_{ij}(T) =
+    \frac{
+    -\frac12\sum_{kl}\Delta\alpha_{ij,k}\Delta\alpha_{ij,l}
+    A_{kl}(T_r/T)^{B_{kl}/A_{kl}-1}
+    -(\sqrt{a_i}/b_i-\sqrt{a_j}/b_j)^2
+    }{
+    2\sqrt{a_i a_j}/(b_i b_j)
+    }.
+    \]
 
     ``group_a`` and ``group_b`` are symmetric pressure-valued group
     interaction matrices. Only their unique off-diagonal entries are stored,
@@ -315,8 +315,8 @@ class PPR78Mixing(nn.Module):
         if group_fractions.ndim != 2:
             raise ValueError("PPR78 group_fractions must be a component-by-group matrix")
         component_count, group_count = group_fractions.shape
-        if component_count == 0 or group_count < 2:
-            raise ValueError("PPR78 requires at least one component and two groups")
+        if component_count == 0 or group_count == 0:
+            raise ValueError("PPR78 requires at least one component and one group")
         if group_a.shape != (group_count, group_count) or group_b.shape != group_a.shape:
             raise ValueError("PPR78 group A and B must be square matrices matching the groups")
         if not bool(

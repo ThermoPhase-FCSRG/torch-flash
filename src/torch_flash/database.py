@@ -9,6 +9,7 @@ trainability.
 from __future__ import annotations
 
 import re
+import warnings
 from collections.abc import Mapping, Sequence
 from copy import deepcopy
 from dataclasses import dataclass, field
@@ -37,6 +38,8 @@ _MODEL_KINDS = frozenset(
         "cubic",
         "group_contribution",
         "multifluid",
+        "multiparameter",
+        "pure_helmholtz",
         "standard_state",
         "volume_translation",
     }
@@ -102,7 +105,7 @@ class ModelParameterSet:
         Stable lowercase parameter-set identifier.
     model_kind:
         Scientific domain such as ``"cubic"``, ``"activity"``, or
-        ``"multifluid"``.
+        ``"multiparameter"``.
     model:
         Model/form name declared by the document.
     version:
@@ -334,6 +337,12 @@ def load_model_parameters(source: ParameterSource) -> ModelParameterSet:
     _, aliases = _index()
     normalized = source.strip().lower()
     if normalized in aliases:
+        if normalized.startswith("multifluid."):
+            warnings.warn(
+                "the 'multifluid.' parameter prefix is deprecated; use 'multiparameter.'",
+                DeprecationWarning,
+                stacklevel=2,
+            )
         return _load_builtin(aliases[normalized])
     candidate = Path(source).expanduser()
     if candidate.suffix.lower() in (".yaml", ".yml"):
@@ -361,6 +370,13 @@ def available_parameter_sets(*, model_kind: str | None = None) -> tuple[str, ...
     identifiers = tuple(sorted(entries))
     if model_kind is None:
         return identifiers
+    if model_kind == "multifluid":
+        warnings.warn(
+            "model_kind='multifluid' is deprecated; use 'multiparameter'",
+            DeprecationWarning,
+            stacklevel=2,
+        )
+        model_kind = "multiparameter"
     return tuple(
         identifier
         for identifier in identifiers

@@ -55,7 +55,7 @@ class Component:
     """Shared pure-component properties in SI units.
 
     ``acentric_factor`` may be unavailable for components whose bundled use is
-    restricted to a model-specific multifluid equation. Such a record can be
+    restricted to a model-specific multiparameter equation. Such a record can be
     resolved by name but cannot be used to construct a cubic EoS until the user
     supplies a complete custom component database or :class:`ComponentSet`.
 

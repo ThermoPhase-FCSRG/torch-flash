@@ -9,6 +9,7 @@ are linked from ``src/torch_flash/eos/data/README.md``.
 from __future__ import annotations
 
 import math
+import warnings
 from collections.abc import Mapping, Sequence
 from typing import Any
 
@@ -24,12 +25,12 @@ from torch_flash.database import (
 )
 from torch_flash.exceptions import ParameterDatabaseError
 
-from .multifluid import (
+from .multiparameter import (
     GaoBTerms,
     HelmholtzTerms,
     IdealHelmholtzTerms,
-    MultiFluidEOS,
-    MultifluidMetadata,
+    MultiparameterEOS,
+    MultiparameterMetadata,
     NonAnalyticTerms,
 )
 
@@ -57,6 +58,15 @@ GERG2008_COMPONENTS = (
     "n_decane",
 )
 """Canonical 21-component inventory supported by bundled GERG-2008."""
+
+GERG2008_HYDROGEN_2021_COMPONENTS = (
+    "methane",
+    "nitrogen",
+    "carbon_monoxide",
+    "carbon_dioxide",
+    "hydrogen",
+)
+"""Canonical inventory of the Beckmüller et al. H2-tailored GERG model."""
 
 EOSCG2021_COMPONENTS = (
     "carbon_dioxide",
@@ -383,33 +393,60 @@ def _ideal_terms_gerg(
     device: torch.device | str | None,
 ) -> IdealHelmholtzTerms:
     leads = []
+    power_rows = []
+    planck_rows = []
     gerg_rows = []
     gas_scale = []
     for name in selected:
         raw_name = _GERG_FROM_CANONICAL.get(name, name)
-        ideal = data["components"][raw_name]["ideal"]
-        n0 = ideal["n0"]
-        theta0 = ideal["theta0"]
-        leads.append(
-            {
-                "lead_constant": float(n0[1]),
-                "lead_tau": float(n0[2]),
-                "log_tau": float(n0[3]),
-                "tau_log_tau": 0.0,
-            }
-        )
-        gerg_rows.append(
-            [
-                {"n": float(n0[index]), "theta": abs(float(theta0[index])), "sign": sign}
-                for index, sign in ((4, 1.0), (5, -1.0), (6, 1.0), (7, -1.0))
-                if float(n0[index]) != 0.0
-            ]
-        )
-        gas_scale.append(float(ideal["source_gas_constant"]) / float(data["gas_constant"]))
+        component_data = data["components"][raw_name]
+        ideal = component_data["ideal"]
+        if isinstance(ideal, Mapping):
+            n0 = ideal["n0"]
+            theta0 = ideal["theta0"]
+            leads.append(
+                {
+                    "lead_constant": float(n0[1]),
+                    "lead_tau": float(n0[2]),
+                    "log_tau": float(n0[3]),
+                    "tau_log_tau": 0.0,
+                }
+            )
+            gerg_rows.append(
+                [
+                    {
+                        "n": float(n0[index]),
+                        "theta": abs(float(theta0[index])),
+                        "sign": sign,
+                    }
+                    for index, sign in ((4, 1.0), (5, -1.0), (6, 1.0), (7, -1.0))
+                    if float(n0[index]) != 0.0
+                ]
+            )
+            source_gas_constant = ideal["source_gas_constant"]
+        elif isinstance(ideal, Sequence) and not isinstance(ideal, str):
+            lead, power, planck = _canonical_ideal_blocks(
+                ideal,
+                float(component_data["critical_temperature"]),
+            )
+            leads.append(lead)
+            gerg_rows.append([])
+            source_gas_constant = component_data["source_gas_constant"]
+            power_rows.append(power)
+            planck_rows.append(planck)
+            gas_scale.append(float(source_gas_constant) / float(data["gas_constant"]))
+            continue
+        else:
+            raise ParameterDatabaseError(
+                f"GERG component {name!r} has an unsupported ideal Helmholtz inventory"
+            )
+        power_rows.append([])
+        planck_rows.append([])
+        gas_scale.append(float(source_gas_constant) / float(data["gas_constant"]))
     return _pad_ideal(
         leads,
-        [[] for _ in selected],
-        [[] for _ in selected],
+        power_rows,
+        planck_rows,
         gerg_rows,
         gas_scale,
         dtype=dtype,
@@ -465,11 +502,26 @@ def _pure_rows_eoscg(
 
 def _pure_rows_gerg(
     data: Mapping[str, Any], selected: tuple[str, ...]
-) -> list[list[dict[str, float]]]:
-    rows = []
+) -> tuple[
+    list[list[dict[str, float]]],
+    list[list[dict[str, float]]],
+    list[list[dict[str, float]]],
+]:
+    regular_rows = []
+    gaob_rows = []
+    nonanalytic_rows = []
     for name in selected:
         raw_name = _GERG_FROM_CANONICAL.get(name, name)
         component = data["components"][raw_name]
+        if "residual" in component:
+            component_rows, component_gaob, component_nonanalytic = _pure_rows_eoscg(
+                {"components": {name: component}},
+                (name,),
+            )
+            regular_rows.extend(component_rows)
+            gaob_rows.extend(component_gaob)
+            nonanalytic_rows.extend(component_nonanalytic)
+            continue
         records = []
         for n, d, t, coefficient, exponent in zip(
             component["n"],
@@ -483,8 +535,10 @@ def _pure_rows_gerg(
             record.update(n=float(n), d=float(d), t=float(t))
             record["decay"] = float(exponent) if coefficient != 0.0 else 0.0
             records.append(record)
-        rows.append(records)
-    return rows
+        regular_rows.append(records)
+        gaob_rows.append([])
+        nonanalytic_rows.append([])
+    return regular_rows, gaob_rows, nonanalytic_rows
 
 
 def _pair_lookup(
@@ -535,11 +589,11 @@ def _mixture_tables(
             if isinstance(blocks, Mapping):
                 blocks = (blocks,)
             if not isinstance(blocks, Sequence):
-                raise ParameterDatabaseError("multifluid departure terms must be a sequence")
+                raise ParameterDatabaseError("multiparameter departure terms must be a sequence")
             records: list[dict[str, float]] = []
             for block in blocks:
                 if not isinstance(block, Mapping):
-                    raise ParameterDatabaseError("multifluid departure term must be a mapping")
+                    raise ParameterDatabaseError("multiparameter departure term must be a mapping")
                 if "type" not in block:
                     block = {**block, "type": "ResidualHelmholtzGERG2008"}
                 _append_regular_terms(records, block)
@@ -620,7 +674,7 @@ def _gerg_eos(
     dtype: torch.dtype,
     device: torch.device | str | None,
     trainable: bool,
-) -> MultiFluidEOS:
+) -> MultiparameterEOS:
     data = _read_data(parameter_set)
     supported = _component_order(parameter_set, data)
     selected = _validate_names(names, supported)
@@ -633,8 +687,22 @@ def _gerg_eos(
     expected_pairs = len(supported) * (len(supported) - 1) // 2
     if len(components) != len(supported) or len(pairs) != expected_pairs:
         raise RuntimeError(f"{parameter_set.model} coefficient inventory is incomplete")
-    pure_rows = _pure_rows_gerg(data, selected)
-    pure_terms = _pad_records(pure_rows, (len(selected),), dtype=dtype, device=device)
+    regular_rows, gaob_rows, nonanalytic_rows = _pure_rows_gerg(data, selected)
+    pure_terms = _pad_records(regular_rows, (len(selected),), dtype=dtype, device=device)
+    gaob_values = _pad_special(
+        gaob_rows,
+        ("n", "d", "t", "eta", "epsilon", "beta", "gamma", "b"),
+        dtype=dtype,
+        device=device,
+        safe_one=("b",),
+    )
+    nonanalytic_values = _pad_special(
+        nonanalytic_rows,
+        ("n", "capital_a", "capital_b", "capital_c", "capital_d", "a", "b", "beta"),
+        dtype=dtype,
+        device=device,
+        safe_one=("a", "b", "beta"),
+    )
     tables = _mixture_tables(
         data,
         selected,
@@ -658,7 +726,7 @@ def _gerg_eos(
     gas_constant = data.get("gas_constant")
     if not isinstance(gas_constant, int | float):
         raise ParameterDatabaseError(f"{parameter_set.identifier!r} requires gas_constant")
-    return MultiFluidEOS(
+    return MultiparameterEOS(
         selected,
         critical_temperature,
         critical_density,
@@ -666,7 +734,7 @@ def _gerg_eos(
         pure_terms,
         tables[5],
         *tables[:5],
-        MultifluidMetadata(
+        MultiparameterMetadata(
             parameter_set.model,
             reference,
             parameter_set.version,
@@ -674,6 +742,8 @@ def _gerg_eos(
         ),
         trainable=trainable,
         gas_constant=float(gas_constant),
+        pure_gaob_terms=GaoBTerms(**gaob_values),
+        pure_nonanalytic_terms=NonAnalyticTerms(**nonanalytic_values),
         ideal_terms=_ideal_terms_gerg(data, selected, dtype=dtype, device=device),
         critical_pressure=critical_pressure,
         acentric_factor=acentric_factor,
@@ -687,7 +757,7 @@ def _eoscg_eos(
     dtype: torch.dtype,
     device: torch.device | str | None,
     trainable: bool,
-) -> MultiFluidEOS:
+) -> MultiparameterEOS:
     data = _read_data(parameter_set)
     supported = _component_order(parameter_set, data)
     selected = _validate_names(names, supported)
@@ -729,7 +799,7 @@ def _eoscg_eos(
     gas_constant = data.get("gas_constant")
     if not isinstance(gas_constant, int | float):
         raise ParameterDatabaseError(f"{parameter_set.identifier!r} requires gas_constant")
-    return MultiFluidEOS(
+    return MultiparameterEOS(
         selected,
         critical_temperature,
         critical_density,
@@ -737,7 +807,7 @@ def _eoscg_eos(
         pure_terms,
         tables[5],
         *tables[:5],
-        MultifluidMetadata(
+        MultiparameterMetadata(
             parameter_set.model,
             reference,
             parameter_set.version,
@@ -753,20 +823,20 @@ def _eoscg_eos(
     )
 
 
-def multifluid_eos(
+def multiparameter_eos(
     parameter_set: ParameterSource,
     names: tuple[str, ...] | None = None,
     *,
     dtype: torch.dtype | None = None,
     device: torch.device | str | None = None,
     trainable: bool = False,
-) -> MultiFluidEOS:
-    """Construct a native multifluid EOS from versioned parameters.
+) -> MultiparameterEOS:
+    """Construct a native multiparameter EOS from versioned parameters.
 
     Parameters
     ----------
     parameter_set
-        Bundled identifier, custom YAML path, mapping, or loaded multifluid
+        Bundled identifier, custom YAML path, mapping, or loaded multiparameter
         parameter set.
     names
         Optional ordered component subset. Omitting it selects the complete
@@ -778,20 +848,26 @@ def multifluid_eos(
 
     Returns
     -------
-    MultiFluidEOS
+    MultiparameterEOS
         GERG-family or EOS-CG model selected from the source identity.
 
     Raises
     ------
     ParameterDatabaseError
-        If the source is not a supported multifluid model or its coefficient
+        If the source is not a supported multiparameter model or its coefficient
         inventory is malformed.
     """
     dtype, device = resolve_tensor_options(dtype, device)
     loaded = load_model_parameters(parameter_set)
-    if loaded.model_kind != "multifluid":
+    if loaded.model_kind not in ("multiparameter", "multifluid"):
         raise ParameterDatabaseError(
-            f"{loaded.identifier!r} is {loaded.model_kind!r}, not 'multifluid'"
+            f"{loaded.identifier!r} is {loaded.model_kind!r}, not 'multiparameter'"
+        )
+    if loaded.model_kind == "multifluid":
+        warnings.warn(
+            "model_kind='multifluid' is deprecated; use 'multiparameter'",
+            DeprecationWarning,
+            stacklevel=2,
         )
     normalized = loaded.model.strip().lower().replace("_", "-")
     if normalized.startswith("gerg"):
@@ -811,7 +887,47 @@ def multifluid_eos(
             trainable=trainable,
         )
     raise ParameterDatabaseError(
-        f"{loaded.identifier!r} has unsupported multifluid model {loaded.model!r}"
+        f"{loaded.identifier!r} has unsupported multiparameter model {loaded.model!r}"
+    )
+
+
+def multifluid_eos(
+    parameter_set: ParameterSource,
+    names: tuple[str, ...] | None = None,
+    *,
+    dtype: torch.dtype | None = None,
+    device: torch.device | str | None = None,
+    trainable: bool = False,
+) -> MultiparameterEOS:
+    """Construct a multiparameter EOS through the deprecated factory name.
+
+    Parameters
+    ----------
+    parameter_set
+        Bundled identifier, custom YAML path, mapping, or loaded parameter set.
+    names
+        Optional ordered component subset.
+    dtype, device
+        Tensor placement, defaulting to runtime configuration.
+    trainable
+        Register supported coefficient tensors as trainable parameters.
+
+    Returns
+    -------
+    MultiparameterEOS
+        Model returned by :func:`multiparameter_eos`.
+    """
+    warnings.warn(
+        "multifluid_eos() is deprecated; use multiparameter_eos()",
+        DeprecationWarning,
+        stacklevel=2,
+    )
+    return multiparameter_eos(
+        parameter_set,
+        names,
+        dtype=dtype,
+        device=device,
+        trainable=trainable,
     )
 
 
@@ -821,8 +937,8 @@ def gerg2008(
     dtype: torch.dtype | None = None,
     device: torch.device | str | None = None,
     trainable: bool = False,
-    parameter_set: ParameterSource = "multifluid.gerg-2008",
-) -> MultiFluidEOS:
+    parameter_set: ParameterSource = "multiparameter.gerg-2008",
+) -> MultiparameterEOS:
     """Construct the complete native 21-component GERG-2008 Helmholtz model.
 
     Parameters
@@ -839,7 +955,7 @@ def gerg2008(
 
     Returns
     -------
-    MultiFluidEOS
+    MultiparameterEOS
         Native GERG-2008 model. The defining reference is Kunz and Wagner
         (2012), doi:10.1021/je300655b.
     """
@@ -858,14 +974,63 @@ def gerg2008(
     )
 
 
+def gerg2008_hydrogen_2021(
+    names: tuple[str, ...] | None = None,
+    *,
+    dtype: torch.dtype | None = None,
+    device: torch.device | str | None = None,
+    trainable: bool = False,
+    parameter_set: ParameterSource = "multiparameter.gerg-2008-hydrogen-2021",
+) -> MultiparameterEOS:
+    """Construct the Beckmüller et al. H2-tailored GERG mixture model.
+
+    Parameters
+    ----------
+    names
+        Optional ordered subset of methane, nitrogen, carbon monoxide, carbon
+        dioxide, and hydrogen.
+    dtype, device
+        Tensor placement.
+    trainable
+        Register supported coefficient tensors as trainable parameters.
+    parameter_set
+        Compatible H2-tailored GERG parameter source.
+
+    Returns
+    -------
+    MultiparameterEOS
+        Five-component H2-tailored GERG model using GERG-2008 pure fluids for
+        CH4, N2, CO, and CO2 and the Leachman normal-hydrogen equation.
+
+    References
+    ----------
+    Beckmüller et al., *J. Phys. Chem. Ref. Data* 50, 013102 (2021),
+    doi:10.1063/5.0040533.
+    """
+    dtype, device = resolve_tensor_options(dtype, device)
+    loaded = load_model_parameters(parameter_set)
+    if not loaded.model.upper().startswith("GERG-2008 H2-TAILORED"):
+        raise ParameterDatabaseError(
+            "gerg2008_hydrogen_2021 requires the Beckmüller et al. "
+            f"H2-tailored GERG parameter set, got {loaded.model!r}"
+        )
+    return _gerg_eos(
+        loaded,
+        names,
+        dtype=dtype,
+        device=device,
+        trainable=trainable,
+    )
+
+
 def eoscg2021(
     names: tuple[str, ...] | None = None,
     *,
     dtype: torch.dtype | None = None,
     device: torch.device | str | None = None,
     trainable: bool = False,
-    parameter_set: ParameterSource = "multifluid.eos-cg-2021",
-) -> MultiFluidEOS:
+    parameter_set: ParameterSource = "multiparameter.eos-cg-2021",
+) -> MultiparameterEOS:
     """Construct the complete native 16-component EOS-CG-2021 Helmholtz model.
 
     Parameters
@@ -881,7 +1046,7 @@ def eoscg2021(
 
     Returns
     -------
-    MultiFluidEOS
+    MultiparameterEOS
         Native EOS-CG-2021 model defined by Neumann et al. (2023),
         doi:10.1007/s10765-023-03263-6, including its supplementary tables.
     """
@@ -903,7 +1068,9 @@ def eoscg2021(
 __all__ = [
     "EOSCG2021_COMPONENTS",
     "GERG2008_COMPONENTS",
+    "GERG2008_HYDROGEN_2021_COMPONENTS",
     "eoscg2021",
     "gerg2008",
-    "multifluid_eos",
+    "gerg2008_hydrogen_2021",
+    "multiparameter_eos",
 ]

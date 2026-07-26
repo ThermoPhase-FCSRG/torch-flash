@@ -1,7 +1,7 @@
 format: torch-flash-model-parameters
 schema_version: 1
-id: multifluid.gerg-2008
-model_kind: multifluid
+id: multiparameter.gerg-2008
+model_kind: multiparameter
 model: GERG-2008
 version: '2008'
 description: Complete 21-component GERG-2008 Helmholtz mixture coefficient inventory.

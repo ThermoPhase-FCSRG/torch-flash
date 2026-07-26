@@ -1,0 +1,893 @@
+format: torch-flash-model-parameters
+schema_version: 1
+id: group-contribution.eppr78-privat-2022-40-group
+model_kind: group_contribution
+model: E-PPR78
+version: "2022-global-40-group"
+description: >-
+  Global 40-group E-PPR78 parameterization. All 356 published available
+  group pairs and all 424 explicitly unavailable pairs are represented;
+  an unavailable pair is never interpreted as a zero interaction. The
+  component decompositions bundled here are the unambiguous subset needed
+  by the package component database, including the principal CCS gases.
+units:
+  A: Pa
+  B: Pa
+  group_fraction: dimensionless
+  reference_temperature: K
+references:
+  - citation: >-
+      J.-N. Jaubert, J.-W. Qian, S. Lasala, and R. Privat, Fluid Phase
+      Equilibria 560 (2022) 113456, Eq. (5), Table S4
+    doi: 10.1016/j.fluid.2022.113456
+    note: >-
+      Defining 40-group E-PPR78 coefficient inventory; values converted
+      mechanically from MPa to Pa.
+    license: CC BY 4.0
+  - citation: >-
+      X. Xu, S. Lasala, R. Privat, and J.-N. Jaubert, International
+      Journal of Greenhouse Gas Control 56 (2017) 126-154
+    doi: 10.1016/j.ijggc.2016.11.015
+    note: >-
+      Predecessor CCS application and group inventory; the bundled
+      numerical coefficients are the later 2022 global revision.
+parameters:
+  reference_temperature: 298.15
+  groups:
+    - "CH3"
+    - "CH2"
+    - "CH"
+    - "C"
+    - "CH4"
+    - "C2H6"
+    - "CH_aromatic"
+    - "C_aromatic"
+    - "C_fused_aromatic"
+    - "CH2_cyclic"
+    - "CH_or_C_cyclic"
+    - "CO2"
+    - "N2"
+    - "H2S"
+    - "SH"
+    - "H2O"
+    - "C2H4"
+    - "CH2_or_CH_alkenic"
+    - "C_alkenic"
+    - "CH_or_C_cycloalkenic"
+    - "H2"
+    - "C2F6"
+    - "CF3"
+    - "CF2"
+    - "CF2_or_CF_double_bond"
+    - "CHF2_CH3"
+    - "CF3_CH2F"
+    - "CO"
+    - "He"
+    - "Ar"
+    - "SO2"
+    - "O2"
+    - "NO"
+    - "COS"
+    - "NH3"
+    - "NO2_or_N2O4"
+    - "N2O"
+    - "C2H2"
+    - "HC_triple_C"
+    - "C_triple_C"
+  interactions:
+    CH3|CH2: {A: 65540000.0, B: 105700000.0}
+    CH3|CH: {A: 214900000.0, B: 294900000.0}
+    CH3|C: {A: 431600000.0, B: 575000000.0}
+    CH3|CH4: {A: 28480000.0, B: 20250000.0}
+    CH3|C2H6: {A: 3775000.0, B: 8922000.0}
+    CH3|CH_aromatic: {A: 98830000.0, B: 136200000.0}
+    CH3|C_aromatic: {A: 103600000.0, B: 103600000.0}
+    CH3|C_fused_aromatic: {A: 624900000.0, B: 774100000.0}
+    CH3|CH2_cyclic: {A: 43580000.0, B: 60050000.0}
+    CH3|CH_or_C_cyclic: {A: 293400000.0, B: 170900000.0}
+    CH3|CO2: {A: 144800000.0, B: 401500000.0}
+    CH3|N2: {A: 38090000.0, B: 88190000.0}
+    CH3|H2S: {A: 159600000.0, B: 227800000.0}
+    CH3|SH: {A: 789600000.0, B: 1829000000.0}
+    CH3|H2O: {A: 3557000000.0, B: 11195000000.0}
+    CH3|C2H4: {A: 7892000.0, B: 35000000.0}
+    CH3|CH2_or_CH_alkenic: {A: 48730000.0, B: 44270000.0}
+    CH3|C_alkenic: {A: 102600000.0, B: 260100000.0}
+    CH3|CH_or_C_cycloalkenic: {A: 47010000.0, B: 169500000.0}
+    CH3|H2: {A: 174000000.0, B: 239500000.0}
+    CH3|C2F6: {A: 119100000.0, B: 118400000.0}
+    CH3|CF3: {A: 123200000.0, B: 133800000.0}
+    CH3|CF2: {A: 58330000.0, B: 65200000.0}
+    CH3|CF2_or_CF_double_bond: {A: -12290000.0, B: 16540000.0}
+    CH3|CHF2_CH3: {A: 128300000.0, B: 292400000.0}
+    CH3|CF3_CH2F: {A: 158500000.0, B: 356500000.0}
+    CH3|CO: {A: 91240000.0, B: 94240000.0}
+    CH3|He: {A: 416300000.0, B: 513400000.0}
+    CH3|Ar: {A: 11270000.0, B: 55480000.0}
+    CH3|SO2: {A: 322200000.0, B: 201400000.0}
+    CH3|O2: {A: 86100000.0, B: 87500000.0}
+    CH3|C2H2: {A: -6860000.0, B: 41520000.0}
+    CH3|HC_triple_C: {A: 306100000.0, B: 1167000000.0}
+    CH3|C_triple_C: {A: 72060000.0, B: 1219500000.0}
+    CH2|CH: {A: 39050000.0, B: 41590000.0}
+    CH2|C: {A: 134500000.0, B: 183900000.0}
+    CH2|CH4: {A: 37750000.0, B: 74810000.0}
+    CH2|C2H6: {A: 29850000.0, B: 65880000.0}
+    CH2|CH_aromatic: {A: 25050000.0, B: 64510000.0}
+    CH2|C_aromatic: {A: 5147000.0, B: -7549000.0}
+    CH2|C_fused_aromatic: {A: -17840000.0, B: -4118000.0}
+    CH2|CH2_cyclic: {A: 8579000.0, B: 27790000.0}
+    CH2|CH_or_C_cyclic: {A: 63480000.0, B: -74460000.0}
+    CH2|CO2: {A: 141400000.0, B: 237100000.0}
+    CH2|N2: {A: 83730000.0, B: 188700000.0}
+    CH2|H2S: {A: 136600000.0, B: 124600000.0}
+    CH2|SH: {A: 439900000.0, B: 504800000.0}
+    CH2|H2O: {A: 4324000000.0, B: 12126000000.0}
+    CH2|C2H4: {A: 59710000.0, B: 82350000.0}
+    CH2|CH2_or_CH_alkenic: {A: 9608000.0, B: 50790000.0}
+    CH2|C_alkenic: {A: 64850000.0, B: 51820000.0}
+    CH2|CH_or_C_cycloalkenic: {A: 34310000.0, B: 51130000.0}
+    CH2|H2: {A: 155400000.0, B: 240900000.0}
+    CH2|C2F6: {A: 105000000.0, B: 130400000.0}
+    CH2|CF3: {A: 195600000.0, B: 199000000.0}
+    CH2|CF2: {A: 58330000.0, B: 68630000.0}
+    CH2|CHF2_CH3: {A: 107100000.0, B: 119800000.0}
+    CH2|CF3_CH2F: {A: 86470000.0, B: -40490000.0}
+    CH2|CO: {A: 44000000.0, B: 45550000.0}
+    CH2|He: {A: 520520000.0, B: 673220000.0}
+    CH2|Ar: {A: 113600000.0, B: 231600000.0}
+    CH2|SO2: {A: 55900000.0, B: -28500000.0}
+    CH2|O2: {A: 107400000.0, B: 200800000.0}
+    CH2|C2H2: {A: 421000000.0, B: 1193800000.0}
+    CH2|HC_triple_C: {A: 303300000.0, B: 316000000.0}
+    CH2|C_triple_C: {A: 488000000.0, B: 826600000.0}
+    CH|C: {A: -86130000.0, B: 85100000.0}
+    CH|CH4: {A: 131400000.0, B: 157500000.0}
+    CH|C2H6: {A: 156100000.0, B: 96770000.0}
+    CH|CH_aromatic: {A: 56620000.0, B: 129700000.0}
+    CH|C_aromatic: {A: 48730000.0, B: -89220000.0}
+    CH|CH2_cyclic: {A: 73090000.0, B: 71370000.0}
+    CH|CH_or_C_cyclic: {A: -120800000.0, B: 18530000.0}
+    CH|CO2: {A: 191800000.0, B: 380900000.0}
+    CH|N2: {A: 383600000.0, B: 375400000.0}
+    CH|H2S: {A: 192500000.0, B: 562800000.0}
+    CH|SH: {A: 374000000.0, B: 520900000.0}
+    CH|H2O: {A: 971400000.0, B: 567600000.0}
+    CH|C2H4: {A: 147900000.0, B: -55590000.0}
+    CH|CH2_or_CH_alkenic: {A: 84760000.0, B: 193200000.0}
+    CH|C_alkenic: {A: 91620000.0, B: 54900000.0}
+    CH|CH_or_C_cycloalkenic: {A: 520000.0, B: -7200000.0}
+    CH|H2: {A: 326000000.0, B: 287900000.0}
+    CH|CF3: {A: 531500000.0, B: -1945000000.0}
+    CH|CF2: {A: -122800000.0, B: 458800000.0}
+    CH|CHF2_CH3: {A: 143800000.0, B: 15780000.0}
+    CH|CF3_CH2F: {A: 121500000.0, B: -44610000.0}
+    CH|He: {A: 728100000.0, B: 750900000.0}
+    CH|Ar: {A: 185800000.0, B: 634200000.0}
+    CH|SO2: {A: -70000000.0, B: 233700000.0}
+    CH|HC_triple_C: {A: 206900000.0, B: 3975000000.0}
+    CH|C_triple_C: {A: 4460000.0, B: -245400000.0}
+    C|CH4: {A: 309500000.0, B: 35690000.0}
+    C|C2H6: {A: 388100000.0, B: -224800000.0}
+    C|CH_aromatic: {A: 170500000.0, B: 284100000.0}
+    C|C_aromatic: {A: 128300000.0, B: 189100000.0}
+    C|CH2_cyclic: {A: 208600000.0, B: 294400000.0}
+    C|CH_or_C_cyclic: {A: 25050000.0, B: 81330000.0}
+    C|CO2: {A: 377500000.0, B: 162700000.0}
+    C|N2: {A: 341800000.0, B: 635200000.0}
+    C|H2S: {A: 330800000.0, B: -297200000.0}
+    C|SH: {A: 685900000.0, B: 1547000000.0}
+    C|C2H4: {A: 366800000.0, B: -219300000.0}
+    C|CH2_or_CH_alkenic: {A: 181200000.0, B: 419000000.0}
+    C|H2: {A: 548300000.0, B: 2343000000.0}
+    C|CF3: {A: 413100000.0, B: 975200000.0}
+    C|CF2: {A: 479000000.0, B: 1430000000.0}
+    C|Ar: {A: 899000000.0, B: 4655000000.0}
+    CH4|C2H6: {A: 9951000.0, B: 13730000.0}
+    CH4|CH_aromatic: {A: 67260000.0, B: 167500000.0}
+    CH4|C_aromatic: {A: 106700000.0, B: 190800000.0}
+    CH4|C_fused_aromatic: {A: 249100000.0, B: 408300000.0}
+    CH4|CH2_cyclic: {A: 33970000.0, B: 5490000.0}
+    CH4|CH_or_C_cyclic: {A: 188000000.0, B: 473900000.0}
+    CH4|CO2: {A: 136600000.0, B: 214800000.0}
+    CH4|N2: {A: 30880000.0, B: 37060000.0}
+    CH4|H2S: {A: 190100000.0, B: 307500000.0}
+    CH4|SH: {A: 701700000.0, B: 1318000000.0}
+    CH4|H2O: {A: 2277100000.0, B: 4719600000.0}
+    CH4|C2H4: {A: 19220000.0, B: 33290000.0}
+    CH4|CH2_or_CH_alkenic: {A: 48730000.0, B: 68290000.0}
+    CH4|H2: {A: 156100000.0, B: 92990000.0}
+    CH4|CO: {A: 14430000.0, B: 20920000.0}
+    CH4|He: {A: 394500000.0, B: 378100000.0}
+    CH4|Ar: {A: 15970000.0, B: 24480000.0}
+    CH4|SO2: {A: 205900000.0, B: 323600000.0}
+    CH4|COS: {A: 44610000.0, B: -95050000.0}
+    CH4|NH3: {A: 436100000.0, B: 958800000.0}
+    CH4|N2O: {A: 74810000.0, B: 107100000.0}
+    C2H6|CH_aromatic: {A: 41180000.0, B: 50790000.0}
+    C2H6|C_aromatic: {A: 67940000.0, B: 210700000.0}
+    C2H6|CH2_cyclic: {A: 12700000.0, B: 73430000.0}
+    C2H6|CH_or_C_cyclic: {A: 118000000.0, B: -212800000.0}
+    C2H6|CO2: {A: 136200000.0, B: 235700000.0}
+    C2H6|N2: {A: 61590000.0, B: 84920000.0}
+    C2H6|H2S: {A: 157200000.0, B: 217100000.0}
+    C2H6|H2O: {A: 2333000000.0, B: 5147000000.0}
+    C2H6|C2H4: {A: 7549000.0, B: 20930000.0}
+    C2H6|CH2_or_CH_alkenic: {A: 26770000.0, B: -5147000.0}
+    C2H6|H2: {A: 137600000.0, B: 150000000.0}
+    C2H6|C2F6: {A: 96080000.0, B: 123500000.0}
+    C2H6|CF3: {A: 87160000.0, B: 143800000.0}
+    C2H6|CF2: {A: 79270000.0, B: 15100000.0}
+    C2H6|CF2_or_CF_double_bond: {A: 95550000.0, B: -231100000.0}
+    C2H6|CF3_CH2F: {A: 72400000.0, B: -305400000.0}
+    C2H6|CO: {A: 15420000.0, B: 33300000.0}
+    C2H6|He: {A: 581300000.0, B: 517100000.0}
+    C2H6|Ar: {A: 43810000.0, B: 53100000.0}
+    C2H6|C2H2: {A: 137900000.0, B: 168100000.0}
+    CH_aromatic|C_aromatic: {A: -16470000.0, B: 16470000.0}
+    CH_aromatic|C_fused_aromatic: {A: 52500000.0, B: 251200000.0}
+    CH_aromatic|CH2_cyclic: {A: 28820000.0, B: 65540000.0}
+    CH_aromatic|CH_or_C_cyclic: {A: 129000000.0, B: 36720000.0}
+    CH_aromatic|CO2: {A: 98480000.0, B: 253600000.0}
+    CH_aromatic|N2: {A: 185300000.0, B: 490700000.0}
+    CH_aromatic|H2S: {A: 21280000.0, B: 6177000.0}
+    CH_aromatic|SH: {A: 277600000.0, B: 449500000.0}
+    CH_aromatic|H2O: {A: 2268000000.0, B: 6218000000.0}
+    CH_aromatic|C2H4: {A: 25740000.0, B: 78920000.0}
+    CH_aromatic|CH2_or_CH_alkenic: {A: 9951000.0, B: 19900000.0}
+    CH_aromatic|C_alkenic: {A: -16470000.0, B: 61420000.0}
+    CH_aromatic|CH_or_C_cycloalkenic: {A: 3775000.0, B: 1716000.0}
+    CH_aromatic|H2: {A: 288900000.0, B: 189100000.0}
+    CH_aromatic|CF3: {A: 680100000.0, B: 421700000.0}
+    CH_aromatic|CF2: {A: -31570000.0, B: 43240000.0}
+    CH_aromatic|CF2_or_CF_double_bond: {A: -274300000.0, B: -411700000.0}
+    CH_aromatic|CO: {A: 153400000.0, B: 153400000.0}
+    CH_aromatic|He: {A: 753600000.0, B: 590500000.0}
+    CH_aromatic|Ar: {A: 195600000.0, B: 361300000.0}
+    CH_aromatic|SO2: {A: 37100000.0, B: -23700000.0}
+    CH_aromatic|O2: {A: 233400000.0, B: 404900000.0}
+    CH_aromatic|C2H2: {A: 29170000.0, B: 123500000.0}
+    CH_aromatic|HC_triple_C: {A: 96080000.0, B: 148200000.0}
+    CH_aromatic|C_triple_C: {A: 403900000.0, B: 403900000.0}
+    C_aromatic|C_fused_aromatic: {A: -328000000.0, B: -569300000.0}
+    C_aromatic|CH2_cyclic: {A: 37400000.0, B: 53530000.0}
+    C_aromatic|CH_or_C_cyclic: {A: -99170000.0, B: -193500000.0}
+    C_aromatic|CO2: {A: 154400000.0, B: 374400000.0}
+    C_aromatic|N2: {A: 343800000.0, B: 1712000000.0}
+    C_aromatic|H2S: {A: 9608000.0, B: -36720000.0}
+    C_aromatic|SH: {A: 1002000000.0, B: -736400000.0}
+    C_aromatic|H2O: {A: 543500000.0, B: 411800000.0}
+    C_aromatic|C2H4: {A: 97800000.0, B: 67940000.0}
+    C_aromatic|CH2_or_CH_alkenic: {A: -48380000.0, B: 27790000.0}
+    C_aromatic|C_alkenic: {A: 343100000.0, B: 880200000.0}
+    C_aromatic|CH_or_C_cycloalkenic: {A: 242900000.0, B: -7206000.0}
+    C_aromatic|H2: {A: 400100000.0, B: 1201000000.0}
+    C_aromatic|CF3: {A: 733000000.0, B: 866800000.0}
+    C_aromatic|CF2: {A: -8922000.0, B: 5147000.0}
+    C_aromatic|CF2_or_CF_double_bond: {A: 78620000.0, B: -108000000.0}
+    C_aromatic|CO: {A: 125770000.0, B: -231100000.0}
+    C_aromatic|He: {A: 753600000.0, B: 590500000.0}
+    C_aromatic|SO2: {A: -196600000.0, B: -397400000.0}
+    C_aromatic|O2: {A: 177100000.0, B: 2559400000.0}
+    C_aromatic|HC_triple_C: {A: 176000000.0, B: -459500000.0}
+    C_aromatic|C_triple_C: {A: 518500000.0, B: 518500000.0}
+    C_fused_aromatic|CH2_cyclic: {A: 140700000.0, B: 277600000.0}
+    C_fused_aromatic|CH_or_C_cyclic: {A: -99170000.0, B: -193500000.0}
+    C_fused_aromatic|CO2: {A: 331100000.0, B: 276600000.0}
+    C_fused_aromatic|N2: {A: 702400000.0, B: 1889000000.0}
+    C_fused_aromatic|H2S: {A: 9608000.0, B: -36720000.0}
+    C_fused_aromatic|SH: {A: 1002000000.0, B: -736400000.0}
+    C_fused_aromatic|H2O: {A: 1340000000.0, B: -65880000.0}
+    C_fused_aromatic|C2H4: {A: 209700000.0, B: 3819000000.0}
+    C_fused_aromatic|CH2_or_CH_alkenic: {A: 669800000.0, B: 589500000.0}
+    C_fused_aromatic|H2: {A: 602900000.0, B: 1463000000.0}
+    C_fused_aromatic|CO: {A: 197000000.0, B: -238800000.0}
+    C_fused_aromatic|He: {A: 753600000.0, B: 590500000.0}
+    CH2_cyclic|CH_or_C_cyclic: {A: 139000000.0, B: 35690000.0}
+    CH2_cyclic|CO2: {A: 144100000.0, B: 354100000.0}
+    CH2_cyclic|N2: {A: 179500000.0, B: 546600000.0}
+    CH2_cyclic|H2S: {A: 117400000.0, B: 166400000.0}
+    CH2_cyclic|SH: {A: 493100000.0, B: 832100000.0}
+    CH2_cyclic|H2O: {A: 4211000000.0, B: 13031000000.0}
+    CH2_cyclic|C2H4: {A: 35340000.0, B: 52500000.0}
+    CH2_cyclic|CH2_or_CH_alkenic: {A: -15440000.0, B: 24360000.0}
+    CH2_cyclic|C_alkenic: {A: 159600000.0, B: 140700000.0}
+    CH2_cyclic|CH_or_C_cycloalkenic: {A: 31910000.0, B: 69320000.0}
+    CH2_cyclic|H2: {A: 236100000.0, B: 192500000.0}
+    CH2_cyclic|CF3: {A: 216200000.0, B: 343100000.0}
+    CH2_cyclic|CF2: {A: 42550000.0, B: -68630000.0}
+    CH2_cyclic|CO: {A: 113100000.0, B: 143600000.0}
+    CH2_cyclic|Ar: {A: 1269000000.0, B: 18666000000.0}
+    CH2_cyclic|O2: {A: 181200000.0, B: 281400000.0}
+    CH2_cyclic|NO: {A: -27500000.0, B: 50100000.0}
+    CH2_cyclic|HC_triple_C: {A: 496200000.0, B: 496200000.0}
+    CH2_cyclic|C_triple_C: {A: 845900000.0, B: 845900000.0}
+    CH_or_C_cyclic|CO2: {A: 216200000.0, B: -132800000.0}
+    CH_or_C_cyclic|N2: {A: 331500000.0, B: 389800000.0}
+    CH_or_C_cyclic|H2S: {A: 71370000.0, B: -127700000.0}
+    CH_or_C_cyclic|SH: {A: 463200000.0, B: -337700000.0}
+    CH_or_C_cyclic|H2O: {A: 244000000.0, B: -60390000.0}
+    CH_or_C_cyclic|C2H4: {A: 297200000.0, B: -647200000.0}
+    CH_or_C_cyclic|CH2_or_CH_alkenic: {A: 260100000.0, B: 134900000.0}
+    CH_or_C_cyclic|CH_or_C_cycloalkenic: {A: 151300000.0, B: 2745000.0}
+    CH_or_C_cyclic|H2: {A: -51820000.0, B: 34310000.0}
+    CH_or_C_cyclic|O2: {A: 102300000.0, B: 988000000.0}
+    CH_or_C_cyclic|HC_triple_C: {A: 863700000.0, B: 863700000.0}
+    CO2|N2: {A: 113900000.0, B: 212400000.0}
+    CO2|H2S: {A: 135200000.0, B: 199000000.0}
+    CO2|SH: {A: 484150000.0, B: 646580000.0}
+    CO2|H2O: {A: 559300000.0, B: 277900000.0}
+    CO2|C2H4: {A: 73090000.0, B: 106700000.0}
+    CO2|CH2_or_CH_alkenic: {A: 60740000.0, B: 183900000.0}
+    CO2|C_alkenic: {A: 74810000.0, B: -266600000.0}
+    CO2|CH_or_C_cycloalkenic: {A: 87850000.0, B: 66910000.0}
+    CO2|H2: {A: 261100000.0, B: 300900000.0}
+    CO2|C2F6: {A: 126600000.0, B: 241200000.0}
+    CO2|CF3: {A: 156500000.0, B: -116000000.0}
+    CO2|CF2: {A: 125200000.0, B: 340100000.0}
+    CO2|CF2_or_CF_double_bond: {A: 36250000.0, B: 63490000.0}
+    CO2|CHF2_CH3: {A: 48730000.0, B: 751100000.0}
+    CO2|CF3_CH2F: {A: 29510000.0, B: 89900000.0}
+    CO2|CO: {A: 87850000.0, B: 190800000.0}
+    CO2|He: {A: 685900000.0, B: 559300000.0}
+    CO2|Ar: {A: 177800000.0, B: 86820000.0}
+    CO2|SO2: {A: 54900000.0, B: 59020000.0}
+    CO2|O2: {A: 154400000.0, B: 109800000.0}
+    CO2|NO: {A: 5100000.0, B: 48400000.0}
+    CO2|COS: {A: 83040000.0, B: 165700000.0}
+    CO2|NO2_or_N2O4: {A: 124900000.0, B: 241600000.0}
+    CO2|N2O: {A: 3770000.0, B: 14070000.0}
+    CO2|HC_triple_C: {A: 60050000.0, B: -80980000.0}
+    N2|H2S: {A: 319500000.0, B: 550100000.0}
+    N2|SH: {A: 1042000000.0, B: 1722680000.0}
+    N2|H2O: {A: 2574000000.0, B: 5490000000.0}
+    N2|C2H4: {A: 45300000.0, B: 92650000.0}
+    N2|CH2_or_CH_alkenic: {A: 59710000.0, B: 227200000.0}
+    N2|C_alkenic: {A: 541500000.0, B: 94710000.0}
+    N2|H2: {A: 65200000.0, B: 70100000.0}
+    N2|CO: {A: 23330000.0, B: -25400000.0}
+    N2|He: {A: 204700000.0, B: 222800000.0}
+    N2|Ar: {A: 6488000.0, B: 8774000.0}
+    N2|SO2: {A: 282400000.0, B: 362700000.0}
+    N2|O2: {A: 2400000.0, B: 4800000.0}
+    N2|NO: {A: 258700000.0, B: 100500000.0}
+    N2|NH3: {A: 585800000.0, B: 1011300000.0}
+    N2|NO2_or_N2O4: {A: 263500000.0, B: 260000000.0}
+    N2|N2O: {A: 101600000.0, B: 230900000.0}
+    H2S|SH: {A: -157800000.0, B: 153700000.0}
+    H2S|H2O: {A: 603900000.0, B: 599100000.0}
+    H2S|H2: {A: 145800000.0, B: 823500000.0}
+    H2S|CO: {A: 278600000.0, B: 404200000.0}
+    H2S|COS: {A: 101900000.0, B: 98140000.0}
+    SH|H2O: {A: 30880000.0, B: -113600000.0}
+    H2O|C2H4: {A: 1650000000.0, B: 1661000000.0}
+    H2O|CH2_or_CH_alkenic: {A: 2243000000.0, B: 5199000000.0}
+    H2O|H2: {A: 830800000.0, B: -137900000.0}
+    H2O|CO: {A: 715100000.0, B: -89900000.0}
+    H2O|Ar: {A: 1197000000.0, B: 1211000000.0}
+    H2O|SO2: {A: 374400000.0, B: 148600000.0}
+    H2O|O2: {A: 1376000000.0, B: 1609000000.0}
+    H2O|NH3: {A: -550100000.0, B: -1404200000.0}
+    H2O|N2O: {A: 568900000.0, B: -144800000.0}
+    H2O|C2H2: {A: 436800000.0, B: -200100000.0}
+    H2O|HC_triple_C: {A: -2395500000.0, B: -11671000000.0}
+    C2H4|CH2_or_CH_alkenic: {A: 14760000.0, B: 11320000.0}
+    C2H4|C_alkenic: {A: -518200000.0, B: 6815000000.0}
+    C2H4|CH_or_C_cycloalkenic: {A: -98830000.0, B: 1809000000.0}
+    C2H4|H2: {A: 151300000.0, B: 165100000.0}
+    C2H4|CF3: {A: 453000000.0, B: -611500000.0}
+    C2H4|CF2_or_CF_double_bond: {A: -132700000.0, B: 548300000.0}
+    C2H4|CO: {A: 84550000.0, B: -7515000.0}
+    C2H4|He: {A: 569600000.0, B: 536700000.0}
+    CH2_or_CH_alkenic|C_alkenic: {A: 24710000.0, B: 121800000.0}
+    CH2_or_CH_alkenic|CH_or_C_cycloalkenic: {A: 14070000.0, B: -12350000.0}
+    CH2_or_CH_alkenic|H2: {A: 175700000.0, B: 373000000.0}
+    CH2_or_CH_alkenic|C2F6: {A: 124900000.0, B: 219600000.0}
+    CH2_or_CH_alkenic|CF3: {A: 155400000.0, B: 154400000.0}
+    CH2_or_CH_alkenic|CF2: {A: 155400000.0, B: 154400000.0}
+    CH2_or_CH_alkenic|CF2_or_CF_double_bond: {A: 88210000.0, B: 12870000.0}
+    CH2_or_CH_alkenic|CHF2_CH3: {A: 76860000.0, B: -145500000.0}
+    CH2_or_CH_alkenic|CF3_CH2F: {A: 64510000.0, B: -41860000.0}
+    CH2_or_CH_alkenic|He: {A: 644300000.0, B: 687700000.0}
+    CH2_or_CH_alkenic|Ar: {A: 203000000.0, B: -11780000.0}
+    CH2_or_CH_alkenic|SO2: {A: 26800000.0, B: 26800000.0}
+    CH2_or_CH_alkenic|C2H2: {A: 165400000.0, B: 39800000.0}
+    CH2_or_CH_alkenic|HC_triple_C: {A: 134500000.0, B: 568900000.0}
+    CH2_or_CH_alkenic|C_triple_C: {A: 255600000.0, B: 676700000.0}
+    C_alkenic|CH_or_C_cycloalkenic: {A: 23680000.0, B: 87500000.0}
+    C_alkenic|H2: {A: 621400000.0, B: 873600000.0}
+    C_alkenic|SO2: {A: -141700000.0, B: -151300000.0}
+    C_alkenic|HC_triple_C: {A: 212800000.0, B: -2182800000.0}
+    C_alkenic|C_triple_C: {A: -874300000.0, B: 1040100000.0}
+    CH_or_C_cycloalkenic|H2: {A: 460800000.0, B: 2167000000.0}
+    CH_or_C_cycloalkenic|CF3: {A: 1232000000.0, B: -495500000.0}
+    H2|CO: {A: 75840000.0, B: 74810000.0}
+    H2|He: {A: 138700000.0, B: 95490000.0}
+    H2|Ar: {A: 128200000.0, B: 102900000.0}
+    H2|NH3: {A: 701700000.0, B: 931300000.0}
+    C2F6|CF3: {A: -14470000.0, B: -87050000.0}
+    C2F6|CF2_or_CF_double_bond: {A: 55900000.0, B: -193300000.0}
+    C2F6|CF3_CH2F: {A: 60740000.0, B: 217600000.0}
+    CF3|CF2: {A: 0.0, B: 0.0}
+    CF3|CF2_or_CF_double_bond: {A: 17550000.0, B: -92990000.0}
+    CF3|CHF2_CH3: {A: 113200000.0, B: 247100000.0}
+    CF3|CF3_CH2F: {A: 28140000.0, B: 8235000.0}
+    CF2|CHF2_CH3: {A: 120100000.0, B: 264200000.0}
+    CF2|CF3_CH2F: {A: 229900000.0, B: 259100000.0}
+    CHF2_CH3|CF3_CH2F: {A: -4118000.0, B: 4118000.0}
+    CHF2_CH3|C2H2: {A: -58680000.0, B: 303700000.0}
+    CO|He: {A: 260100000.0, B: 259900000.0}
+    CO|Ar: {A: 4042000.0, B: 8180000.0}
+    CO|NO: {A: 309200000.0, B: 28820000.0}
+    He|Ar: {A: 243100000.0, B: 305600000.0}
+    Ar|SO2: {A: 299900000.0, B: 354100000.0}
+    Ar|O2: {A: 4800000.0, B: 7890000.0}
+    Ar|NO: {A: 110800000.0, B: 155500000.0}
+    Ar|NH3: {A: 630000000.0, B: 1794000000.0}
+    Ar|NO2_or_N2O4: {A: 278600000.0, B: 274500000.0}
+    SO2|O2: {A: 340000000.0, B: 665700000.0}
+    SO2|NO: {A: 172300000.0, B: 1343000000.0}
+    O2|NO2_or_N2O4: {A: 271100000.0, B: 362400000.0}
+    O2|N2O: {A: 120100000.0, B: 105700000.0}
+    C2H2|HC_triple_C: {A: 122500000.0, B: 247800000.0}
+    HC_triple_C|C_triple_C: {A: -497600000.0, B: -824200000.0}
+  unavailable_interactions:
+    - CH3|NO
+    - CH3|COS
+    - CH3|NH3
+    - CH3|NO2_or_N2O4
+    - CH3|N2O
+    - CH2|CF2_or_CF_double_bond
+    - CH2|NO
+    - CH2|COS
+    - CH2|NH3
+    - CH2|NO2_or_N2O4
+    - CH2|N2O
+    - CH|C_fused_aromatic
+    - CH|C2F6
+    - CH|CF2_or_CF_double_bond
+    - CH|CO
+    - CH|O2
+    - CH|NO
+    - CH|COS
+    - CH|NH3
+    - CH|NO2_or_N2O4
+    - CH|N2O
+    - CH|C2H2
+    - C|C_fused_aromatic
+    - C|H2O
+    - C|C_alkenic
+    - C|CH_or_C_cycloalkenic
+    - C|C2F6
+    - C|CF2_or_CF_double_bond
+    - C|CHF2_CH3
+    - C|CF3_CH2F
+    - C|CO
+    - C|He
+    - C|SO2
+    - C|O2
+    - C|NO
+    - C|COS
+    - C|NH3
+    - C|NO2_or_N2O4
+    - C|N2O
+    - C|C2H2
+    - C|HC_triple_C
+    - C|C_triple_C
+    - CH4|C_alkenic
+    - CH4|CH_or_C_cycloalkenic
+    - CH4|C2F6
+    - CH4|CF3
+    - CH4|CF2
+    - CH4|CF2_or_CF_double_bond
+    - CH4|CHF2_CH3
+    - CH4|CF3_CH2F
+    - CH4|O2
+    - CH4|NO
+    - CH4|NO2_or_N2O4
+    - CH4|C2H2
+    - CH4|HC_triple_C
+    - CH4|C_triple_C
+    - C2H6|C_fused_aromatic
+    - C2H6|SH
+    - C2H6|C_alkenic
+    - C2H6|CH_or_C_cycloalkenic
+    - C2H6|CHF2_CH3
+    - C2H6|SO2
+    - C2H6|O2
+    - C2H6|NO
+    - C2H6|COS
+    - C2H6|NH3
+    - C2H6|NO2_or_N2O4
+    - C2H6|N2O
+    - C2H6|HC_triple_C
+    - C2H6|C_triple_C
+    - CH_aromatic|C2F6
+    - CH_aromatic|CHF2_CH3
+    - CH_aromatic|CF3_CH2F
+    - CH_aromatic|NO
+    - CH_aromatic|COS
+    - CH_aromatic|NH3
+    - CH_aromatic|NO2_or_N2O4
+    - CH_aromatic|N2O
+    - C_aromatic|C2F6
+    - C_aromatic|CHF2_CH3
+    - C_aromatic|CF3_CH2F
+    - C_aromatic|Ar
+    - C_aromatic|NO
+    - C_aromatic|COS
+    - C_aromatic|NH3
+    - C_aromatic|NO2_or_N2O4
+    - C_aromatic|N2O
+    - C_aromatic|C2H2
+    - C_fused_aromatic|C_alkenic
+    - C_fused_aromatic|CH_or_C_cycloalkenic
+    - C_fused_aromatic|C2F6
+    - C_fused_aromatic|CF3
+    - C_fused_aromatic|CF2
+    - C_fused_aromatic|CF2_or_CF_double_bond
+    - C_fused_aromatic|CHF2_CH3
+    - C_fused_aromatic|CF3_CH2F
+    - C_fused_aromatic|Ar
+    - C_fused_aromatic|SO2
+    - C_fused_aromatic|O2
+    - C_fused_aromatic|NO
+    - C_fused_aromatic|COS
+    - C_fused_aromatic|NH3
+    - C_fused_aromatic|NO2_or_N2O4
+    - C_fused_aromatic|N2O
+    - C_fused_aromatic|C2H2
+    - C_fused_aromatic|HC_triple_C
+    - C_fused_aromatic|C_triple_C
+    - CH2_cyclic|C2F6
+    - CH2_cyclic|CF2_or_CF_double_bond
+    - CH2_cyclic|CHF2_CH3
+    - CH2_cyclic|CF3_CH2F
+    - CH2_cyclic|He
+    - CH2_cyclic|SO2
+    - CH2_cyclic|COS
+    - CH2_cyclic|NH3
+    - CH2_cyclic|NO2_or_N2O4
+    - CH2_cyclic|N2O
+    - CH2_cyclic|C2H2
+    - CH_or_C_cyclic|C_alkenic
+    - CH_or_C_cyclic|C2F6
+    - CH_or_C_cyclic|CF3
+    - CH_or_C_cyclic|CF2
+    - CH_or_C_cyclic|CF2_or_CF_double_bond
+    - CH_or_C_cyclic|CHF2_CH3
+    - CH_or_C_cyclic|CF3_CH2F
+    - CH_or_C_cyclic|CO
+    - CH_or_C_cyclic|He
+    - CH_or_C_cyclic|Ar
+    - CH_or_C_cyclic|SO2
+    - CH_or_C_cyclic|NO
+    - CH_or_C_cyclic|COS
+    - CH_or_C_cyclic|NH3
+    - CH_or_C_cyclic|NO2_or_N2O4
+    - CH_or_C_cyclic|N2O
+    - CH_or_C_cyclic|C2H2
+    - CH_or_C_cyclic|C_triple_C
+    - CO2|NH3
+    - CO2|C2H2
+    - CO2|C_triple_C
+    - N2|CH_or_C_cycloalkenic
+    - N2|C2F6
+    - N2|CF3
+    - N2|CF2
+    - N2|CF2_or_CF_double_bond
+    - N2|CHF2_CH3
+    - N2|CF3_CH2F
+    - N2|COS
+    - N2|C2H2
+    - N2|HC_triple_C
+    - N2|C_triple_C
+    - H2S|C2H4
+    - H2S|CH2_or_CH_alkenic
+    - H2S|C_alkenic
+    - H2S|CH_or_C_cycloalkenic
+    - H2S|C2F6
+    - H2S|CF3
+    - H2S|CF2
+    - H2S|CF2_or_CF_double_bond
+    - H2S|CHF2_CH3
+    - H2S|CF3_CH2F
+    - H2S|He
+    - H2S|Ar
+    - H2S|SO2
+    - H2S|O2
+    - H2S|NO
+    - H2S|NH3
+    - H2S|NO2_or_N2O4
+    - H2S|N2O
+    - H2S|C2H2
+    - H2S|HC_triple_C
+    - H2S|C_triple_C
+    - SH|C2H4
+    - SH|CH2_or_CH_alkenic
+    - SH|C_alkenic
+    - SH|CH_or_C_cycloalkenic
+    - SH|H2
+    - SH|C2F6
+    - SH|CF3
+    - SH|CF2
+    - SH|CF2_or_CF_double_bond
+    - SH|CHF2_CH3
+    - SH|CF3_CH2F
+    - SH|CO
+    - SH|He
+    - SH|Ar
+    - SH|SO2
+    - SH|O2
+    - SH|NO
+    - SH|COS
+    - SH|NH3
+    - SH|NO2_or_N2O4
+    - SH|N2O
+    - SH|C2H2
+    - SH|HC_triple_C
+    - SH|C_triple_C
+    - H2O|C_alkenic
+    - H2O|CH_or_C_cycloalkenic
+    - H2O|C2F6
+    - H2O|CF3
+    - H2O|CF2
+    - H2O|CF2_or_CF_double_bond
+    - H2O|CHF2_CH3
+    - H2O|CF3_CH2F
+    - H2O|He
+    - H2O|NO
+    - H2O|COS
+    - H2O|NO2_or_N2O4
+    - H2O|C_triple_C
+    - C2H4|C2F6
+    - C2H4|CF2
+    - C2H4|CHF2_CH3
+    - C2H4|CF3_CH2F
+    - C2H4|Ar
+    - C2H4|SO2
+    - C2H4|O2
+    - C2H4|NO
+    - C2H4|COS
+    - C2H4|NH3
+    - C2H4|NO2_or_N2O4
+    - C2H4|N2O
+    - C2H4|C2H2
+    - C2H4|HC_triple_C
+    - C2H4|C_triple_C
+    - CH2_or_CH_alkenic|CO
+    - CH2_or_CH_alkenic|O2
+    - CH2_or_CH_alkenic|NO
+    - CH2_or_CH_alkenic|COS
+    - CH2_or_CH_alkenic|NH3
+    - CH2_or_CH_alkenic|NO2_or_N2O4
+    - CH2_or_CH_alkenic|N2O
+    - C_alkenic|C2F6
+    - C_alkenic|CF3
+    - C_alkenic|CF2
+    - C_alkenic|CF2_or_CF_double_bond
+    - C_alkenic|CHF2_CH3
+    - C_alkenic|CF3_CH2F
+    - C_alkenic|CO
+    - C_alkenic|He
+    - C_alkenic|Ar
+    - C_alkenic|O2
+    - C_alkenic|NO
+    - C_alkenic|COS
+    - C_alkenic|NH3
+    - C_alkenic|NO2_or_N2O4
+    - C_alkenic|N2O
+    - C_alkenic|C2H2
+    - CH_or_C_cycloalkenic|C2F6
+    - CH_or_C_cycloalkenic|CF2
+    - CH_or_C_cycloalkenic|CF2_or_CF_double_bond
+    - CH_or_C_cycloalkenic|CHF2_CH3
+    - CH_or_C_cycloalkenic|CF3_CH2F
+    - CH_or_C_cycloalkenic|CO
+    - CH_or_C_cycloalkenic|He
+    - CH_or_C_cycloalkenic|Ar
+    - CH_or_C_cycloalkenic|SO2
+    - CH_or_C_cycloalkenic|O2
+    - CH_or_C_cycloalkenic|NO
+    - CH_or_C_cycloalkenic|COS
+    - CH_or_C_cycloalkenic|NH3
+    - CH_or_C_cycloalkenic|NO2_or_N2O4
+    - CH_or_C_cycloalkenic|N2O
+    - CH_or_C_cycloalkenic|C2H2
+    - CH_or_C_cycloalkenic|HC_triple_C
+    - CH_or_C_cycloalkenic|C_triple_C
+    - H2|C2F6
+    - H2|CF3
+    - H2|CF2
+    - H2|CF2_or_CF_double_bond
+    - H2|CHF2_CH3
+    - H2|CF3_CH2F
+    - H2|SO2
+    - H2|O2
+    - H2|NO
+    - H2|COS
+    - H2|NO2_or_N2O4
+    - H2|N2O
+    - H2|C2H2
+    - H2|HC_triple_C
+    - H2|C_triple_C
+    - C2F6|CF2
+    - C2F6|CHF2_CH3
+    - C2F6|CO
+    - C2F6|He
+    - C2F6|Ar
+    - C2F6|SO2
+    - C2F6|O2
+    - C2F6|NO
+    - C2F6|COS
+    - C2F6|NH3
+    - C2F6|NO2_or_N2O4
+    - C2F6|N2O
+    - C2F6|C2H2
+    - C2F6|HC_triple_C
+    - C2F6|C_triple_C
+    - CF3|CO
+    - CF3|He
+    - CF3|Ar
+    - CF3|SO2
+    - CF3|O2
+    - CF3|NO
+    - CF3|COS
+    - CF3|NH3
+    - CF3|NO2_or_N2O4
+    - CF3|N2O
+    - CF3|C2H2
+    - CF3|HC_triple_C
+    - CF3|C_triple_C
+    - CF2|CF2_or_CF_double_bond
+    - CF2|CO
+    - CF2|He
+    - CF2|Ar
+    - CF2|SO2
+    - CF2|O2
+    - CF2|NO
+    - CF2|COS
+    - CF2|NH3
+    - CF2|NO2_or_N2O4
+    - CF2|N2O
+    - CF2|C2H2
+    - CF2|HC_triple_C
+    - CF2|C_triple_C
+    - CF2_or_CF_double_bond|CHF2_CH3
+    - CF2_or_CF_double_bond|CF3_CH2F
+    - CF2_or_CF_double_bond|CO
+    - CF2_or_CF_double_bond|He
+    - CF2_or_CF_double_bond|Ar
+    - CF2_or_CF_double_bond|SO2
+    - CF2_or_CF_double_bond|O2
+    - CF2_or_CF_double_bond|NO
+    - CF2_or_CF_double_bond|COS
+    - CF2_or_CF_double_bond|NH3
+    - CF2_or_CF_double_bond|NO2_or_N2O4
+    - CF2_or_CF_double_bond|N2O
+    - CF2_or_CF_double_bond|C2H2
+    - CF2_or_CF_double_bond|HC_triple_C
+    - CF2_or_CF_double_bond|C_triple_C
+    - CHF2_CH3|CO
+    - CHF2_CH3|He
+    - CHF2_CH3|Ar
+    - CHF2_CH3|SO2
+    - CHF2_CH3|O2
+    - CHF2_CH3|NO
+    - CHF2_CH3|COS
+    - CHF2_CH3|NH3
+    - CHF2_CH3|NO2_or_N2O4
+    - CHF2_CH3|N2O
+    - CHF2_CH3|HC_triple_C
+    - CHF2_CH3|C_triple_C
+    - CF3_CH2F|CO
+    - CF3_CH2F|He
+    - CF3_CH2F|Ar
+    - CF3_CH2F|SO2
+    - CF3_CH2F|O2
+    - CF3_CH2F|NO
+    - CF3_CH2F|COS
+    - CF3_CH2F|NH3
+    - CF3_CH2F|NO2_or_N2O4
+    - CF3_CH2F|N2O
+    - CF3_CH2F|C2H2
+    - CF3_CH2F|HC_triple_C
+    - CF3_CH2F|C_triple_C
+    - CO|SO2
+    - CO|O2
+    - CO|COS
+    - CO|NH3
+    - CO|NO2_or_N2O4
+    - CO|N2O
+    - CO|C2H2
+    - CO|HC_triple_C
+    - CO|C_triple_C
+    - He|SO2
+    - He|O2
+    - He|NO
+    - He|COS
+    - He|NH3
+    - He|NO2_or_N2O4
+    - He|N2O
+    - He|C2H2
+    - He|HC_triple_C
+    - He|C_triple_C
+    - Ar|COS
+    - Ar|N2O
+    - Ar|C2H2
+    - Ar|HC_triple_C
+    - Ar|C_triple_C
+    - SO2|COS
+    - SO2|NH3
+    - SO2|NO2_or_N2O4
+    - SO2|N2O
+    - SO2|C2H2
+    - SO2|HC_triple_C
+    - SO2|C_triple_C
+    - O2|NO
+    - O2|COS
+    - O2|NH3
+    - O2|C2H2
+    - O2|HC_triple_C
+    - O2|C_triple_C
+    - NO|COS
+    - NO|NH3
+    - NO|NO2_or_N2O4
+    - NO|N2O
+    - NO|C2H2
+    - NO|HC_triple_C
+    - NO|C_triple_C
+    - COS|NH3
+    - COS|NO2_or_N2O4
+    - COS|N2O
+    - COS|C2H2
+    - COS|HC_triple_C
+    - COS|C_triple_C
+    - NH3|NO2_or_N2O4
+    - NH3|N2O
+    - NH3|C2H2
+    - NH3|HC_triple_C
+    - NH3|C_triple_C
+    - NO2_or_N2O4|N2O
+    - NO2_or_N2O4|C2H2
+    - NO2_or_N2O4|HC_triple_C
+    - NO2_or_N2O4|C_triple_C
+    - N2O|C2H2
+    - N2O|HC_triple_C
+    - N2O|C_triple_C
+    - C2H2|C_triple_C
+  component_groups:
+    nitrogen: {N2: 1}
+    oxygen: {O2: 1}
+    argon: {Ar: 1}
+    helium: {He: 1}
+    carbon_monoxide: {CO: 1}
+    carbon_dioxide: {CO2: 1}
+    hydrogen: {H2: 1}
+    hydrogen_sulfide: {H2S: 1}
+    water: {H2O: 1}
+    methane: {CH4: 1}
+    ethane: {C2H6: 1}
+    propane: {CH3: 2, CH2: 1}
+    isobutane: {CH3: 3, CH: 1}
+    n_butane: {CH3: 2, CH2: 2}
+    isopentane: {CH3: 3, CH2: 1, CH: 1}
+    n_pentane: {CH3: 2, CH2: 3}
+    n_hexane: {CH3: 2, CH2: 4}
+    n_heptane: {CH3: 2, CH2: 5}
+    n_octane: {CH3: 2, CH2: 6}
+    n_nonane: {CH3: 2, CH2: 7}
+    n_decane: {CH3: 2, CH2: 8}
+    benzene: {CH_aromatic: 6}
+    toluene: {CH3: 1, CH_aromatic: 5, C_aromatic: 1}
+    o_xylene: {CH3: 2, CH_aromatic: 4, C_aromatic: 2}
+    m_xylene: {CH3: 2, CH_aromatic: 4, C_aromatic: 2}
+    p_xylene: {CH3: 2, CH_aromatic: 4, C_aromatic: 2}
+    1_3_5_trimethylbenzene: {CH3: 3, CH_aromatic: 3, C_aromatic: 3}
+    ethylbenzene: {CH3: 1, CH2: 1, CH_aromatic: 5, C_aromatic: 1}
+    propylbenzene: {CH3: 1, CH2: 2, CH_aromatic: 5, C_aromatic: 1}
+    butylbenzene: {CH3: 1, CH2: 3, CH_aromatic: 5, C_aromatic: 1}
+    pentylbenzene: {CH3: 1, CH2: 4, CH_aromatic: 5, C_aromatic: 1}
+    cumene: {CH3: 2, CH: 1, CH_aromatic: 5, C_aromatic: 1}
+    ammonia: {NH3: 1}
+    sulfur_dioxide: {SO2: 1}

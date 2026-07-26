@@ -25,25 +25,42 @@ from .cubic import (
     CubicEOS,
     cubic_constants,
     cubic_eos,
+    enhanced_predictive_peng_robinson_1978,
     peng_robinson_1976,
     peng_robinson_1978,
     predictive_peng_robinson_1978,
     soave_redlich_kwong,
 )
+from .helmholtz import PureFluidHelmholtzEOS, PureFluidHelmholtzMetadata
+from .leachman import (
+    DEFAULT_LEACHMAN_NORMAL_HYDROGEN,
+    leachman_normal_hydrogen,
+)
 from .multifluid import (
+    MultiFluidEOS as MultiFluidEOS,
+)
+from .multifluid import (
+    MultifluidMetadata as MultifluidMetadata,
+)
+from .multiparameter import (
     GaoBTerms,
     HelmholtzTerms,
     IdealHelmholtzTerms,
-    MultiFluidEOS,
-    MultifluidMetadata,
+    MultiparameterEOS,
+    MultiparameterMetadata,
     NonAnalyticTerms,
 )
 from .named import (
     EOSCG2021_COMPONENTS,
     GERG2008_COMPONENTS,
+    GERG2008_HYDROGEN_2021_COMPONENTS,
     eoscg2021,
     gerg2008,
-    multifluid_eos,
+    gerg2008_hydrogen_2021,
+    multiparameter_eos,
+)
+from .named import (
+    multifluid_eos as multifluid_eos,
 )
 from .volume_translation import (
     HydrocarbonFamily,
@@ -58,8 +75,10 @@ from .volume_translation import (
 
 __all__ = [
     "CPAEOS",
+    "DEFAULT_LEACHMAN_NORMAL_HYDROGEN",
     "EOSCG2021_COMPONENTS",
     "GERG2008_COMPONENTS",
+    "GERG2008_HYDROGEN_2021_COMPONENTS",
     "PR76",
     "PR78",
     "SRK",
@@ -73,9 +92,11 @@ __all__ = [
     "HelmholtzTerms",
     "HydrocarbonFamily",
     "IdealHelmholtzTerms",
-    "MultiFluidEOS",
-    "MultifluidMetadata",
+    "MultiparameterEOS",
+    "MultiparameterMetadata",
     "NonAnalyticTerms",
+    "PureFluidHelmholtzEOS",
+    "PureFluidHelmholtzMetadata",
     "VolumeTranslation",
     "VolumeTranslationEOS",
     "cpa_components_from_cuts",
@@ -89,9 +110,12 @@ __all__ = [
     "cubic_constants",
     "cubic_eos",
     "density_matched_translation",
+    "enhanced_predictive_peng_robinson_1978",
     "eoscg2021",
     "gerg2008",
-    "multifluid_eos",
+    "gerg2008_hydrogen_2021",
+    "leachman_normal_hydrogen",
+    "multiparameter_eos",
     "pedersen_peneloux_translation",
     "pedersen_temperature_dependent_translation",
     "peng_robinson_1976",

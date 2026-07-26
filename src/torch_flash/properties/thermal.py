@@ -17,7 +17,7 @@ from torch import Tensor
 from torch_flash.constants import STANDARD_PRESSURE, R
 from torch_flash.exceptions import InvalidStateError
 from torch_flash.properties.state import StateModel
-from torch_flash.types import ChemicalState, PhaseKind
+from torch_flash.types import ChemicalState, PhaseKind, normalize_composition
 
 
 class CaloricStandardState(Protocol):
@@ -90,7 +90,7 @@ def _weighted_log_fugacity(
     phase: PhaseKind,
 ) -> Tensor:
     log_phi = model.log_fugacity_coefficients(temperature, pressure, composition, phase)
-    return torch.sum(composition * log_phi)
+    return torch.sum(composition * log_phi, dim=-1)
 
 
 def _residual_terms(
@@ -107,7 +107,10 @@ def _residual_terms(
         composition,
         phase,
     )
-    derivative = torch.func.grad(
+    # Temperature is scalar while the weighted fugacity may contain a large
+    # state batch. Forward-mode AD therefore propagates one input tangent and
+    # avoids the output-sized reverse sweeps required by a full Jacobian.
+    derivative = torch.func.jacfwd(
         lambda current_temperature: _weighted_log_fugacity(
             model,
             current_temperature,
@@ -140,6 +143,114 @@ def _enthalpy(
         phase,
     )
     return torch.sum(composition * standard_state.enthalpy(temperature)) + residual_enthalpy
+
+
+def molar_enthalpy_of_mixing(
+    model: StateModel,
+    temperature: Tensor,
+    pressure: Tensor,
+    composition: Tensor,
+    phase: PhaseKind = "stable",
+) -> Tensor:
+    r"""Return the isothermal-isobaric molar enthalpy change on mixing.
+
+    Parameters
+    ----------
+    model
+        Homogeneous-state model used for the mixture and pure-component
+        reference states.
+    temperature, pressure
+        Finite positive scalar temperature in K and pressure in Pa.
+    composition
+        Nonnegative mole fractions with components on the final axis. Leading
+        dimensions are evaluated as a batch of independent compositions at
+        the supplied temperature and pressure.
+    phase
+        Root-selection request applied independently to the mixture and every
+        pure-component reference state.
+
+    Returns
+    -------
+    Tensor
+        Molar enthalpy of mixing in J/mol. The result has the leading shape of
+        ``composition`` and is scalar for a single composition,
+
+        .. math::
+
+            h^\mathrm{M}(T,P,\mathbf{x})
+            = h(T,P,\mathbf{x})
+            - \sum_i x_i h_i(T,P).
+
+    Raises
+    ------
+    ValueError
+        If temperature, pressure, composition, or root selection is invalid.
+
+    Notes
+    -----
+    Ideal-gas component enthalpies cancel exactly between the mixture and its
+    unmixed pure-component reference states. The implementation therefore
+    evaluates only residual enthalpies from
+
+    .. math::
+
+        h^\mathrm{R}
+        = -R T^2
+          \left(\frac{\partial \sum_i x_i \ln\phi_i}
+          {\partial T}\right)_{P,\mathbf{x}},
+
+    with the temperature derivative obtained by PyTorch automatic
+    differentiation. This preserves derivatives with respect to equation-of-
+    state parameters and avoids requiring an arbitrary ideal-gas caloric
+    reference.
+
+    The definition matches the fixed-temperature, fixed-pressure enthalpy
+    change on mixing used to parameterize E-PPR78 by Xu, Lasala, Privat, and
+    Jaubert, *International Journal of Greenhouse Gas Control* 56 (2017)
+    126-154, doi:10.1016/j.ijggc.2016.11.015. The requested homogeneous root
+    must represent the experimental single-phase state; this function does
+    not perform a flash or silently average phase enthalpies inside a
+    two-phase region.
+    """
+    if phase not in ("liquid", "vapor", "stable"):
+        raise ValueError("enthalpy of mixing phase must be 'liquid', 'vapor', or 'stable'")
+    if temperature.ndim != 0 or not bool(torch.isfinite(temperature) & (temperature > 0.0)):
+        raise ValueError("enthalpy of mixing requires one finite positive temperature")
+    if pressure.ndim != 0 or not bool(torch.isfinite(pressure) & (pressure > 0.0)):
+        raise ValueError("enthalpy of mixing requires one finite positive pressure")
+    if not composition.is_floating_point() or composition.ndim < 1:
+        raise ValueError(
+            "enthalpy of mixing composition must be a floating tensor with a final component axis"
+        )
+    if not bool(torch.isfinite(composition).all() & (composition >= 0.0).all()):
+        raise ValueError("enthalpy of mixing composition must be finite and nonnegative")
+
+    normalized = normalize_composition(composition)
+    component_count = normalized.shape[-1]
+    if component_count < 2:
+        raise ValueError("enthalpy of mixing requires at least two components")
+    solve_temperature = temperature.to(dtype=normalized.dtype, device=normalized.device)
+    solve_pressure = pressure.to(dtype=normalized.dtype, device=normalized.device)
+    mixture_enthalpy, _ = _residual_terms(
+        model,
+        solve_temperature,
+        solve_pressure,
+        normalized,
+        phase,
+    )
+    pure_compositions = torch.eye(
+        component_count,
+        dtype=normalized.dtype,
+        device=normalized.device,
+    )
+    pure_enthalpies, _ = _residual_terms(
+        model,
+        solve_temperature,
+        solve_pressure,
+        pure_compositions,
+        phase,
+    )
+    return mixture_enthalpy - torch.sum(normalized * pure_enthalpies, dim=-1)
 
 
 def _mixture_molar_mass(

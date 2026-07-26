@@ -8,6 +8,7 @@ import pytest
 import torch
 import yaml
 
+import torch_flash
 import torch_flash.database as database_module
 import torch_flash.eos.named as named_module
 from torch_flash import (
@@ -28,13 +29,19 @@ from torch_flash import (
     ideal_gas_polynomial,
     load_component_database,
     load_model_parameters,
-    multifluid_eos,
+    multiparameter_eos,
     peng_robinson_1978,
 )
 from torch_flash.activity import NRTL, HuronVidalNRTL, Wilson
 from torch_flash.components import clear_component_caches
 from torch_flash.database import _parse_yaml
-from torch_flash.eos import CPAEOS, CPAComponent, CubicConstants
+from torch_flash.eos import (
+    CPAEOS,
+    CPAComponent,
+    CubicConstants,
+    MultiparameterEOS,
+    MultiparameterMetadata,
+)
 from torch_flash.eos.named import eoscg2021, gerg2008
 from torch_flash.exceptions import ParameterDatabaseError
 from torch_flash.parameters import CubicInteractionParameters
@@ -114,7 +121,7 @@ def test_bundled_registry_caching_metadata_and_immutability():
         "cubic.srk-1972",
     }
     first = load_model_parameters("gerg2008")
-    second = load_model_parameters("multifluid.gerg-2008")
+    second = load_model_parameters("multiparameter.gerg-2008")
     assert first is second
     assert first.model == "GERG-2008"
     assert first.units["critical_temperature"] == "K"
@@ -660,33 +667,69 @@ def test_standard_state_database_and_custom_reference_values():
         ideal_gas_polynomial(("water",), _model_parameter_kind("cubic"))
 
 
-def test_generic_multifluid_database_factory_and_model_guards():
-    direct = multifluid_eos("gerg2008", ("h2", "ch4"))
+def test_generic_multiparameter_database_factory_and_model_guards():
+    direct = multiparameter_eos("gerg2008", ("h2", "ch4"))
     named = gerg2008(("hydrogen", "methane"))
     torch.testing.assert_close(direct.pure_n, named.pure_n)
-    eoscg = multifluid_eos(load_model_parameters("eoscg2021"), ("co2", "h2"))
+    eoscg = multiparameter_eos(load_model_parameters("eoscg2021"), ("co2", "h2"))
     torch.testing.assert_close(
         eoscg.pure_n,
         eoscg2021(("carbon_dioxide", "hydrogen")).pure_n,
     )
-    with pytest.raises(ParameterDatabaseError, match="not 'multifluid'"):
-        multifluid_eos(_model_parameter_kind("cubic"))
-    with pytest.raises(ParameterDatabaseError, match="unsupported multifluid"):
-        multifluid_eos(ModelParameterSet("custom", "multifluid", "unknown", "1", {}))
+    with pytest.raises(ParameterDatabaseError, match="not 'multiparameter'"):
+        multiparameter_eos(_model_parameter_kind("cubic"))
+    with pytest.raises(ParameterDatabaseError, match="unsupported multiparameter"):
+        multiparameter_eos(ModelParameterSet("custom", "multiparameter", "unknown", "1", {}))
 
     gerg_data = load_model_parameters("gerg2008").as_dict()
     gerg2004 = ModelParameterSet(
-        "multifluid.custom-gerg-2004",
-        "multifluid",
+        "multiparameter.custom-gerg-2004",
+        "multiparameter",
         "GERG-2004",
         "2004",
         gerg_data,
     )
-    assert multifluid_eos(gerg2004, ("methane",)).metadata.version == "2004"
+    assert multiparameter_eos(gerg2004, ("methane",)).metadata.version == "2004"
     with pytest.raises(ParameterDatabaseError, match="requires a GERG-2008"):
         gerg2008(("methane",), parameter_set=gerg2004)
     with pytest.raises(ParameterDatabaseError, match="requires an EOS-CG-2021"):
         eoscg2021(("carbon_dioxide",), parameter_set=gerg2004)
+
+
+def test_legacy_multifluid_api_and_parameter_ids_redirect_to_multiparameter():
+    assert torch_flash.MultiFluidEOS is MultiparameterEOS
+    assert torch_flash.MultifluidMetadata is MultiparameterMetadata
+
+    with pytest.warns(DeprecationWarning, match="multiparameter_eos"):
+        legacy_factory_model = torch_flash.multifluid_eos(
+            "multiparameter.gerg-2008",
+            ("methane",),
+        )
+    assert isinstance(legacy_factory_model, MultiparameterEOS)
+    with pytest.warns(DeprecationWarning, match="'multifluid.' parameter prefix"):
+        assert (
+            load_model_parameters("multifluid.gerg-2008").identifier == "multiparameter.gerg-2008"
+        )
+    with pytest.warns(DeprecationWarning, match="model_kind='multifluid'"):
+        assert available_parameter_sets(model_kind="multifluid") == (
+            "multiparameter.eos-cg-2021",
+            "multiparameter.gerg-2008",
+            "multiparameter.gerg-2008-hydrogen-2021",
+        )
+
+    canonical = load_model_parameters("multiparameter.gerg-2008")
+    legacy_kind = ModelParameterSet(
+        "multifluid.custom-gerg-2008",
+        "multifluid",
+        canonical.model,
+        canonical.version,
+        canonical.parameters,
+        canonical.units,
+        canonical.references,
+    )
+    with pytest.warns(DeprecationWarning, match="model_kind='multifluid'"):
+        legacy_kind_model = multiparameter_eos(legacy_kind, ("methane",))
+    assert isinstance(legacy_kind_model, MultiparameterEOS)
 
 
 @pytest.mark.parametrize(
@@ -1043,10 +1086,10 @@ def test_standard_state_payload_error_branches():
         )
 
 
-def _custom_multifluid(identifier, model, data, references=()):
+def _custom_multiparameter(identifier, model, data, references=()):
     return ModelParameterSet(
         identifier,
-        "multifluid",
+        "multiparameter",
         model,
         "test",
         data,
@@ -1054,32 +1097,36 @@ def _custom_multifluid(identifier, model, data, references=()):
     )
 
 
-def test_multifluid_parameter_payload_error_and_fallback_branches():
+def test_multiparameter_parameter_payload_error_and_fallback_branches():
     gerg = load_model_parameters("gerg2008").as_dict()
     no_order = deepcopy(gerg)
     no_order.pop("component_order")
     with pytest.raises(ParameterDatabaseError, match="component_order"):
-        multifluid_eos(_custom_multifluid("multifluid.no-order", "GERG-test", no_order))
+        multiparameter_eos(_custom_multiparameter("multiparameter.no-order", "GERG-test", no_order))
     duplicate_order = deepcopy(gerg)
     duplicate_order["component_order"][1] = duplicate_order["component_order"][0]
     with pytest.raises(ParameterDatabaseError, match="must be unique"):
-        multifluid_eos(_custom_multifluid("multifluid.duplicate", "GERG-test", duplicate_order))
+        multiparameter_eos(
+            _custom_multiparameter("multiparameter.duplicate", "GERG-test", duplicate_order)
+        )
     no_components = deepcopy(gerg)
     no_components["components"] = []
     with pytest.raises(ParameterDatabaseError, match="components and pairs"):
-        multifluid_eos(_custom_multifluid("multifluid.no-components", "GERG-test", no_components))
+        multiparameter_eos(
+            _custom_multiparameter("multiparameter.no-components", "GERG-test", no_components)
+        )
     no_gas = deepcopy(gerg)
     no_gas.pop("gas_constant")
     with pytest.raises(ParameterDatabaseError, match="gas_constant"):
-        multifluid_eos(
-            _custom_multifluid("multifluid.no-gas", "GERG-test", no_gas),
+        multiparameter_eos(
+            _custom_multiparameter("multiparameter.no-gas", "GERG-test", no_gas),
             ("methane",),
         )
     no_reference = deepcopy(gerg)
     no_reference.pop("reference")
-    fallback = multifluid_eos(
-        _custom_multifluid(
-            "multifluid.reference",
+    fallback = multiparameter_eos(
+        _custom_multiparameter(
+            "multiparameter.reference",
             "GERG-test",
             no_reference,
             ({"doi": "10.test/gerg"},),
@@ -1092,21 +1139,21 @@ def test_multifluid_parameter_payload_error_and_fallback_branches():
     no_components = deepcopy(eoscg)
     no_components["pairs"] = []
     with pytest.raises(ParameterDatabaseError, match="components and pairs"):
-        multifluid_eos(
-            _custom_multifluid("multifluid.eoscg-no-pairs", "EOS-CG-test", no_components)
+        multiparameter_eos(
+            _custom_multiparameter("multiparameter.eoscg-no-pairs", "EOS-CG-test", no_components)
         )
     no_gas = deepcopy(eoscg)
     no_gas.pop("gas_constant")
     with pytest.raises(ParameterDatabaseError, match="gas_constant"):
-        multifluid_eos(
-            _custom_multifluid("multifluid.eoscg-no-gas", "EOS-CG-test", no_gas),
+        multiparameter_eos(
+            _custom_multiparameter("multiparameter.eoscg-no-gas", "EOS-CG-test", no_gas),
             ("carbon_dioxide",),
         )
     no_reference = deepcopy(eoscg)
     no_reference.pop("reference")
-    fallback = multifluid_eos(
-        _custom_multifluid(
-            "multifluid.eoscg-reference",
+    fallback = multiparameter_eos(
+        _custom_multiparameter(
+            "multiparameter.eoscg-reference",
             "EOS-CG-test",
             no_reference,
             ({"citation": "EOS-CG test"},),
@@ -1123,7 +1170,7 @@ def test_multifluid_parameter_payload_error_and_fallback_branches():
 
 
 @pytest.mark.parametrize("departure", [1.0, ["not-a-mapping"]])
-def test_multifluid_departure_payload_validation(departure):
+def test_multiparameter_departure_payload_validation(departure):
     data = {
         "pairs": {
             "a|b": {

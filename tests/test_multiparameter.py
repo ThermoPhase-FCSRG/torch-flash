@@ -3,12 +3,12 @@ from __future__ import annotations
 import pytest
 import torch
 
-from torch_flash.eos.multifluid import (
+from torch_flash.eos.multiparameter import (
     GaoBTerms,
     HelmholtzTerms,
     IdealHelmholtzTerms,
-    MultiFluidEOS,
-    MultifluidMetadata,
+    MultiparameterEOS,
+    MultiparameterMetadata,
     NonAnalyticTerms,
 )
 from torch_flash.exceptions import ConvergenceError
@@ -27,7 +27,7 @@ def _model(*, trainable=False, residual=0.0):
     pure = _terms((2, 1), residual)
     departure = _terms((2, 2, 1), residual)
     ones = torch.ones((2, 2), dtype=torch.float64)
-    return MultiFluidEOS(
+    return MultiparameterEOS(
         ("methane", "carbon_dioxide"),
         torch.tensor([190.564, 304.1282], dtype=torch.float64),
         torch.tensor([10_139.0, 10_625.0], dtype=torch.float64),
@@ -39,8 +39,8 @@ def _model(*, trainable=False, residual=0.0):
         ones,
         ones,
         torch.zeros_like(ones),
-        MultifluidMetadata(
-            "test-multifluid",
+        MultiparameterMetadata(
+            "test-multiparameter",
             "synthetic regression",
             "1",
             ("methane", "carbon_dioxide"),
@@ -107,11 +107,11 @@ def test_helmholtz_term_shape_validation():
         )
 
 
-def test_multifluid_validation_errors():
+def test_multiparameter_validation_errors():
     pure = _terms((1, 1))
     departure = _terms((2, 2, 1))
     ones = torch.ones((2, 2), dtype=torch.float64)
-    metadata = MultifluidMetadata("x", "x", "x", ())
+    metadata = MultiparameterMetadata("x", "x", "x", ())
     arguments = (
         ("a", "b"),
         torch.ones(2),
@@ -127,13 +127,13 @@ def test_multifluid_validation_errors():
         metadata,
     )
     with pytest.raises(ValueError, match="one row"):
-        MultiFluidEOS(*arguments)
+        MultiparameterEOS(*arguments)
     valid_pure = _terms((2, 1))
     bad_departure = _terms((1, 2, 1))
     with pytest.raises(ValueError, match="component, component"):
-        MultiFluidEOS(*arguments[:4], valid_pure, bad_departure, *arguments[6:])
+        MultiparameterEOS(*arguments[:4], valid_pure, bad_departure, *arguments[6:])
     with pytest.raises(ValueError, match="square"):
-        MultiFluidEOS(
+        MultiparameterEOS(
             *arguments[:4],
             valid_pure,
             departure,
@@ -142,7 +142,7 @@ def test_multifluid_validation_errors():
         )
     special = torch.zeros((1, 1))
     with pytest.raises(ValueError, match="Gao-B term table"):
-        MultiFluidEOS(
+        MultiparameterEOS(
             *arguments[:4],
             valid_pure,
             departure,
@@ -150,7 +150,7 @@ def test_multifluid_validation_errors():
             pure_gaob_terms=GaoBTerms(*(special for _ in range(8))),
         )
     with pytest.raises(ValueError, match="non-analytic term table"):
-        MultiFluidEOS(
+        MultiparameterEOS(
             *arguments[:4],
             valid_pure,
             departure,
@@ -160,7 +160,7 @@ def test_multifluid_validation_errors():
     vector = torch.zeros(1)
     table = torch.zeros((1, 1))
     with pytest.raises(ValueError, match="ideal Helmholtz tables"):
-        MultiFluidEOS(
+        MultiparameterEOS(
             *arguments[:4],
             valid_pure,
             departure,
@@ -182,7 +182,7 @@ def test_multifluid_validation_errors():
         )
 
 
-def test_multifluid_ideal_limit_and_state_methods():
+def test_multiparameter_ideal_limit_and_state_methods():
     model = _model()
     temperature = torch.tensor(300.0, dtype=torch.float64)
     pressure = torch.tensor(2.0e6, dtype=torch.float64)
@@ -216,12 +216,12 @@ def test_multifluid_ideal_limit_and_state_methods():
         )
     with pytest.raises(ValueError, match="unknown phase"):
         model.molar_volume(temperature, pressure, composition, "solid")
-    assert model.metadata.model == "test-multifluid"
+    assert model.metadata.model == "test-multiparameter"
     with pytest.raises(RuntimeError, match="no ideal"):
         model.alpha_ideal(temperature, torch.tensor(1000.0), composition)
 
 
-def test_multifluid_residual_and_trainable_gradients():
+def test_multiparameter_residual_and_trainable_gradients():
     model = _model(trainable=True, residual=0.01)
     temperature = torch.tensor(300.0, dtype=torch.float64)
     density = torch.tensor(500.0, dtype=torch.float64)
@@ -233,7 +233,27 @@ def test_multifluid_residual_and_trainable_gradients():
     assert model.departure_n.grad is not None
 
 
-def test_multifluid_gaussian_terms():
+def test_multiparameter_analytic_reduced_density_derivative_matches_autodiff():
+    model = _model(residual=0.01)
+    temperature = torch.tensor(280.0, dtype=torch.float64)
+    density = torch.tensor(4_000.0, dtype=torch.float64)
+    composition = torch.tensor([0.35, 0.65], dtype=torch.float64)
+    _, reducing_density = model.reducing_functions(composition)
+    autodiff = (
+        torch.func.grad(
+            lambda current_density: model.alpha_residual(
+                temperature,
+                current_density,
+                composition,
+            )
+        )(density)
+        * reducing_density
+    )
+    analytic = model.alpha_residual_delta(temperature, density, composition)
+    torch.testing.assert_close(analytic, autodiff, rtol=2.0e-13, atol=1.0e-15)
+
+
+def test_multiparameter_gaussian_terms():
     shape = (2, 1)
     pure = HelmholtzTerms(
         torch.ones(shape, dtype=torch.float64),
@@ -247,7 +267,7 @@ def test_multifluid_gaussian_terms():
     )
     departure = _terms((2, 2, 1))
     ones = torch.ones((2, 2), dtype=torch.float64)
-    model = MultiFluidEOS(
+    model = MultiparameterEOS(
         ("a", "b"),
         torch.tensor([200.0, 300.0], dtype=torch.float64),
         torch.tensor([10_000.0, 12_000.0], dtype=torch.float64),
@@ -259,7 +279,7 @@ def test_multifluid_gaussian_terms():
         ones,
         ones,
         torch.zeros_like(ones),
-        MultifluidMetadata("gaussian", "synthetic", "1", ("a", "b")),
+        MultiparameterMetadata("gaussian", "synthetic", "1", ("a", "b")),
     )
     value = model.alpha_residual(
         torch.tensor(250.0, dtype=torch.float64),
@@ -269,7 +289,7 @@ def test_multifluid_gaussian_terms():
     assert value > 0.0
 
 
-def test_multifluid_density_failure(monkeypatch):
+def test_multiparameter_density_failure(monkeypatch):
     model = _model()
     monkeypatch.setattr(
         model,
@@ -284,7 +304,7 @@ def test_multifluid_density_failure(monkeypatch):
         )
 
 
-def test_multifluid_batched_stable_liquid_and_scalar_fallbacks(monkeypatch):
+def test_multiparameter_batched_stable_liquid_and_scalar_fallbacks(monkeypatch):
     model = _model()
     temperatures = torch.tensor([300.0, 320.0], dtype=torch.float64)
     pressures = torch.tensor([1.0e5, 2.0e5], dtype=torch.float64)
@@ -349,7 +369,32 @@ def test_multifluid_batched_stable_liquid_and_scalar_fallbacks(monkeypatch):
     assert scalar_fallbacks == [320.0]
 
 
-def test_multifluid_nonfinite_scalar_newton_step_falls_back(monkeypatch):
+def test_multiparameter_batched_stable_volume_falls_back_only_failed_states(monkeypatch):
+    model = _model()
+    temperatures = torch.tensor([300.0, 320.0], dtype=torch.float64)
+    pressures = torch.tensor([1.0e5, 2.0e5], dtype=torch.float64)
+    compositions = torch.tensor([[0.8, 0.2], [0.4, 0.6]], dtype=torch.float64)
+    expected = model.gas_constant * temperatures / pressures
+
+    def partial_phase_volume(
+        temperature,
+        pressure,
+        composition,
+        phase,
+        *,
+        return_convergence=False,
+    ):
+        del composition, phase
+        volumes = model.gas_constant * temperature / pressure
+        converged = torch.tensor([True, False], device=temperature.device)
+        return (volumes, converged) if return_convergence else volumes
+
+    monkeypatch.setattr(model, "_batched_phase_volume", partial_phase_volume)
+    stable = model._batched_stable_volume(temperatures, pressures, compositions)
+    torch.testing.assert_close(stable, expected, rtol=1.0e-10, atol=0.0)
+
+
+def test_multiparameter_nonfinite_scalar_newton_step_falls_back(monkeypatch):
     model = _model()
     monkeypatch.setattr(
         model,

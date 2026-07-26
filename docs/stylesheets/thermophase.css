@@ -167,18 +167,9 @@
   width: 100%;
 }
 
-.tp-logo-plate__primary {
-  overflow: hidden;
-}
-
-.tp-logo-plate > .tp-logo-plate__primary > img {
-  /*
-   * The source has a 1400x600 transparent canvas around content occupying
-   * y=147..446. Keep 60 source pixels of breathing room above and below the
-   * visible mark while preserving its current horizontal scale.
-   */
-  margin-bottom: -6.714%;
-  margin-top: -6.214%;
+.tp-logo-plate__product {
+  margin: 0 auto;
+  max-width: 34rem;
 }
 
 .tp-affiliation {
@@ -199,6 +190,11 @@
   grid-template-columns: repeat(2, minmax(0, 1fr));
   max-width: 72%;
   min-width: 0;
+}
+
+.tp-affiliation__logos--three {
+  grid-template-columns: minmax(0, 1.45fr) repeat(2, minmax(0, 1fr));
+  max-width: 82%;
 }
 
 .tp-affiliation__logos > a {
@@ -277,6 +273,10 @@
     max-width: 100%;
     width: 100%;
   }
+
+  .tp-affiliation__logos--three {
+    grid-template-columns: minmax(0, 1.45fr) repeat(2, minmax(0, 1fr));
+  }
 }
 
 @media screen and (max-width: 59.984375em) {
@@ -309,6 +309,10 @@
   .tp-affiliation__logos {
     max-width: 100%;
     width: 100%;
+  }
+
+  .tp-affiliation__logos--three {
+    grid-template-columns: minmax(0, 1.45fr) repeat(2, minmax(0, 1fr));
   }
 
   .tp-hero__actions {

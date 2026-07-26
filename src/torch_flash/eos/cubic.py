@@ -29,6 +29,7 @@ from torch_flash.mixing import (
     TemperatureDependentQuadraticMixing,
 )
 from torch_flash.parameters.group_contribution import (
+    DEFAULT_EPPR78_GROUP_CONTRIBUTION,
     DEFAULT_PPR78_GROUP_CONTRIBUTION,
     ppr78_mixing,
 )
@@ -1033,7 +1034,9 @@ def predictive_peng_robinson_1978(
     components
         Ordered component set.
     parameter_set
-        PPR78 group-contribution parameter source.
+        PPR78 group-contribution parameter source. Use
+        ``PPR78_HYDROGEN_WATER_GROUP_CONTRIBUTION`` for the published
+        H2/N2/H2O submatrix.
     group_counts
         Optional explicit component group decompositions.
     trainable
@@ -1051,9 +1054,12 @@ def predictive_peng_robinson_1978(
     -----
     The default parameter set is the original six-group saturated-hydrocarbon
     fit of Jaubert and Mutelet (2004), doi:10.1016/j.fluid.2004.06.059.
-    Custom YAML parameter sets and explicit component group counts use the
-    same path. ``trainable=True`` exposes the unique universal A/B group
-    interactions as PyTorch parameters.
+    The separate H2/N2/H2O parameter set combines the hydrogen-group
+    extension of Qian et al. (2013), doi:10.1016/j.supflu.2012.12.014, and
+    the water-group extension of Qian et al. (2013),
+    doi:10.1021/ie402541h. Custom YAML parameter sets and explicit component
+    group counts use the same path. ``trainable=True`` exposes the unique
+    universal A/B group interactions as PyTorch parameters.
 
     PPR78 was derived with the linear covolume rule, so co-volume interactions
     are intentionally not accepted by this named constructor.
@@ -1067,5 +1073,76 @@ def predictive_peng_robinson_1978(
             group_counts=group_counts,
             trainable=trainable,
         ),
+        volume_translation=volume_translation,
+    )
+
+
+def enhanced_predictive_peng_robinson_1978(
+    components: ComponentSet,
+    *,
+    parameter_set: ParameterSource = DEFAULT_EPPR78_GROUP_CONTRIBUTION,
+    group_counts: Mapping[str, Mapping[str, float]] | Tensor | None = None,
+    trainable: bool = False,
+    volume_translation: Tensor | VolumeTranslation | None = None,
+) -> CubicEOS:
+    """Construct E-PPR78 with the global 40-group ``kij(T)`` correlation.
+
+    Parameters
+    ----------
+    components
+        Ordered component set. The bundled parameter document supplies
+        decompositions for the package's unambiguous hydrocarbon, permanent
+        gas, water, ammonia, and sulfur-dioxide components.
+    parameter_set
+        E-PPR78 group-contribution parameter source. The default is the
+        global 40-group 2022 revision. A custom source must use the same
+        pressure-valued A/B convention and explicitly classify unavailable
+        group pairs.
+    group_counts
+        Optional explicit component group counts overriding stored
+        decompositions. Counts are normalized to molecular group fractions.
+    trainable
+        Register the active, unique off-diagonal A/B group interactions as
+        PyTorch parameters.
+    volume_translation
+        Optional additive volume translation in m3/mol.
+
+    Returns
+    -------
+    CubicEOS
+        PR78 pure-component equation with
+        :class:`~torch_flash.mixing.PPR78Mixing` configured from E-PPR78.
+
+    Raises
+    ------
+    KeyError
+        If a requested component lacks a bundled decomposition.
+    ParameterDatabaseError
+        If the parameter document is malformed or an interaction between two
+        active groups is explicitly unavailable.
+
+    Notes
+    -----
+    E-PPR78 retains the predictive Peng--Robinson group-contribution equation
+    but uses the refitted group interactions of Jaubert, Qian, Lasala, and
+    Privat, *Fluid Phase Equilibria* 560 (2022) 113456,
+    doi:10.1016/j.fluid.2022.113456, Eq. (5) and Table S4. The bundled
+    database contains all 40 named groups, 356 available group pairs, and 424
+    explicitly unavailable pairs from that source. The CCS use case follows
+    Xu et al., *International Journal of Greenhouse Gas Control* 56 (2017)
+    126--154, doi:10.1016/j.ijggc.2016.11.015; the default numerical values
+    are the later 2022 global revision.
+
+    Only groups active in ``components`` are materialized for an incomplete
+    interaction inventory. This avoids turning an unavailable pair into a
+    numerical zero and keeps fitting tensors proportional to the selected
+    problem. E-PPR78 uses the linear covolume rule defined by the published
+    model.
+    """
+    return predictive_peng_robinson_1978(
+        components,
+        parameter_set=parameter_set,
+        group_counts=group_counts,
+        trainable=trainable,
         volume_translation=volume_translation,
     )

@@ -139,6 +139,42 @@ def test_damped_newton_solution_bounds_and_failure_paths(monkeypatch):
     assert result.converged
     torch.testing.assert_close(result.solution, torch.tensor([2.0], dtype=torch.float64))
 
+    broyden = damped_newton(
+        lambda value: value.square() - 4.0,
+        torch.tensor([3.0], dtype=torch.float64),
+        jacobian_refresh_interval=4,
+    )
+    assert broyden.converged
+    torch.testing.assert_close(
+        broyden.solution,
+        torch.tensor([2.0], dtype=torch.float64),
+    )
+
+    original_dot = torch.dot
+    monkeypatch.setattr(
+        torch,
+        "dot",
+        lambda left, right: torch.zeros_like(original_dot(left, right)),
+    )
+    zero_length_broyden_update = damped_newton(
+        lambda value: value.square() - 4.0,
+        torch.tensor([3.0], dtype=torch.float64),
+        jacobian_refresh_interval=4,
+    )
+    monkeypatch.setattr(torch, "dot", original_dot)
+    assert zero_length_broyden_update.converged
+    torch.testing.assert_close(
+        zero_length_broyden_update.solution,
+        torch.tensor([2.0], dtype=torch.float64),
+    )
+
+    with pytest.raises(ValueError, match="refresh interval"):
+        damped_newton(
+            lambda value: value,
+            torch.tensor([1.0], dtype=torch.float64),
+            jacobian_refresh_interval=0,
+        )
+
     final_iteration = damped_newton(
         lambda value: value - 2.0,
         torch.tensor([0.0], dtype=torch.float64),

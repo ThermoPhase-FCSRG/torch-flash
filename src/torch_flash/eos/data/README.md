@@ -1,6 +1,6 @@
-# Bundled multifluid coefficient data
+# Bundled multiparameter coefficient data
 
-`../../data/models/multifluid/gerg-2008.yaml` contains the complete
+`../../data/models/multiparameter/gerg-2008.yaml` contains the complete
 21-component GERG-2008 Helmholtz
 coefficient inventory: all pure-fluid ideal and residual equations, all 210
 binary reducing-parameter sets, and the 15 nonzero binary departure
@@ -12,7 +12,7 @@ implementation in
 [NIST `teqp` 0.23.2](https://github.com/usnistgov/teqp/tree/v0.23.2).
 The applicable NIST notice is reproduced in `THIRD_PARTY_NOTICES.md`.
 
-`../../data/models/multifluid/eos-cg-2021.yaml` contains the complete
+`../../data/models/multiparameter/eos-cg-2021.yaml` contains the complete
 16-component EOS-CG-2021 Helmholtz
 inventory: all pure-fluid ideal and residual equations, all 120 binary
 reducing-parameter sets, and the 21 departure functions. The primary mixture

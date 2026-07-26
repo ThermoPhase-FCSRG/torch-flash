@@ -8,12 +8,16 @@ import torch
 import yaml
 
 from torch_flash import (
+    DEFAULT_EPPR78_GROUP_CONTRIBUTION,
+    EPPR78_CCS_GROUP_CONTRIBUTION,
+    PPR78_HYDROGEN_WATER_GROUP_CONTRIBUTION,
     ComponentSet,
     ModelParameterSet,
     PPR78GroupContributionParameters,
     available_parameter_sets,
     binary_bubble_point,
     component_set,
+    enhanced_predictive_peng_robinson_1978,
     load_model_parameters,
     peng_robinson_1978,
     ppr78_group_contribution_parameters,
@@ -60,6 +64,244 @@ def test_ppr78_database_preserves_table_1_and_component_decompositions():
     torch.testing.assert_close(parameters.group_b, parameters.group_b.mT)
     assert not bool(torch.diagonal(parameters.group_a).count_nonzero())
     assert not bool(torch.diagonal(parameters.group_b).count_nonzero())
+
+
+def test_ppr78_hydrogen_water_database_preserves_published_submatrix():
+    components = component_set(("hydrogen", "nitrogen", "water"), dtype=DTYPE)
+    parameters = ppr78_group_contribution_parameters(
+        components,
+        "ppr78-hydrogen-water",
+    )
+
+    assert PPR78_HYDROGEN_WATER_GROUP_CONTRIBUTION in available_parameter_sets(
+        model_kind="group_contribution"
+    )
+    assert parameters.parameter_set == PPR78_HYDROGEN_WATER_GROUP_CONTRIBUTION
+    assert parameters.group_names == ("H2", "N2", "H2O")
+    torch.testing.assert_close(parameters.group_fractions, torch.eye(3, dtype=DTYPE))
+    torch.testing.assert_close(
+        parameters.group_a,
+        torch.tensor(
+            [
+                [0.0, 65.20e6, 830.8e6],
+                [65.20e6, 0.0, 2574.0e6],
+                [830.8e6, 2574.0e6, 0.0],
+            ],
+            dtype=DTYPE,
+        ),
+    )
+    torch.testing.assert_close(
+        parameters.group_b,
+        torch.tensor(
+            [
+                [0.0, 70.10e6, -137.9e6],
+                [70.10e6, 0.0, 5490.0e6],
+                [-137.9e6, 5490.0e6, 0.0],
+            ],
+            dtype=DTYPE,
+        ),
+    )
+
+
+def test_eppr78_global_database_preserves_inventory_and_ccs_parameters():
+    loaded = load_model_parameters(DEFAULT_EPPR78_GROUP_CONTRIBUTION)
+    payload = loaded.as_dict()
+
+    assert EPPR78_CCS_GROUP_CONTRIBUTION == DEFAULT_EPPR78_GROUP_CONTRIBUTION
+    assert load_model_parameters("eppr78-ccs").identifier == DEFAULT_EPPR78_GROUP_CONTRIBUTION
+    assert DEFAULT_EPPR78_GROUP_CONTRIBUTION in available_parameter_sets(
+        model_kind="group_contribution"
+    )
+    assert loaded.model == "E-PPR78"
+    assert loaded.version == "2022-global-40-group"
+    assert len(payload["groups"]) == 40
+    assert len(payload["interactions"]) == 356
+    assert len(payload["unavailable_interactions"]) == 424
+    assert len(payload["interactions"]) + len(payload["unavailable_interactions"]) == 780
+    assert payload["interactions"]["CH4|CO2"] == {
+        "A": 136.6e6,
+        "B": 214.8e6,
+    }
+    assert payload["interactions"]["CO2|H2"] == {
+        "A": 261.1e6,
+        "B": 300.9e6,
+    }
+    assert payload["interactions"]["CO2|O2"] == {
+        "A": 154.4e6,
+        "B": 109.8e6,
+    }
+    assert payload["interactions"]["H2O|CO"] == {
+        "A": 715.1e6,
+        "B": -89.90e6,
+    }
+    assert "O2|NH3" in payload["unavailable_interactions"]
+
+
+def test_eppr78_selects_active_groups_and_builds_ccs_model():
+    components = component_set(
+        ("carbon_dioxide", "hydrogen", "water"),
+        dtype=DTYPE,
+    )
+    parameters = ppr78_group_contribution_parameters(
+        components,
+        DEFAULT_EPPR78_GROUP_CONTRIBUTION,
+    )
+
+    assert parameters.group_names == ("CO2", "H2O", "H2")
+    torch.testing.assert_close(
+        parameters.group_fractions,
+        torch.tensor(
+            [[1.0, 0.0, 0.0], [0.0, 0.0, 1.0], [0.0, 1.0, 0.0]],
+            dtype=DTYPE,
+        ),
+    )
+    torch.testing.assert_close(
+        parameters.group_a,
+        torch.tensor(
+            [
+                [0.0, 559.3e6, 261.1e6],
+                [559.3e6, 0.0, 830.8e6],
+                [261.1e6, 830.8e6, 0.0],
+            ],
+            dtype=DTYPE,
+        ),
+    )
+    model = enhanced_predictive_peng_robinson_1978(components, trainable=True)
+    assert isinstance(model.mixing, PPR78Mixing)
+    assert model.mixing.parameter_set == DEFAULT_EPPR78_GROUP_CONTRIBUTION
+    assert model.mixing.ngroups == 3
+    assert model.mixing.raw_group_a.numel() == 3
+    kij = model.mixing.kij(
+        torch.tensor(300.0, dtype=DTYPE),
+        *model.pure_parameters(torch.tensor(300.0, dtype=DTYPE)),
+    )
+    assert bool(torch.isfinite(kij).all())
+
+
+def test_eppr78_rejects_an_unavailable_active_ccs_pair():
+    with pytest.raises(
+        ParameterDatabaseError,
+        match=r"no E-PPR78 interaction for active groups 'H2S'\\|'O2'",
+    ):
+        enhanced_predictive_peng_robinson_1978(
+            component_set(("hydrogen_sulfide", "oxygen"), dtype=DTYPE)
+        )
+
+
+@pytest.mark.parametrize(
+    ("mutation", "message"),
+    [
+        (
+            lambda parameters: parameters.update(unavailable_interactions="H2S|O2"),
+            "must be a string list",
+        ),
+        (
+            lambda parameters: parameters["unavailable_interactions"].append("invalid"),
+            "keys must have the form",
+        ),
+        (
+            lambda parameters: parameters["unavailable_interactions"].append(
+                parameters["unavailable_interactions"][0]
+            ),
+            "duplicate unavailable interaction",
+        ),
+        (
+            lambda parameters: parameters["unavailable_interactions"].append("CH3|CH2"),
+            "both available and unavailable",
+        ),
+        (
+            lambda parameters: parameters["unavailable_interactions"].pop(),
+            "explicitly account for all",
+        ),
+    ],
+)
+def test_eppr78_rejects_malformed_availability_inventory(mutation, message):
+    bundled = load_model_parameters(DEFAULT_EPPR78_GROUP_CONTRIBUTION)
+    parameters = bundled.as_dict()
+    mutation(parameters)
+    invalid = ModelParameterSet(
+        identifier="group-contribution.invalid-eppr78",
+        model_kind="group_contribution",
+        model="E-PPR78",
+        version="invalid",
+        parameters=parameters,
+        units=dict(bundled.units),
+    )
+    with pytest.raises(ParameterDatabaseError, match=message):
+        ppr78_group_contribution_parameters(
+            component_set(("propane", "n_butane"), dtype=DTYPE),
+            invalid,
+        )
+
+
+def test_eppr78_single_active_group_is_a_valid_pure_component_model():
+    model = enhanced_predictive_peng_robinson_1978(component_set(("carbon_dioxide",), dtype=DTYPE))
+    assert isinstance(model.mixing, PPR78Mixing)
+    assert model.mixing.ngroups == 1
+    assert model.mixing.raw_group_a.numel() == 0
+    torch.testing.assert_close(
+        model.mixing.group_interaction_energy(torch.tensor(300.0, dtype=DTYPE)),
+        torch.zeros((1, 1), dtype=DTYPE),
+    )
+
+
+@pytest.mark.parametrize(
+    ("components", "printed_kij"),
+    [
+        (
+            ("hydrogen", "water"),
+            {
+                310.93: -0.9490,
+                323.15: -0.8770,
+                366.48: -0.6143,
+                422.04: -0.2600,
+                423.15: -0.2527,
+                448.15: -0.0862,
+                473.15: 0.0848,
+                498.15: 0.2606,
+                523.15: 0.4412,
+                548.15: 0.6269,
+                573.15: 0.8178,
+            },
+        ),
+        (
+            ("hydrogen", "nitrogen"),
+            {
+                63.15: 0.0141,
+                63.19: 0.0142,
+                70.35: 0.0244,
+                77.35: 0.0340,
+                77.55: 0.0343,
+                83.67: 0.0423,
+                86.10: 0.0455,
+                90.79: 0.0515,
+                99.82: 0.0626,
+                100.00: 0.0628,
+                109.00: 0.0735,
+                110.30: 0.0750,
+            },
+        ),
+    ],
+)
+def test_ppr78_hydrogen_water_extension_matches_published_figure_kij(
+    components,
+    printed_kij,
+):
+    model = predictive_peng_robinson_1978(
+        component_set(components, dtype=DTYPE),
+        parameter_set=PPR78_HYDROGEN_WATER_GROUP_CONTRIBUTION,
+    )
+    errors = []
+    for temperature_value, reference in printed_kij.items():
+        temperature = torch.tensor(temperature_value, dtype=DTYPE)
+        pure_a, pure_b = model.pure_parameters(temperature)
+        predicted = float(model.mixing.kij(temperature, pure_a, pure_b)[0, 1])
+        errors.append(abs(predicted - reference))
+
+    # Figures 7 and 19 print four decimals and the articles use Poling et al.
+    # pure constants rather than the package's shared component compilation.
+    assert max(errors) < 4.5e-3
+    assert sum(errors) / len(errors) < 2.0e-3
 
 
 def test_ppr78_reproduces_appendix_a_propane_n_butane_calculation():
@@ -245,7 +487,7 @@ def test_ppr78_custom_group_counts_mapping_tensor_and_yaml(tmp_path):
         (
             lambda document: document["parameters"]["interactions"].pop("CH3|CH2"),
             ParameterDatabaseError,
-            "explicitly define all",
+            "explicitly account for all",
         ),
     ],
 )
@@ -318,7 +560,7 @@ def test_ppr78_parameter_document_errors(mutation, error, message):
         ),
         (
             lambda parameters: parameters["interactions"].update({"CH3|CH2": {"A": 0.0, "B": 1.0}}),
-            "B must be zero when A is zero",
+            "undefined B/A",
         ),
     ],
 )
@@ -415,6 +657,8 @@ def test_ppr78_mixing_validates_tensor_contracts():
         PPR78Mixing(fractions[0], zeros, zeros)
     with pytest.raises(ValueError, match="at least one component"):
         PPR78Mixing(fractions[:0], zeros, zeros)
+    with pytest.raises(ValueError, match="one group"):
+        PPR78Mixing(fractions[:, :0], zeros[:0, :0], zeros[:0, :0])
     with pytest.raises(ValueError, match="matching the groups"):
         PPR78Mixing(fractions, torch.zeros((3, 3)), torch.zeros((3, 3)))
     with pytest.raises(ValueError, match="must be finite"):

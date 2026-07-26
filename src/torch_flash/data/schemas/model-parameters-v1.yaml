@@ -30,6 +30,8 @@ properties:
       - cubic
       - group_contribution
       - multifluid
+      - multiparameter
+      - pure_helmholtz
       - standard_state
       - volume_translation
   model:
