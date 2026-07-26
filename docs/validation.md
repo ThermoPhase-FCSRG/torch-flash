@@ -41,6 +41,9 @@ The reports distinguish three kinds of evidence:
 - [H2-tailored GERG (2021)](validation-reports/29-hydrogen-tailored-gerg.md) —
   Table 12 verification and reproductions of Figures 4, 7, and 16, including
   N2/H2 and CO2/H2 phase-equilibrium results.
+- [Hydrogen-water systems across applicable models](validation-reports/32-hydrogen-water-all-models.md)
+  — H2-H2O, H2-CO-H2O, and H2-N2-H2O composition parity and water-content
+  curves, including the global 40-group E-PPR78 revision.
 
 ## Publication and reproduction boundary
 

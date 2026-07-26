@@ -89,6 +89,20 @@ parameter_sets:
       - ppr78
       - ppr78-2004
       - jaubert-mutelet-ppr78
+  group-contribution.ppr78-qian-2013-hydrogen-water:
+    path: group_contribution/ppr78-qian-2013-hydrogen-water.yaml
+    aliases:
+      - ppr78-hydrogen-water
+      - ppr78-h2-water
+      - ppr78-qian-2013
+  group-contribution.eppr78-privat-2022-40-group:
+    path: group_contribution/eppr78-privat-2022-40-group.yaml
+    aliases:
+      - eppr78
+      - eppr78-2022
+      - eppr78-global
+      - eppr78-40-group
+      - eppr78-ccs
   multiparameter.eos-cg-2021:
     path: multiparameter/eos-cg-2021.yaml
     aliases:

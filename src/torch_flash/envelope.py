@@ -85,6 +85,41 @@ class BinaryVLEPoint:
 
 
 @dataclass(frozen=True)
+class FixedVaporRatioVLEPoint:
+    """VLE compositions at fixed ``T``, ``P``, and dry-vapor component ratio.
+
+    Attributes
+    ----------
+    temperature, pressure
+        Specified temperature in K and pressure in Pa.
+    liquid_composition, vapor_composition
+        Solved normalized liquid and vapor mole-fraction vectors. Ratios among
+        the non-variable vapor components equal the specified reference ratio.
+    variable_vapor_component
+        Component index whose vapor fraction was solved independently.
+    iterations
+        Number of damped-Newton iterations performed.
+    converged
+        Whether the fugacity residual met tolerance and the two phases remain
+        physically separated.
+    residual_norm
+        Maximum absolute dimensionless log-fugacity residual.
+    phase_separation
+        Maximum absolute component mole-fraction difference between phases.
+    """
+
+    temperature: Tensor
+    pressure: Tensor
+    liquid_composition: Tensor
+    vapor_composition: Tensor
+    variable_vapor_component: int
+    iterations: int
+    converged: bool
+    residual_norm: Tensor
+    phase_separation: Tensor
+
+
+@dataclass(frozen=True)
 class BinaryVLEPointWithVolumes(BinaryVLEPoint):
     """Binary fixed-pressure coexistence point retaining both molar volumes.
 
@@ -1068,6 +1103,270 @@ def binary_phase_equilibrium_point(
         result.iterations,
         result.converged and bool(float(phase_separation.detach()) > minimum_phase_separation),
         result.residual_norm,
+    )
+
+
+def fixed_vapor_ratio_vle_point(
+    model: StateModel,
+    temperature: Tensor,
+    pressure: Tensor,
+    dry_vapor_composition: Tensor,
+    variable_vapor_component: int,
+    *,
+    initial_liquid_composition: Tensor | None = None,
+    initial_variable_vapor_fraction: Tensor | None = None,
+    phase_kinds: tuple[PhaseKind, PhaseKind] = ("liquid", "vapor"),
+    tolerance: float = 1.0e-8,
+    max_iterations: int = 40,
+    minimum_phase_separation: float = 1.0e-6,
+) -> FixedVaporRatioVLEPoint:
+    """Solve VLE at fixed temperature, pressure, and dry-vapor composition.
+
+    The selected variable vapor component is excluded from
+    ``dry_vapor_composition``. Its saturated vapor mole fraction and every
+    liquid-phase mole fraction are solved simultaneously from component
+    fugacity equality. For example, a water-saturated H2/N2 gas is represented
+    by ``dry_vapor_composition=[0.75, 0.25, 0]`` and
+    ``variable_vapor_component=2`` in an ``(H2, N2, H2O)`` model.
+
+    Parameters
+    ----------
+    model
+        Homogeneous-state model providing liquid and vapor fugacity
+        coefficients.
+    temperature, pressure
+        Finite positive scalar temperature in K and pressure in Pa.
+    dry_vapor_composition
+        One-dimensional nonnegative component ratio in model order. The
+        variable component entry must be exactly zero; every other modeled
+        component must be present with a positive ratio. The vector is
+        normalized internally.
+    variable_vapor_component
+        Index of the vapor component whose saturated fraction is solved.
+    initial_liquid_composition
+        Optional strictly positive liquid composition. The default is 0.1 mol
+        % dissolved dry gas, distributed in the specified dry-gas ratio.
+    initial_variable_vapor_fraction
+        Optional strictly interior estimate for the variable component vapor
+        fraction. A Wilson estimate is used when omitted.
+    phase_kinds
+        Homogeneous root requested for the liquid-rich and vapor-rich states.
+    tolerance
+        Positive maximum absolute dimensionless log-fugacity residual.
+    max_iterations
+        Positive damped-Newton iteration limit.
+    minimum_phase_separation
+        Nonnegative minimum of ``max(abs(y - x))`` required for physical
+        convergence.
+
+    Returns
+    -------
+    FixedVaporRatioVLEPoint
+        Coexisting compositions, solved component index, nonlinear
+        diagnostics, and phase separation.
+
+    Raises
+    ------
+    ValueError
+        If scalar state inputs, component ratios, initial values, phase roots,
+        or solver controls are invalid.
+
+    Notes
+    -----
+    The square nonlinear system enforces
+    ``ln(x_i phi_i^L) = ln(y_i phi_i^V)`` for every component. Independent
+    liquid log-ratios and one vapor logit keep both compositions strictly
+    inside their simplices. The vapor parametrization preserves all specified
+    non-variable component ratios exactly, avoiding an arbitrary overall-feed
+    assumption for experiments that report a saturated gas composition but
+    not the coexisting liquid composition.
+
+    Fugacity equality and fixed-composition phase-equilibrium context follow
+    Michelsen and Mollerup, *Thermodynamic Models: Fundamentals &
+    Computational Aspects*, 2nd ed. (2007), chapters 8 and 12,
+    ISBN 978-87-989961-3-2. Newton Jacobians are assembled by PyTorch
+    automatic differentiation; no equation-of-state-specific derivatives are
+    embedded here.
+    """
+    if temperature.ndim != 0 or not bool(torch.isfinite(temperature) & (temperature > 0.0)):
+        raise ValueError("fixed-vapor-ratio VLE requires one finite positive temperature")
+    if pressure.ndim != 0 or not bool(torch.isfinite(pressure) & (pressure > 0.0)):
+        raise ValueError("fixed-vapor-ratio VLE requires one finite positive pressure")
+    if tolerance <= 0.0 or max_iterations < 1:
+        raise ValueError("fixed-vapor-ratio VLE requires positive solver controls")
+    if minimum_phase_separation < 0.0:
+        raise ValueError("minimum phase separation must be nonnegative")
+    if any(kind not in ("liquid", "vapor", "stable") for kind in phase_kinds):
+        raise ValueError("fixed-vapor-ratio phase kinds must be 'liquid', 'vapor', or 'stable'")
+    if not dry_vapor_composition.is_floating_point() or dry_vapor_composition.ndim != 1:
+        raise ValueError("dry vapor composition must be a one-dimensional floating tensor")
+    ncomponents = dry_vapor_composition.numel()
+    if variable_vapor_component < 0 or variable_vapor_component >= ncomponents:
+        raise ValueError("variable vapor component is outside the component range")
+    if not bool(torch.isfinite(dry_vapor_composition).all() & (dry_vapor_composition >= 0.0).all()):
+        raise ValueError("dry vapor composition must be finite and nonnegative")
+    if bool(dry_vapor_composition[variable_vapor_component] != 0.0):
+        raise ValueError("variable component entry in dry vapor composition must be zero")
+    dry_indices = tuple(index for index in range(ncomponents) if index != variable_vapor_component)
+    dry_values = torch.stack(tuple(dry_vapor_composition[index] for index in dry_indices))
+    if not bool((dry_values > 0.0).all()):
+        raise ValueError("every non-variable dry vapor component must have a positive ratio")
+    dry_values = dry_values / dry_values.sum()
+    dry_composition = torch.stack(
+        tuple(
+            dry_vapor_composition.new_zeros(())
+            if index == variable_vapor_component
+            else dry_values[dry_indices.index(index)]
+            for index in range(ncomponents)
+        )
+    )
+
+    if initial_liquid_composition is None:
+        initial_dry_total = dry_vapor_composition.new_tensor(1.0e-3)
+        initial_liquid = torch.stack(
+            tuple(
+                1.0 - initial_dry_total
+                if index == variable_vapor_component
+                else initial_dry_total * dry_composition[index]
+                for index in range(ncomponents)
+            )
+        )
+    else:
+        if (
+            not initial_liquid_composition.is_floating_point()
+            or initial_liquid_composition.shape != dry_vapor_composition.shape
+            or not bool(
+                torch.isfinite(initial_liquid_composition).all()
+                & (initial_liquid_composition > 0.0).all()
+            )
+        ):
+            raise ValueError(
+                "initial liquid composition must be a finite positive vector "
+                "matching the dry vapor composition"
+            )
+        initial_liquid = normalize_composition(
+            initial_liquid_composition.to(
+                dtype=dry_vapor_composition.dtype,
+                device=dry_vapor_composition.device,
+            )
+        )
+
+    epsilon = 32.0 * torch.finfo(dry_vapor_composition.dtype).eps
+    if initial_variable_vapor_fraction is None:
+        components = _components_from_model(model)
+        initial_k = wilson_k_values(
+            components,
+            temperature.to(
+                dtype=dry_vapor_composition.dtype,
+                device=dry_vapor_composition.device,
+            ),
+            pressure.to(
+                dtype=dry_vapor_composition.dtype,
+                device=dry_vapor_composition.device,
+            ),
+        )
+        initial_variable_fraction = (
+            initial_liquid[variable_vapor_component] * initial_k[variable_vapor_component]
+        )
+    else:
+        if initial_variable_vapor_fraction.ndim != 0 or not bool(
+            torch.isfinite(initial_variable_vapor_fraction)
+            & (initial_variable_vapor_fraction > 0.0)
+            & (initial_variable_vapor_fraction < 1.0)
+        ):
+            raise ValueError(
+                "initial variable vapor fraction must be one finite scalar inside (0, 1)"
+            )
+        initial_variable_fraction = initial_variable_vapor_fraction.to(
+            dtype=dry_vapor_composition.dtype,
+            device=dry_vapor_composition.device,
+        )
+    initial_variable_fraction = torch.clamp(
+        initial_variable_fraction,
+        epsilon,
+        1.0 - epsilon,
+    )
+    initial_liquid_ratios = torch.stack(
+        tuple(
+            initial_liquid[index] / initial_liquid[variable_vapor_component]
+            for index in dry_indices
+        )
+    )
+    initial_variable_logit = torch.log(initial_variable_fraction) - torch.log1p(
+        -initial_variable_fraction
+    )
+    variables = torch.cat((torch.log(initial_liquid_ratios), initial_variable_logit.reshape(1)))
+
+    def unpack(current: Tensor) -> tuple[Tensor, Tensor]:
+        liquid_ratios = torch.exp(current[:-1])
+        liquid_variable = 1.0 / (1.0 + liquid_ratios.sum())
+        liquid_dry = liquid_ratios * liquid_variable
+        liquid = torch.stack(
+            tuple(
+                liquid_variable
+                if index == variable_vapor_component
+                else liquid_dry[dry_indices.index(index)]
+                for index in range(ncomponents)
+            )
+        )
+        vapor_variable = torch.sigmoid(current[-1])
+        vapor = (1.0 - vapor_variable) * dry_composition
+        vapor = torch.stack(
+            tuple(
+                vapor_variable if index == variable_vapor_component else vapor[index]
+                for index in range(ncomponents)
+            )
+        )
+        return liquid, vapor
+
+    solve_temperature = temperature.to(
+        dtype=dry_vapor_composition.dtype,
+        device=dry_vapor_composition.device,
+    )
+    solve_pressure = pressure.to(
+        dtype=dry_vapor_composition.dtype,
+        device=dry_vapor_composition.device,
+    )
+
+    def residual(current: Tensor) -> Tensor:
+        liquid, vapor = unpack(current)
+        return (
+            torch.log(liquid)
+            + model.log_fugacity_coefficients(
+                solve_temperature,
+                solve_pressure,
+                liquid,
+                phase_kinds[0],
+            )
+            - torch.log(vapor)
+            - model.log_fugacity_coefficients(
+                solve_temperature,
+                solve_pressure,
+                vapor,
+                phase_kinds[1],
+            )
+        )
+
+    result = damped_newton(
+        residual,
+        variables,
+        tolerance=tolerance,
+        max_iterations=max_iterations,
+        lower_bound=torch.full_like(variables, -50.0),
+        upper_bound=torch.full_like(variables, 50.0),
+    )
+    liquid, vapor = unpack(result.solution)
+    phase_separation = torch.max(torch.abs(vapor - liquid))
+    return FixedVaporRatioVLEPoint(
+        solve_temperature,
+        solve_pressure,
+        liquid,
+        vapor,
+        variable_vapor_component,
+        result.iterations,
+        result.converged and bool(float(phase_separation.detach()) > minimum_phase_separation),
+        result.residual_norm,
+        phase_separation,
     )
 
 

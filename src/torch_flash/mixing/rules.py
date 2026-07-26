@@ -315,8 +315,8 @@ class PPR78Mixing(nn.Module):
         if group_fractions.ndim != 2:
             raise ValueError("PPR78 group_fractions must be a component-by-group matrix")
         component_count, group_count = group_fractions.shape
-        if component_count == 0 or group_count < 2:
-            raise ValueError("PPR78 requires at least one component and two groups")
+        if component_count == 0 or group_count == 0:
+            raise ValueError("PPR78 requires at least one component and one group")
         if group_a.shape != (group_count, group_count) or group_b.shape != group_a.shape:
             raise ValueError("PPR78 group A and B must be square matrices matching the groups")
         if not bool(

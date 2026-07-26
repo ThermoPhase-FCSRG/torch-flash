@@ -328,10 +328,11 @@ co-volume matrices should retain their form, SI units, data domain, objective,
 and provenance in custom model metadata as demonstrated by notebooks 19, 20,
 and 25.
 
-## PPR78 group-contribution payload
+## PPR78 and E-PPR78 group-contribution payload
 
-`model_kind: group_contribution` and `model: PPR78` store the universal group
-parameters separately from the PR78 pure-component constants:
+`model_kind: group_contribution` with `model: PPR78` or `model: E-PPR78`
+stores the universal group parameters separately from the PR78 pure-component
+constants:
 
 ```yaml
 model_kind: group_contribution
@@ -354,23 +355,36 @@ parameters:
 
 `A` and `B` are pressures in pascals. A key `first|second` denotes one
 unordered pair; diagonal terms are zero by definition, reversed duplicates
-are rejected, and all \(N_g(N_g-1)/2\) off-diagonal pairs must be present.
+are rejected, and all \(N_g(N_g-1)/2\) off-diagonal pairs must be accounted
+for. A complete inventory supplies every pair under `interactions`. An
+incomplete published inventory divides them exactly between `interactions`
+and `unavailable_interactions`; an unavailable pair is never interpreted as
+a fitted zero.
 `component_groups` contains nonnegative structural counts. The constructor
 normalizes each component row to fractions
 \(\alpha_{ik}=N_{ik}/\sum_kN_{ik}\); it never guesses a missing
 decomposition or treats a missing interaction as zero.
 
-The bundled document is exactly the original six-group parameterization of
+The default PPR78 document is exactly the original six-group parameterization of
 [Jaubert and Mutelet (2004)](https://doi.org/10.1016/j.fluid.2004.06.059),
-not a later 21-group extension. A later or project-specific inventory belongs
-in a separate versioned YAML file. The generic loader places no six-group
-limit on such a file.
+not a later extension. The separate H2/N2/H2O document preserves the exact
+active submatrix from Qian et al.'s 2013 hydrogen and water extensions.
+
+The global E-PPR78 document reproduces all 40 groups, 356 available pairs, and
+424 unavailable pairs in Table S4 of
+[Jaubert et al. (2022)](https://doi.org/10.1016/j.fluid.2022.113456).
+It includes the principal CCS groups studied by
+[Xu et al. (2017)](https://doi.org/10.1016/j.ijggc.2016.11.015), but uses the
+later 2022 global coefficient revision. The 2022 article and supplement are
+CC BY 4.0; the separately copyrighted 2017 table is not duplicated in the
+runtime database.
 
 ```python
 import torch
 
 from torch_flash import (
     component_set,
+    enhanced_predictive_peng_robinson_1978,
     ppr78_group_contribution_parameters,
     predictive_peng_robinson_1978,
 )
@@ -393,6 +407,13 @@ parameters = ppr78_group_contribution_parameters(
     components,
     "project-ppr78.yaml",
 )
+
+# Global E-PPR78 for a hydrogen-bearing CCS stream.
+ccs_components = component_set(
+    ("carbon_dioxide", "hydrogen", "water"),
+    dtype=torch.float64,
+)
+ccs_model = enhanced_predictive_peng_robinson_1978(ccs_components)
 ```
 
 `trainable=True` creates 30 independent parameters for the six-group set:
@@ -401,6 +422,12 @@ diagonals are reconstructed on every evaluation. A fit of universal group
 parameters can affect every component pair using those groups, so transfer
 systems and temperature holdouts must be checked before publishing a revised
 YAML parameterization.
+
+For an E-PPR78 component selection, only active groups are materialized after
+their pairwise availability has been verified. Thus the three pure groups in
+the CCS example create three independent A/B pairs rather than 780 candidate
+pairs. A request containing an explicitly unavailable active pair raises
+`ParameterDatabaseError` with the group names.
 
 ## Volume-translation parameter payload
 

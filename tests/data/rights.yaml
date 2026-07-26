@@ -13,6 +13,14 @@ artifacts:
     status: not-cleared
     basis: Table 6 transcription; publisher redistribution permission not verified.
     source: https://doi.org/10.1016/j.fluid.2018.02.002
+  bartlett_1927_h2_n2_water_vapor.csv:
+    status: not-cleared
+    basis: Tables III-IV transcription; ACS redistribution permission not verified.
+    source: https://doi.org/10.1021/ja01400a010
+  bartlett_1927_h2_water_vapor.csv:
+    status: not-cleared
+    basis: Tables II and IV transcription; ACS redistribution permission not verified.
+    source: https://doi.org/10.1021/ja01400a010
   beckmuller_2021_h2_gerg_table12.csv:
     status: not-cleared
     basis: Table 12 transcription; publisher redistribution permission not verified.
@@ -56,6 +64,14 @@ artifacts:
     basis: H2ThermoBank Figshare dataset; columns and units normalized.
     source: https://doi.org/10.6084/m9.figshare.12063297
     license: CC-BY-4.0
+  gillespie_wilson_1980_h2_co_water_vle.csv:
+    status: not-cleared
+    basis: RR-41 Table 4 transcription; report data redistribution terms not verified.
+    source: https://www.osti.gov/biblio/6782591
+  gillespie_wilson_1980_h2_water_vle.csv:
+    status: not-cleared
+    basis: RR-41 Table 2 transcription; report data redistribution terms not verified.
+    source: https://www.osti.gov/biblio/6782591
   gernert_span_2016_eoscg_table8.csv:
     status: not-cleared
     basis: Table 8 transcription; publisher redistribution permission not verified.

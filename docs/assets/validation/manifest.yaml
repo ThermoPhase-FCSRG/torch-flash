@@ -567,3 +567,49 @@ figures:
     publication_form: rendered-plot
     machine_readable_observation_values: false
     data_tables_distributed: false
+  32_hydrogen_water_all_models_parity.png:
+    study_id: 32_hydrogen_water_all_models
+    notebook: notebooks/local-only/validation/32_hydrogen_water_all_models.ipynb
+    cell_index: 13
+    image_index: 0
+    evidence_class: validation
+    observation_level_markers: true
+    data_artifacts:
+    - gillespie_wilson_1980_h2_water_vle.csv
+    - gillespie_wilson_1980_h2_co_water_vle.csv
+    - bartlett_1927_h2_water_vapor.csv
+    - bartlett_1927_h2_n2_water_vapor.csv
+    source_material:
+    - https://www.osti.gov/biblio/6782591
+    - https://doi.org/10.1021/ja01400a010
+    - https://doi.org/10.1016/j.fluid.2022.113456
+    - https://doi.org/10.1016/j.ijggc.2016.11.015
+    description: Composition parity and common water-content error for every retrieved
+      hydrogen-water observation and every applicable torch-flash model.
+    executed_artifact_sha256: d70784005d64cb9abce97aca161516ddcea142f8f23af1e7d842f58b46fab7c1
+    publication_form: rendered-plot
+    machine_readable_observation_values: false
+    data_tables_distributed: false
+  32_hydrogen_water_all_models_curves.png:
+    study_id: 32_hydrogen_water_all_models
+    notebook: notebooks/local-only/validation/32_hydrogen_water_all_models.ipynb
+    cell_index: 15
+    image_index: 0
+    evidence_class: validation
+    observation_level_markers: true
+    data_artifacts:
+    - gillespie_wilson_1980_h2_water_vle.csv
+    - gillespie_wilson_1980_h2_co_water_vle.csv
+    - bartlett_1927_h2_water_vapor.csv
+    - bartlett_1927_h2_n2_water_vapor.csv
+    source_material:
+    - https://www.osti.gov/biblio/6782591
+    - https://doi.org/10.1021/ja01400a010
+    - https://doi.org/10.1016/j.fluid.2022.113456
+    - https://doi.org/10.1016/j.ijggc.2016.11.015
+    description: Water-content pressure curves for H2-H2O, H2-CO-H2O, and H2-N2-H2O,
+      including global E-PPR78.
+    executed_artifact_sha256: d70784005d64cb9abce97aca161516ddcea142f8f23af1e7d842f58b46fab7c1
+    publication_form: rendered-plot
+    machine_readable_observation_values: false
+    data_tables_distributed: false

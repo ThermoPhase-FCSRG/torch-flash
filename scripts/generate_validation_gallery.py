@@ -475,6 +475,52 @@ FIGURES = (
         "Normal-hydrogen pressure, enthalpy, entropy, heat-capacity, and "
         "speed-of-sound parity against Leachman et al. Table 14.",
     ),
+    FigureSpec(
+        "32_hydrogen_water_all_models_parity.png",
+        "32_hydrogen_water_all_models",
+        "notebooks/local-only/validation/32_hydrogen_water_all_models.ipynb",
+        13,
+        0,
+        "validation",
+        True,
+        (
+            "gillespie_wilson_1980_h2_water_vle.csv",
+            "gillespie_wilson_1980_h2_co_water_vle.csv",
+            "bartlett_1927_h2_water_vapor.csv",
+            "bartlett_1927_h2_n2_water_vapor.csv",
+        ),
+        (
+            "https://www.osti.gov/biblio/6782591",
+            "https://doi.org/10.1021/ja01400a010",
+            "https://doi.org/10.1016/j.fluid.2022.113456",
+            "https://doi.org/10.1016/j.ijggc.2016.11.015",
+        ),
+        "Composition parity and common water-content error for every retrieved "
+        "hydrogen-water observation and every applicable torch-flash model.",
+    ),
+    FigureSpec(
+        "32_hydrogen_water_all_models_curves.png",
+        "32_hydrogen_water_all_models",
+        "notebooks/local-only/validation/32_hydrogen_water_all_models.ipynb",
+        15,
+        0,
+        "validation",
+        True,
+        (
+            "gillespie_wilson_1980_h2_water_vle.csv",
+            "gillespie_wilson_1980_h2_co_water_vle.csv",
+            "bartlett_1927_h2_water_vapor.csv",
+            "bartlett_1927_h2_n2_water_vapor.csv",
+        ),
+        (
+            "https://www.osti.gov/biblio/6782591",
+            "https://doi.org/10.1021/ja01400a010",
+            "https://doi.org/10.1016/j.fluid.2022.113456",
+            "https://doi.org/10.1016/j.ijggc.2016.11.015",
+        ),
+        "Water-content pressure curves for H2-H2O, H2-CO-H2O, and "
+        "H2-N2-H2O, including global E-PPR78.",
+    ),
 )
 
 

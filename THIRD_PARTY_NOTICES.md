@@ -47,16 +47,17 @@ No `chemicals` Python implementation is copied into `torch-flash`.
 
 ### Clapeyron.jl
 
-The EOS-CG-2021 coefficient inventory was independently cross-checked against
-the Clapeyron.jl database:
+The EOS-CG-2021 and E-PPR78 coefficient inventories were independently
+cross-checked against the Clapeyron.jl database:
 
 - Project: <https://github.com/ClapeyronThermo/Clapeyron.jl>
 - License: MIT
 - Copyright (c) 2020 Hon Wa Yew and Pierre Walker
 
-No Clapeyron.jl implementation code is translated or bundled. EOS-CG-2021's
-CC BY 4.0 paper, supplement, and assigned pure-fluid sources remain the
-primary scientific references.
+No Clapeyron.jl implementation code is translated or bundled. The respective
+CC BY 4.0 papers, supplements, and assigned pure-fluid sources remain the
+primary scientific references. Differences in the E-PPR78 inventory were
+resolved against the defining 2022 supplementary Table S4.
 
 ### MIT license text
 
@@ -81,6 +82,26 @@ The following terms apply to the MIT-licensed resources identified above:
 > LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
 > FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS
 > IN THE SOFTWARE.
+
+## E-PPR78 parameter material
+
+The global E-PPR78 article and its supplementary 40-group coefficient table
+are licensed under Creative Commons Attribution 4.0 International:
+
+- J.-N. Jaubert, J.-W. Qian, S. Lasala, and R. Privat, "The impressive
+  impact of including enthalpy and heat capacity of mixing data when
+  parameterising equations of state. Application to the development of the
+  E-PPR78 model," *Fluid Phase Equilibria* 560, 113456 (2022),
+  <https://doi.org/10.1016/j.fluid.2022.113456>.
+- License: <https://creativecommons.org/licenses/by/4.0/>.
+
+`torch-flash` mechanically transcribed the 356 available group-pair
+coefficients from supplementary Table S4, converted MPa to Pa, represented
+all 424 unavailable pairs explicitly, normalized group identifiers, and
+independently checked the inventory. The 2017 E-PPR78 CCS article,
+<https://doi.org/10.1016/j.ijggc.2016.11.015>, establishes the CCS scope and
+predecessor parameter revision; its separately copyrighted coefficient table
+is not bundled. The source authors do not endorse this package.
 
 ## EOS-CG-2021 and MDEA parameter material
 

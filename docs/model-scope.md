@@ -33,8 +33,13 @@ Here \(\Delta\alpha_{ij,k}=\alpha_{ik}-\alpha_{jk}\), \(T\) is in
 kelvin, and \(A_{kl},B_{kl}\) are in pascals. The squared pure-component
 term follows Eq. 5 and Appendix A of the
 [primary paper](https://doi.org/10.1016/j.fluid.2004.06.059). The bundled
-parameter set is the paper's original six-group set, while the YAML/API schema
-accepts a separately sourced, versioned larger group inventory. The
+default PPR78 parameter set is the paper's original six-group set. The
+separate `enhanced_predictive_peng_robinson_1978` constructor selects the
+global 40-group E-PPR78 revision from
+[Jaubert et al. (2022)](https://doi.org/10.1016/j.fluid.2022.113456),
+including the groups used for CCS fluids. Its 356 available and 424
+unavailable group pairs are represented explicitly; a requested unavailable
+active pair raises an error rather than becoming a zero interaction. The
 derivation uses
 \(b_m=\sum_i x_i b_i\), so PPR78 is deliberately not combined with a
 cross-co-volume `lij` in the named constructor.

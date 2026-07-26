@@ -34,9 +34,9 @@ redistribution status is unresolved live only under
 as excluded from package distributions. Keeping data out of a package does
 not by itself grant permission to publish it in a public Git repository.
 
-The machine-readable [`rights.yaml`](rights.yaml) ledger covers all 35
+The machine-readable [`rights.yaml`](rights.yaml) ledger covers all 39
 declared CSV artifacts: 5 have a verified open basis, 12 are project-generated
-software outputs, and 18 are marked `not-cleared`. The audit scans recursively,
+software outputs, and 22 are marked `not-cleared`. The audit scans recursively,
 fails if a CSV is added without an explicit rights decision, and enforces that
 locally present `not-cleared` files are confined to the ignored subdirectory.
 Tests that require those inputs skip when it is absent.
@@ -96,6 +96,24 @@ The source authors do not endorse `torch-flash`.
   ticks; the CSV records the conservative digitization uncertainty used by
   the notebook. It is not a substitute for the primary experimental tables.
   [doi:10.1063/5.0040533](https://doi.org/10.1063/5.0040533).
+- `gillespie_wilson_1980_h2_water_vle.csv` and
+  `gillespie_wilson_1980_h2_co_water_vle.csv` transcribe every H2-containing
+  state from Gillespie and Wilson's RR-41 Tables 2 and 4: 18 H2-H2O rows and
+  16 H2-CO-H2O rows. The source temperatures and pressures remain in °F and
+  psia; the local-only notebook converts them to K and Pa. The liquid
+  dissolved-gas columns include the common \(10^{-3}\) scale printed in the
+  table headings. Original interpolation flags are retained, leaving 15
+  fully measured complete tie lines in each system.
+  [OSTI report 6782591](https://www.osti.gov/biblio/6782591).
+- `bartlett_1927_h2_water_vapor.csv` and
+  `bartlett_1927_h2_n2_water_vapor.csv` transcribe 5 H2-H2O and 18
+  H2-N2-H2O measured water-content states from Bartlett's Tables II-IV.
+  Temperature and pressure remain in °C and atm, and the reported dry-gas
+  compositions are retained. Bartlett derived the Table IV vapor volume
+  percentages from measured water uptake and gas volume; the files convert
+  percentage to fraction but do not invent the unreported liquid
+  compositions.
+  [doi:10.1021/ja01400a010](https://doi.org/10.1021/ja01400a010).
 - `jaubert_ppr78_hydrocarbon_vle.csv` retains 103 phase-complete experimental
   VLE states used in notebook 28: methane/ethane at 199.93 and 230.00 K
   (38 states), and methane/n-decane at 410.93, 477.59, 510.93, and 563.25 K

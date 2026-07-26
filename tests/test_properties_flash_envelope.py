@@ -10,7 +10,9 @@ import torch
 from torch_flash import (
     ChemicalState,
     batched_tangent_plane_stability,
+    binary_phase_equilibrium_point,
     component_set,
+    fixed_vapor_ratio_vle_point,
     peng_robinson_1978,
     phase_properties,
     state_derivatives,
@@ -25,6 +27,190 @@ from torch_flash.flash.stability import _newton_minimize
 from torch_flash.standard_state import IdealGasPolynomial
 
 DATA = Path(__file__).parent / "data"
+
+
+def test_fixed_vapor_ratio_vle_matches_binary_equilibrium():
+    model = peng_robinson_1978(component_set(("hydrogen", "water"), dtype=torch.float64))
+    temperature = torch.tensor(323.15, dtype=torch.float64)
+    pressure = torch.tensor(10.0e6, dtype=torch.float64)
+    result = fixed_vapor_ratio_vle_point(
+        model,
+        temperature,
+        pressure,
+        torch.tensor([2.0, 0.0], dtype=torch.float64),
+        1,
+    )
+    reference = binary_phase_equilibrium_point(
+        model,
+        temperature,
+        pressure,
+        result.liquid_composition,
+        result.vapor_composition,
+        phase_kinds=("liquid", "vapor"),
+    )
+    assert result.converged
+    assert result.variable_vapor_component == 1
+    assert result.phase_separation > 0.99
+    assert result.residual_norm <= 1.0e-8
+    torch.testing.assert_close(result.liquid_composition, reference.phase1_composition)
+    torch.testing.assert_close(result.vapor_composition, reference.phase2_composition)
+
+
+def test_fixed_vapor_ratio_vle_preserves_ternary_dry_gas_ratio():
+    model = peng_robinson_1978(
+        component_set(("hydrogen", "nitrogen", "water"), dtype=torch.float64)
+    )
+    dry_composition = torch.tensor([0.746, 0.254, 0.0], dtype=torch.float64)
+    result = fixed_vapor_ratio_vle_point(
+        model,
+        torch.tensor(298.15, dtype=torch.float64),
+        torch.tensor(10.1325e6, dtype=torch.float64),
+        dry_composition,
+        2,
+        initial_liquid_composition=torch.tensor(
+            [7.46e-4, 2.54e-4, 0.999],
+            dtype=torch.float64,
+        ),
+        initial_variable_vapor_fraction=torch.tensor(3.85e-4, dtype=torch.float64),
+        phase_kinds=("stable", "stable"),
+    )
+    predicted_dry = result.vapor_composition[:2] / result.vapor_composition[:2].sum()
+    assert result.converged
+    torch.testing.assert_close(predicted_dry, dry_composition[:2])
+    torch.testing.assert_close(
+        result.liquid_composition.sum(),
+        torch.tensor(1.0, dtype=torch.float64),
+    )
+    torch.testing.assert_close(
+        result.vapor_composition.sum(),
+        torch.tensor(1.0, dtype=torch.float64),
+    )
+
+
+@pytest.mark.parametrize(
+    ("temperature", "pressure", "dry_composition", "variable_component", "options", "match"),
+    [
+        (
+            torch.tensor([298.15], dtype=torch.float64),
+            torch.tensor(1.0e6, dtype=torch.float64),
+            torch.tensor([1.0, 0.0], dtype=torch.float64),
+            1,
+            {},
+            "temperature",
+        ),
+        (
+            torch.tensor(298.15, dtype=torch.float64),
+            torch.tensor(-1.0e6, dtype=torch.float64),
+            torch.tensor([1.0, 0.0], dtype=torch.float64),
+            1,
+            {},
+            "pressure",
+        ),
+        (
+            torch.tensor(298.15, dtype=torch.float64),
+            torch.tensor(1.0e6, dtype=torch.float64),
+            torch.tensor([1.0, 0.0], dtype=torch.float64),
+            1,
+            {"tolerance": 0.0},
+            "solver controls",
+        ),
+        (
+            torch.tensor(298.15, dtype=torch.float64),
+            torch.tensor(1.0e6, dtype=torch.float64),
+            torch.tensor([1.0, 0.0], dtype=torch.float64),
+            1,
+            {"minimum_phase_separation": -1.0},
+            "phase separation",
+        ),
+        (
+            torch.tensor(298.15, dtype=torch.float64),
+            torch.tensor(1.0e6, dtype=torch.float64),
+            torch.tensor([1.0, 0.0], dtype=torch.float64),
+            1,
+            {"phase_kinds": ("invalid", "vapor")},
+            "phase kinds",
+        ),
+        (
+            torch.tensor(298.15, dtype=torch.float64),
+            torch.tensor(1.0e6, dtype=torch.float64),
+            torch.tensor([1, 0]),
+            1,
+            {},
+            "floating tensor",
+        ),
+        (
+            torch.tensor(298.15, dtype=torch.float64),
+            torch.tensor(1.0e6, dtype=torch.float64),
+            torch.tensor([1.0, 0.0], dtype=torch.float64),
+            2,
+            {},
+            "outside",
+        ),
+        (
+            torch.tensor(298.15, dtype=torch.float64),
+            torch.tensor(1.0e6, dtype=torch.float64),
+            torch.tensor([float("nan"), 0.0], dtype=torch.float64),
+            1,
+            {},
+            "finite and nonnegative",
+        ),
+        (
+            torch.tensor(298.15, dtype=torch.float64),
+            torch.tensor(1.0e6, dtype=torch.float64),
+            torch.tensor([0.9, 0.1], dtype=torch.float64),
+            1,
+            {},
+            "must be zero",
+        ),
+        (
+            torch.tensor(298.15, dtype=torch.float64),
+            torch.tensor(1.0e6, dtype=torch.float64),
+            torch.tensor([1.0, 0.0, 0.0], dtype=torch.float64),
+            2,
+            {},
+            "positive ratio",
+        ),
+        (
+            torch.tensor(298.15, dtype=torch.float64),
+            torch.tensor(1.0e6, dtype=torch.float64),
+            torch.tensor([1.0, 0.0], dtype=torch.float64),
+            1,
+            {
+                "initial_liquid_composition": torch.tensor(
+                    [1.0, 0.0],
+                    dtype=torch.float64,
+                )
+            },
+            "finite positive vector",
+        ),
+        (
+            torch.tensor(298.15, dtype=torch.float64),
+            torch.tensor(1.0e6, dtype=torch.float64),
+            torch.tensor([1.0, 0.0], dtype=torch.float64),
+            1,
+            {"initial_variable_vapor_fraction": torch.tensor(1.0)},
+            "inside",
+        ),
+    ],
+)
+def test_fixed_vapor_ratio_vle_validates_inputs(
+    binary_model,
+    temperature,
+    pressure,
+    dry_composition,
+    variable_component,
+    options,
+    match,
+):
+    with pytest.raises(ValueError, match=match):
+        fixed_vapor_ratio_vle_point(
+            binary_model,
+            temperature,
+            pressure,
+            dry_composition,
+            variable_component,
+            **options,
+        )
 
 
 def test_direct_properties_and_derivatives(binary_model):
