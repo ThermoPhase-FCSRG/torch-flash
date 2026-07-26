@@ -85,6 +85,33 @@ class BinaryVLEPoint:
 
 
 @dataclass(frozen=True)
+class BinaryVLEPointWithVolumes(BinaryVLEPoint):
+    """Binary fixed-pressure coexistence point retaining both molar volumes.
+
+    This result extends :class:`BinaryVLEPoint` with the liquid and vapor
+    molar volumes used by a volume-based equilibrium solver. The container is
+    named for its reusable thermodynamic payload; the currently producing
+    operation, :func:`binary_helmholtz_vle_point`, carries the Helmholtz-model
+    restriction.
+
+    Attributes
+    ----------
+    temperature, pressure
+        Specified temperature in K and pressure in Pa.
+    liquid_composition, vapor_composition
+        Solved normalized binary phase compositions.
+    iterations, converged, residual_norm
+        Nonlinear iteration count, physical-convergence status, and maximum
+        absolute dimensionless residual.
+    liquid_molar_volume, vapor_molar_volume
+        Coexisting molar volumes in m3/mol retained for continuation.
+    """
+
+    liquid_molar_volume: Tensor
+    vapor_molar_volume: Tensor
+
+
+@dataclass(frozen=True)
 class BinaryBubblePoint:
     """Binary bubble pressure and incipient vapor at specified ``T, x``.
 
@@ -1109,6 +1136,226 @@ def binary_vle_point(
     )
 
 
+def binary_helmholtz_vle_point(
+    model: HelmholtzStateModel,
+    temperature: Tensor,
+    pressure: Tensor,
+    initial_point: BinaryBubblePointWithVolumes | BinaryVLEPointWithVolumes,
+    *,
+    tolerance: float = 1.0e-8,
+    max_iterations: int = 30,
+    minimum_phase_separation: float = 1.0e-6,
+) -> BinaryVLEPointWithVolumes:
+    """Solve binary fixed-pressure coexistence using explicit phase volumes.
+
+    Parameters
+    ----------
+    model
+        Two-component Helmholtz state model providing residual Helmholtz
+        energy and pressure as functions of temperature, molar volume, and
+        composition.
+    temperature
+        One finite positive scalar temperature in K.
+    pressure
+        One finite positive scalar coexistence pressure in Pa.
+    initial_point
+        Nearby coexistence point containing strictly positive liquid/vapor
+        compositions and molar volumes. It can be a bubble point or another
+        fixed-pressure point from the same branch.
+    tolerance
+        Positive maximum absolute dimensionless residual for both component
+        chemical-potential equalities and the two pressure equations.
+    max_iterations
+        Positive maximum number of damped-Newton iterations.
+    minimum_phase_separation
+        Nonnegative minimum ``max(abs(y - x))`` required for physical
+        convergence.
+
+    Returns
+    -------
+    BinaryVLEPointWithVolumes
+        Specified state, solved coexisting compositions and molar volumes, and
+        explicit convergence diagnostics. Floating outputs preserve the
+        initial-point dtype and device.
+
+    Raises
+    ------
+    TypeError
+        If ``model`` does not expose the Helmholtz pressure operation.
+    ValueError
+        If the specified state, initial compositions or volumes, tolerance,
+        iteration count, or separation threshold is invalid.
+
+    Notes
+    -----
+    The four Newton variables are the liquid and vapor composition logits and
+    the logarithms of both molar densities. The residual contains equality of
+    the two component chemical potentials and equality of each phase pressure
+    to the specified pressure. This is the volume-based phase-equilibrium
+    formulation described by Kunz, Klimeck, Wagner, and Jaeschke, *The
+    GERG-2004 Wide-Range Equation of State for Natural Gases and Other
+    Mixtures*, GERG Technical Monograph 15 (2007), Sec. 5.4.3,
+    ISBN 978-3-18-355706-6. Retaining both volumes removes nested density-root
+    inversions from continuation residual evaluations.
+
+    The discrete physical-separation decision is non-differentiable. The
+    returned tensors otherwise preserve their PyTorch graphs.
+    """
+    pressure_function = getattr(model, "pressure", None)
+    if not callable(pressure_function):
+        raise TypeError("volume-formulation VLE points require a Helmholtz pressure method")
+
+    x = normalize_composition(initial_point.liquid_composition)
+    y = normalize_composition(initial_point.vapor_composition.to(dtype=x.dtype, device=x.device))
+    specified_temperature = temperature.to(dtype=x.dtype, device=x.device)
+    specified_pressure = pressure.to(dtype=x.dtype, device=x.device)
+    liquid_volume = initial_point.liquid_molar_volume.to(dtype=x.dtype, device=x.device)
+    vapor_volume = initial_point.vapor_molar_volume.to(dtype=x.dtype, device=x.device)
+    if specified_temperature.ndim != 0 or not bool(
+        torch.isfinite(specified_temperature) & (specified_temperature > 0.0)
+    ):
+        raise ValueError("binary Helmholtz VLE temperature must be one finite positive scalar")
+    if specified_pressure.ndim != 0 or not bool(
+        torch.isfinite(specified_pressure) & (specified_pressure > 0.0)
+    ):
+        raise ValueError("binary Helmholtz VLE pressure must be one finite positive scalar")
+    if (
+        x.shape != (2,)
+        or y.shape != (2,)
+        or not bool(
+            torch.isfinite(x).all() & torch.isfinite(y).all() & (x > 0.0).all() & (y > 0.0).all()
+        )
+    ):
+        raise ValueError("initial binary Helmholtz VLE compositions must be finite and positive")
+    if not bool(
+        torch.isfinite(liquid_volume)
+        & torch.isfinite(vapor_volume)
+        & (liquid_volume > 0.0)
+        & (vapor_volume > 0.0)
+    ):
+        raise ValueError("initial binary Helmholtz VLE molar volumes must be finite and positive")
+    if tolerance <= 0.0 or not torch.isfinite(torch.tensor(tolerance)):
+        raise ValueError("binary Helmholtz VLE tolerance must be finite and positive")
+    if max_iterations < 1:
+        raise ValueError("binary Helmholtz VLE max_iterations must be positive")
+    if minimum_phase_separation < 0.0 or not torch.isfinite(torch.tensor(minimum_phase_separation)):
+        raise ValueError(
+            "binary Helmholtz VLE minimum phase separation must be finite and nonnegative"
+        )
+
+    epsilon = 32.0 * torch.finfo(x.dtype).eps
+
+    def logit(value: Tensor) -> Tensor:
+        bounded = torch.clamp(value, epsilon, 1.0 - epsilon)
+        return torch.log(bounded) - torch.log1p(-bounded)
+
+    variables = torch.stack(
+        (
+            logit(x[0]),
+            logit(y[0]),
+            torch.log(liquid_volume.reciprocal()),
+            torch.log(vapor_volume.reciprocal()),
+        )
+    )
+    pressure_scale = torch.clamp_min(
+        specified_pressure.detach().abs(),
+        variables.new_tensor(1.0),
+    )
+
+    def residual(current: Tensor) -> Tensor:
+        liquid_first = torch.sigmoid(current[0])
+        vapor_first = torch.sigmoid(current[1])
+        liquid = torch.stack((liquid_first, 1.0 - liquid_first))
+        vapor = torch.stack((vapor_first, 1.0 - vapor_first))
+        current_liquid_volume = torch.exp(-current[2])
+        current_vapor_volume = torch.exp(-current[3])
+        liquid_mu_residual: Tensor = torch.func.grad(
+            lambda moles: model.residual_helmholtz_rt(
+                specified_temperature,
+                current_liquid_volume,
+                moles,
+            ).sum()
+        )(liquid)
+        vapor_mu_residual: Tensor = torch.func.grad(
+            lambda moles: model.residual_helmholtz_rt(
+                specified_temperature,
+                current_vapor_volume,
+                moles,
+            ).sum()
+        )(vapor)
+        log_fugacity_difference = (
+            torch.log(liquid / current_liquid_volume)
+            + liquid_mu_residual
+            - torch.log(vapor / current_vapor_volume)
+            - vapor_mu_residual
+        )
+        liquid_pressure_residual = (
+            pressure_function(
+                specified_temperature,
+                current_liquid_volume,
+                liquid,
+            )
+            - specified_pressure
+        ) / pressure_scale
+        vapor_pressure_residual = (
+            pressure_function(
+                specified_temperature,
+                current_vapor_volume,
+                vapor,
+            )
+            - specified_pressure
+        ) / pressure_scale
+        return torch.cat(
+            (
+                log_fugacity_difference,
+                liquid_pressure_residual.reshape(1),
+                vapor_pressure_residual.reshape(1),
+            )
+        )
+
+    result = damped_newton(
+        residual,
+        variables,
+        tolerance=tolerance,
+        max_iterations=max_iterations,
+        lower_bound=torch.stack(
+            (
+                variables.new_tensor(-30.0),
+                variables.new_tensor(-30.0),
+                variables.new_tensor(-20.0),
+                variables.new_tensor(-20.0),
+            )
+        ),
+        upper_bound=torch.stack(
+            (
+                variables.new_tensor(30.0),
+                variables.new_tensor(30.0),
+                variables.new_tensor(20.0),
+                variables.new_tensor(20.0),
+            )
+        ),
+        jacobian_refresh_interval=4,
+    )
+    liquid_first = torch.sigmoid(result.solution[0])
+    vapor_first = torch.sigmoid(result.solution[1])
+    liquid = torch.stack((liquid_first, 1.0 - liquid_first))
+    vapor = torch.stack((vapor_first, 1.0 - vapor_first))
+    solved_liquid_volume = torch.exp(-result.solution[2])
+    solved_vapor_volume = torch.exp(-result.solution[3])
+    phase_separation = torch.max(torch.abs(vapor - liquid))
+    return BinaryVLEPointWithVolumes(
+        specified_temperature,
+        specified_pressure,
+        liquid,
+        vapor,
+        result.iterations,
+        result.converged and bool(phase_separation > minimum_phase_separation),
+        result.residual_norm,
+        solved_liquid_volume,
+        solved_vapor_volume,
+    )
+
+
 def binary_bubble_point(
     model: StateModel,
     temperature: Tensor,
@@ -1502,6 +1749,9 @@ def trace_binary_helmholtz_pxy_isotherm(
     max_iterations: int = 30,
     minimum_phase_separation: float = 1.0e-5,
     stop_on_failure: bool = True,
+    composition_failure_refinement_steps: int = 0,
+    continue_in_pressure_on_failure: bool = False,
+    pressure_continuation_points: int = 25,
 ) -> BinaryPxyIsotherm:
     """Trace a binary pressure-composition isotherm by bubble continuation.
 
@@ -1533,6 +1783,19 @@ def trace_binary_helmholtz_pxy_isotherm(
         convergence.
     stop_on_failure
         Stop after the first rejected point once a physical branch has begun.
+    composition_failure_refinement_steps
+        Number of bisection refinements between the last accepted liquid
+        composition and the first rejected one. Refinement approaches a
+        critical endpoint or a turning point in the liquid-composition
+        parametrization without requiring a uniformly fine input grid.
+    continue_in_pressure_on_failure
+        After refinement, continue at increasing fixed pressures from the last
+        accepted coexistence state to ``maximum_pressure``. This follows open
+        phase boundaries through a turning point in liquid composition.
+        Requires ``stop_on_failure=True`` and a finite ``maximum_pressure``.
+    pressure_continuation_points
+        Number of logarithmically spaced fixed-pressure solves used by the
+        pressure continuation, including its final pressure.
 
     Returns
     -------
@@ -1545,7 +1808,9 @@ def trace_binary_helmholtz_pxy_isotherm(
     ------
     ValueError
         If temperature, compositions, tolerances, or iteration settings are
-        invalid. Pressure-bound validation is delegated to the point solver.
+        invalid, or if pressure continuation is requested without compatible
+        stopping and pressure-bound settings. Pressure-bound validation is
+        otherwise delegated to the point solver.
 
     Notes
     -----
@@ -1554,9 +1819,15 @@ def trace_binary_helmholtz_pxy_isotherm(
     Wide-Range Equation of State for Natural Gases and Other Mixtures*, GERG
     Technical Monograph 15 (2007), Sec. 5.4.3, ISBN 978-3-18-355706-6, and
     Michelsen and Mollerup, *Thermodynamic Models*, 2nd ed. (2007), chapter
-    12, ISBN 978-87-989961-3-2. The discrete accept/stop decisions are not
-    differentiable, but accepted pressure and composition tensors preserve
-    their PyTorch graphs.
+    12, ISBN 978-87-989961-3-2.
+
+    Liquid-composition continuation becomes singular at a fold of an open
+    phase boundary. The optional fallback changes the continuation coordinate
+    to pressure and solves coexistence with
+    :func:`binary_helmholtz_vle_point`; it does not close a physically open
+    branch. Bisection and the discrete accept/stop/coordinate-switch decisions
+    are not differentiable, but accepted equilibrium tensors preserve their
+    PyTorch graphs.
     """
     if temperature.ndim != 0 or not bool(torch.isfinite(temperature) & (temperature > 0.0)):
         raise ValueError("binary p-x-y isotherm requires one finite positive temperature")
@@ -1575,6 +1846,14 @@ def trace_binary_helmholtz_pxy_isotherm(
         raise ValueError("binary p-x-y max_iterations must be positive")
     if minimum_phase_separation < 0.0 or not torch.isfinite(torch.tensor(minimum_phase_separation)):
         raise ValueError("binary p-x-y minimum phase separation must be finite and nonnegative")
+    if composition_failure_refinement_steps < 0:
+        raise ValueError("binary p-x-y composition failure refinement steps must be nonnegative")
+    if pressure_continuation_points < 1:
+        raise ValueError("binary p-x-y pressure continuation points must be positive")
+    if continue_in_pressure_on_failure and not stop_on_failure:
+        raise ValueError("binary p-x-y pressure continuation requires stop_on_failure=True")
+    if continue_in_pressure_on_failure and maximum_pressure is None:
+        raise ValueError("binary p-x-y pressure continuation requires maximum_pressure")
 
     maximum = (
         None
@@ -1585,10 +1864,23 @@ def trace_binary_helmholtz_pxy_isotherm(
             device=compositions.device,
         )
     )
-    points: list[BinaryBubblePointWithVolumes] = []
+    points: list[BinaryBubblePointWithVolumes | BinaryVLEPoint] = []
     accepted: list[Tensor] = []
     separations: list[Tensor] = []
     previous: BinaryBubblePointWithVolumes | None = None
+    failed_liquid: Tensor | None = None
+
+    def physical_diagnostics(
+        point: BinaryBubblePoint | BinaryVLEPoint,
+    ) -> tuple[bool, Tensor]:
+        separation = torch.max(torch.abs(point.vapor_composition - point.liquid_composition))
+        physical = (
+            point.converged
+            and bool(point.residual_norm <= tolerance)
+            and bool(separation > minimum_phase_separation)
+        )
+        return physical, separation
+
     for liquid in compositions:
         point = binary_helmholtz_bubble_point(
             model,
@@ -1600,21 +1892,82 @@ def trace_binary_helmholtz_pxy_isotherm(
             tolerance=tolerance,
             max_iterations=max_iterations,
         )
-        separation = torch.max(torch.abs(point.vapor_composition - liquid))
-        physical = (
-            point.converged
-            and bool(point.residual_norm <= tolerance)
-            and bool(separation > minimum_phase_separation)
-        )
+        physical, separation = physical_diagnostics(point)
         points.append(point)
         accepted.append(liquid.new_tensor(physical, dtype=torch.bool))
         separations.append(separation)
         if physical:
             previous = point
         elif previous is not None and stop_on_failure:
+            failed_liquid = liquid
             break
         if physical and maximum is not None and bool(point.pressure >= 0.995 * maximum):
             break
+
+    if failed_liquid is not None and previous is not None:
+        rejected_liquid = failed_liquid
+        for _ in range(composition_failure_refinement_steps):
+            candidate_liquid = normalize_composition(
+                0.5 * (previous.liquid_composition + rejected_liquid)
+            )
+            point = binary_helmholtz_bubble_point(
+                model,
+                temperature.to(
+                    dtype=candidate_liquid.dtype,
+                    device=candidate_liquid.device,
+                ),
+                candidate_liquid,
+                initial_point=previous,
+                minimum_pressure=minimum_pressure,
+                maximum_pressure=maximum_pressure,
+                tolerance=tolerance,
+                max_iterations=max_iterations,
+            )
+            physical, separation = physical_diagnostics(point)
+            points.append(point)
+            accepted.append(candidate_liquid.new_tensor(physical, dtype=torch.bool))
+            separations.append(separation)
+            if physical:
+                previous = point
+            else:
+                rejected_liquid = candidate_liquid
+
+    if (
+        continue_in_pressure_on_failure
+        and failed_liquid is not None
+        and previous is not None
+        and maximum is not None
+        and bool(previous.pressure < 0.995 * maximum)
+    ):
+        start_pressure = torch.minimum(previous.pressure * 1.01, maximum)
+        continuation_pressures = torch.exp(
+            torch.linspace(
+                torch.log(start_pressure),
+                torch.log(maximum),
+                pressure_continuation_points,
+                dtype=compositions.dtype,
+                device=compositions.device,
+            )
+        )
+        pressure_initial_point: BinaryBubblePointWithVolumes | BinaryVLEPointWithVolumes = previous
+        for pressure in continuation_pressures:
+            vle_point = binary_helmholtz_vle_point(
+                model,
+                temperature.to(dtype=pressure.dtype, device=pressure.device),
+                pressure,
+                pressure_initial_point,
+                tolerance=tolerance,
+                max_iterations=max_iterations,
+                minimum_phase_separation=minimum_phase_separation,
+            )
+            physical, separation = physical_diagnostics(vle_point)
+            points.append(vle_point)
+            accepted.append(pressure.new_tensor(physical, dtype=torch.bool))
+            separations.append(separation)
+            if physical:
+                pressure_initial_point = vle_point
+            elif stop_on_failure:
+                break
 
     return BinaryPxyIsotherm(
         temperature.to(dtype=compositions.dtype, device=compositions.device),

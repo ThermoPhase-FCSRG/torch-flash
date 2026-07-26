@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import csv
+from dataclasses import replace
 from pathlib import Path
 
 import pytest
@@ -13,6 +14,8 @@ from torch_flash.envelope import (
     BinaryBubblePointWithVolumes,
     binary_bubble_point,
     binary_helmholtz_bubble_point,
+    binary_helmholtz_vle_point,
+    binary_vle_point,
     phase_envelope,
     trace_binary_helmholtz_fixed_composition_boundary,
     trace_binary_helmholtz_pxy_isotherm,
@@ -243,6 +246,128 @@ def test_hydrogen_tailored_gerg_high_level_pxy_isotherm_and_autodiff():
     gradient = torch.autograd.grad(result.pressure.sum(), fractions)[0]
     assert torch.isfinite(gradient).all()
     assert torch.all(gradient > 0.0)
+
+
+def test_gerg2008_open_pxy_branch_continues_through_liquid_composition_fold():
+    parameter = torch.linspace(0.0, 1.0, 61, dtype=DTYPE)
+    liquid_hydrogen = 0.002 + (0.98 - 0.002) * parameter.pow(2.5)
+    result = trace_binary_helmholtz_pxy_isotherm(
+        gerg2008(("nitrogen", "hydrogen")),
+        torch.tensor(70.4, dtype=DTYPE),
+        torch.stack((1.0 - liquid_hydrogen, liquid_hydrogen), dim=-1),
+        minimum_pressure=1.0e3,
+        maximum_pressure=105.0e6,
+        max_iterations=40,
+        composition_failure_refinement_steps=8,
+        continue_in_pressure_on_failure=True,
+        pressure_continuation_points=10,
+    )
+    accepted = result.converged
+    assert int(accepted.sum()) >= 20
+    torch.testing.assert_close(
+        result.pressure[accepted][-1],
+        torch.tensor(105.0e6, dtype=DTYPE),
+        rtol=2.0e-10,
+        atol=2.0e-2,
+    )
+    assert torch.all(result.residual_norm[accepted] <= 1.0e-8)
+    accepted_liquid = result.liquid_composition[accepted, 1]
+    assert accepted_liquid[-1] < accepted_liquid.max()
+    assert result.vapor_composition[accepted, 1][-1] > result.vapor_composition[accepted, 1][-10]
+
+
+def test_helmholtz_volume_vle_point_matches_pressure_form():
+    model = gerg2008(("nitrogen", "hydrogen"))
+    temperature = torch.tensor(70.4, dtype=DTYPE)
+    initial = binary_helmholtz_bubble_point(
+        model,
+        temperature,
+        torch.tensor([0.942, 0.058], dtype=DTYPE),
+        minimum_pressure=1.0e3,
+        maximum_pressure=105.0e6,
+    )
+    pressure = torch.tensor(40.0e6, dtype=DTYPE)
+    volume_result = binary_helmholtz_vle_point(
+        model,
+        temperature,
+        pressure,
+        initial,
+        max_iterations=40,
+    )
+    pressure_result = binary_vle_point(
+        model,
+        temperature,
+        pressure,
+        initial.liquid_composition,
+        initial.vapor_composition,
+        max_iterations=40,
+    )
+    assert initial.converged
+    assert volume_result.converged and pressure_result.converged
+    assert volume_result.liquid_molar_volume > 0.0
+    assert volume_result.vapor_molar_volume > 0.0
+    torch.testing.assert_close(
+        volume_result.liquid_composition,
+        pressure_result.liquid_composition,
+        rtol=3.0e-8,
+        atol=2.0e-9,
+    )
+    torch.testing.assert_close(
+        volume_result.vapor_composition,
+        pressure_result.vapor_composition,
+        rtol=3.0e-8,
+        atol=2.0e-9,
+    )
+    assert volume_result.residual_norm <= 1.0e-8
+
+
+def test_helmholtz_volume_vle_point_validates_inputs():
+    model = gerg2008(("nitrogen", "hydrogen"))
+    temperature = torch.tensor(70.4, dtype=DTYPE)
+    pressure = torch.tensor(40.0e6, dtype=DTYPE)
+    initial = binary_helmholtz_bubble_point(
+        model,
+        temperature,
+        torch.tensor([0.942, 0.058], dtype=DTYPE),
+        minimum_pressure=1.0e3,
+        maximum_pressure=105.0e6,
+    )
+    with pytest.raises(TypeError, match="Helmholtz pressure method"):
+        binary_helmholtz_vle_point(object(), temperature, pressure, initial)
+    with pytest.raises(ValueError, match="temperature"):
+        binary_helmholtz_vle_point(model, temperature.reshape(1), pressure, initial)
+    with pytest.raises(ValueError, match="pressure"):
+        binary_helmholtz_vle_point(model, temperature, pressure.reshape(1), initial)
+    invalid_liquid = replace(
+        initial,
+        liquid_composition=torch.tensor([0.2, 0.3, 0.5], dtype=DTYPE),
+    )
+    with pytest.raises(ValueError, match="compositions"):
+        binary_helmholtz_vle_point(model, temperature, pressure, invalid_liquid)
+    invalid_vapor = replace(
+        initial,
+        vapor_composition=torch.tensor([1.0, 0.0], dtype=DTYPE),
+    )
+    with pytest.raises(ValueError, match="compositions"):
+        binary_helmholtz_vle_point(model, temperature, pressure, invalid_vapor)
+    invalid_volume = replace(
+        initial,
+        liquid_molar_volume=torch.tensor(torch.nan, dtype=DTYPE),
+    )
+    with pytest.raises(ValueError, match="molar volumes"):
+        binary_helmholtz_vle_point(model, temperature, pressure, invalid_volume)
+    with pytest.raises(ValueError, match="tolerance"):
+        binary_helmholtz_vle_point(model, temperature, pressure, initial, tolerance=0.0)
+    with pytest.raises(ValueError, match="max_iterations"):
+        binary_helmholtz_vle_point(model, temperature, pressure, initial, max_iterations=0)
+    with pytest.raises(ValueError, match="phase separation"):
+        binary_helmholtz_vle_point(
+            model,
+            temperature,
+            pressure,
+            initial,
+            minimum_phase_separation=-1.0,
+        )
 
 
 def test_high_level_pxy_isotherm_stops_on_failure_and_pressure_limit(monkeypatch):
@@ -559,6 +684,34 @@ def test_fixed_composition_boundary_clips_midscan_pressure(monkeypatch):
             torch.tensor([[0.8, 0.2]], dtype=DTYPE),
             {"minimum_phase_separation": -1.0},
             "phase separation",
+        ),
+        (
+            torch.tensor(90.8, dtype=DTYPE),
+            torch.tensor([[0.8, 0.2]], dtype=DTYPE),
+            {"composition_failure_refinement_steps": -1},
+            "refinement steps",
+        ),
+        (
+            torch.tensor(90.8, dtype=DTYPE),
+            torch.tensor([[0.8, 0.2]], dtype=DTYPE),
+            {"pressure_continuation_points": 0},
+            "continuation points",
+        ),
+        (
+            torch.tensor(90.8, dtype=DTYPE),
+            torch.tensor([[0.8, 0.2]], dtype=DTYPE),
+            {"continue_in_pressure_on_failure": True},
+            "requires maximum_pressure",
+        ),
+        (
+            torch.tensor(90.8, dtype=DTYPE),
+            torch.tensor([[0.8, 0.2]], dtype=DTYPE),
+            {
+                "continue_in_pressure_on_failure": True,
+                "maximum_pressure": 1.0e8,
+                "stop_on_failure": False,
+            },
+            "requires stop_on_failure",
         ),
     ],
 )
