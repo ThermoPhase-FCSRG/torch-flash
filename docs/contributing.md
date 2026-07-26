@@ -27,7 +27,7 @@ pixi run typecheck
 pixi run test-cov
 pixi run sync-deps-check
 pixi run api-docs-check
-pixi run -e docs mkdocs build --strict
+pixi run -e docs docs-check
 ```
 
 `pixi run test-parallel` runs ordinary tests with `pytest-xdist`, stops all

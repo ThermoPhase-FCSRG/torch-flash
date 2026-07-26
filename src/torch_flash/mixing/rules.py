@@ -261,18 +261,18 @@ class PPR78Mixing(nn.Module):
 
     This is Eq. (5) of Jaubert and Mutelet (2004),
     doi:10.1016/j.fluid.2004.06.059. For component group fractions
-    :math:`\\alpha_{ik}`, the method evaluates
+    \(\alpha_{ik}\), the method evaluates
 
-    .. math::
-
-       k_{ij}(T) =
-       \\frac{
-       -\\frac12\\sum_{kl}\\Delta\\alpha_{ij,k}\\Delta\\alpha_{ij,l}
-       A_{kl}(T_r/T)^{B_{kl}/A_{kl}-1}
-       -(\\sqrt{a_i}/b_i-\\sqrt{a_j}/b_j)^2
-       }{
-       2\\sqrt{a_i a_j}/(b_i b_j)
-       }.
+    \[
+    k_{ij}(T) =
+    \frac{
+    -\frac12\sum_{kl}\Delta\alpha_{ij,k}\Delta\alpha_{ij,l}
+    A_{kl}(T_r/T)^{B_{kl}/A_{kl}-1}
+    -(\sqrt{a_i}/b_i-\sqrt{a_j}/b_j)^2
+    }{
+    2\sqrt{a_i a_j}/(b_i b_j)
+    }.
+    \]
 
     ``group_a`` and ``group_b`` are symmetric pressure-valued group
     interaction matrices. Only their unique off-diagonal entries are stored,

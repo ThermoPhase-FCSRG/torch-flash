@@ -16,6 +16,7 @@ residual Helmholtz energy are used for non-quadratic mixing.
 
 The predictive PR78 constructor evaluates the Jaubert-Mutelet
 group-contribution correlation
+
 \[
 k_{ij}(T)=
 \frac{
@@ -27,6 +28,7 @@ k_{ij}(T)=
 2\sqrt{a_i(T)a_j(T)}/(b_i b_j)
 }.
 \]
+
 Here \(\Delta\alpha_{ij,k}=\alpha_{ik}-\alpha_{jk}\), \(T\) is in
 kelvin, and \(A_{kl},B_{kl}\) are in pascals. The squared pure-component
 term follows Eq. 5 and Appendix A of the
@@ -38,10 +40,12 @@ derivation uses
 cross-co-volume `lij` in the named constructor.
 
 The implemented one-fluid co-volume convention is
+
 \[
 b_{ij}=\frac{b_i+b_j}{2}(1-l_{ij}),\qquad
 b_m=\sum_i\sum_jx_i x_jb_{ij}.
 \]
+
 It follows
 [Privat and Jaubert (2023)](https://doi.org/10.1016/j.fluid.2022.113697)
 and the independently exercised
@@ -57,10 +61,12 @@ of the parent EoS.
 
 `VolumeTranslation` supports constant or linear-in-temperature additive
 component shifts,
+
 \[
 v=v_0+\sum_i x_i d_i(T),\qquad
 d_i(T)=d_{i,0}+d_{i,1}(T-T_{\mathrm{ref}}).
 \]
+
 The residual-Helmholtz reference-volume term and
 \(P d_i(T)/(RT)\) log-fugacity correction are included consistently. The
 literature normally writes \(v=v_0-\sum_i x_i c_i\); therefore the public
@@ -96,10 +102,12 @@ and original Flory-Huggins/Staverman-Guggenheim combinatorial term with
 \(z=10\). The kernel accepts batch dimensions, runs on the configured PyTorch
 device/dtype, exposes \(\ln\gamma_i\) and \(g^E/(RT)\), and makes the directed
 main-group interaction matrix trainable on request. The extensive identity
+
 \[
 \ln\gamma_i =
 \frac{\partial\left[n g^E/(RT)\right]}{\partial n_i}
 \]
+
 is checked directly with autodiff.
 
 The bundled parameter file is original VLE-UNIFAC, not Dortmund UNIFAC,
@@ -248,11 +256,13 @@ and the dimensionless phase-identification parameter of
 - Bennett's thermal-expansion criterion, with liquid when
   \((\partial\alpha_P/\partial T)_P>0\); and
 - the Venkatarathnam-Oellrich parameter
-  \[
-  \Pi=V\left(\frac{P_{VT}}{P_T}-\frac{P_{VV}}{P_V}\right),
-  \]
-  with liquid when \(\Pi>1\) and vapor when \(\Pi\leq1\). Derivatives are
-  evaluated at fixed composition.
+
+    \[
+    \Pi=V\left(\frac{P_{VT}}{P_T}-\frac{P_{VV}}{P_V}\right),
+    \]
+
+    with liquid when \(\Pi>1\) and vapor when \(\Pi\leq1\). Derivatives are
+    evaluated at fixed composition.
 
 The public method names are
 `li-pseudo-critical-temperature`, `pedersen-volume-to-covolume`,
@@ -358,10 +368,12 @@ at a zero mole fraction.
 
 `log_fugacities_tv` and `fugacities_tv` independently evaluate an explicit
 \(T,V,\mathbf n\) state from the extensive residual Helmholtz energy,
+
 \[
 \ln(f_i/p^\circ)=\ln(n_iRT/(Vp^\circ))
 +\partial(A^R/RT)/\partial n_i|_{T,V,n_{j\ne i}}.
 \]
+
 They provide a direct TP/TV consistency check for any model that implements
 the residual-Helmholtz protocol.
 

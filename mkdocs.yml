@@ -111,7 +111,6 @@ nav:
   - Guides:
       - Runtime configuration: runtime.md
       - Parameter databases: parameters.md
-      - Model scope: model-scope.md
       - High-performance setup: performance.md
       - Batched grid flash and phase identification: grid-flash.md
   - Verification & Validation:
@@ -128,6 +127,7 @@ nav:
           - Predictive PR78: validation-reports/28-ppr78.md
           - H2-tailored GERG (2021): validation-reports/29-hydrogen-tailored-gerg.md
   - Reference:
+      - Model scope: model-scope.md
       - Scientific references: references.md
       - API Reference:
           - Overview: api.md
