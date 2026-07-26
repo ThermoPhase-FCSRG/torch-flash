@@ -126,6 +126,28 @@ parameterization.
   - numerical solver options.
 - Public APIs must be typed, documented, exported intentionally, and covered
   by tests. Avoid exposing notebook-only helpers as package API.
+- Name public functions, methods, classes, result types, parameters, and
+  variables for their scientific action and scope. In particular, function
+  names must use a clear action and expose important protocol/model
+  restrictions such as Helmholtz-only, cubic-only, binary-only, or
+  homogeneous-state behavior; do not rely on type annotations or docstrings
+  to repair an ambiguous name.
+- Name result and data containers for the reusable scientific quantity they
+  represent, not for whichever model or algorithm currently produces them.
+  Add a model or formulation qualifier to a container only when its fields or
+  scientific meaning genuinely depend on that model. Keep real applicability
+  restrictions on the producing operation instead; for example, a
+  Helmholtz-only solver may return a generic bubble-point-with-volumes result.
+- Every public function and class must have a detailed docstring that explains
+  its scientific purpose, parameters, units, tensor shapes, return values,
+  convergence or failure behavior, assumptions, and important numerical or
+  physical limitations. A signature summary alone is not sufficient.
+- When a public API implements or materially follows an algorithm, equation,
+  correlation, or parameterization from the literature, its docstring must
+  identify the defining publication and cite it with enough precision to
+  locate the method: authors, work, year, equation/section/table where
+  applicable, and a DOI or other persistent identifier. Distinguish the
+  equation source from parameter and validation-data sources.
 - Preserve backwards compatibility unless the task explicitly authorizes an
   API break. If a correction changes numerical meaning, document the migration
   and add a regression for the old failure.
@@ -218,6 +240,43 @@ Requirements:
   agreement.
 
 ## Notebook study standard
+
+### Application-level notebook boundary
+
+Notebooks are application-level demonstrations for engineers and scientists
+who may not be experienced programmers. They must show how to solve a
+thermodynamic problem with the highest-level suitable public `torch-flash`
+APIs, not implement the underlying algorithms inside the study.
+
+- Keep thermodynamic algorithms, numerical solvers, continuation and tracing
+  methods, derivative/property assembly, reusable data transformations,
+  parallel execution kernels, and other core computational logic under
+  `src/torch_flash/`, organized in the appropriate scientific domain.
+- Notebook code should primarily configure a case, load study inputs, call
+  public package APIs, orchestrate existing `torch-flash` features, inspect
+  convergence and physical diagnostics, and present results.
+- Small notebook-local helpers are acceptable only for genuinely
+  study-specific presentation or input adaptation. They must not reimplement
+  package behavior or hide a generally useful scientific or numerical method.
+  Repeated or non-trivial `def`/`class` blocks are a prompt to stop and review
+  the package API boundary.
+- If a notebook needs a capability that `torch-flash` does not expose, first
+  implement it in the package as a typed, reusable, batch-aware function or
+  appropriately small abstraction. Generalize it across scientifically valid
+  cases instead of encoding one paper figure, dataset, or composition unless
+  the published method is intrinsically case-specific.
+- Preserve PyTorch dtype, device, batching, and autodiff behavior in extracted
+  code. Add unit, numerical-regression, difficult-state, and derivative tests
+  as applicable, maintain the branch-aware coverage gate, document the public
+  API, and only then reduce the notebook to a high-level consumer of it.
+- Keep paper-specific plotting, labels, lawful local-data ingestion, and
+  validation comparisons in the notebook or study tooling when they are not
+  reusable package capabilities. Do not make the installable library depend
+  on notebook-only plotting/dataframe packages or `not-cleared` research data.
+- During review, judge a notebook by whether an application engineer can
+  understand and adapt the workflow without understanding solver
+  implementation details. A notebook that contains the implementation needed
+  to produce its result is not complete, even if it executes correctly.
 
 Notebook studies are paired Jupytext artifacts. Edit the percent-format `.py`
 source first, synchronize it, execute the `.ipynb` from top to bottom, and
@@ -382,6 +441,8 @@ Before declaring a task complete, confirm as applicable:
 
 - governing equations and parameter identities match their cited sources;
 - units, tensor shapes, dtype, device, and gradients are correct;
+- public function/class docstrings fully document behavior and cite the
+  defining literature for publication-derived algorithms;
 - convergence and physical residuals pass over representative and difficult
   states;
 - verification and validation evidence are classified correctly;
@@ -389,6 +450,8 @@ Before declaring a task complete, confirm as applicable:
 - branch-aware coverage remains at least 99%;
 - notebook source and executed artifact are synchronized and visually
   inspected;
+- notebooks consume high-level package APIs and contain no reusable
+  thermodynamic, numerical, continuation, derivative, or parallel algorithms;
 - experimental/reference data and model curves are visible and correctly
   labeled;
 - documentation reflects the current behavior and known limitations;
