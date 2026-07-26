@@ -34,9 +34,9 @@ redistribution status is unresolved live only under
 as excluded from package distributions. Keeping data out of a package does
 not by itself grant permission to publish it in a public Git repository.
 
-The machine-readable [`rights.yaml`](rights.yaml) ledger covers all 39
+The machine-readable [`rights.yaml`](rights.yaml) ledger covers all 40
 declared CSV artifacts: 5 have a verified open basis, 12 are project-generated
-software outputs, and 22 are marked `not-cleared`. The audit scans recursively,
+software outputs, and 23 are marked `not-cleared`. The audit scans recursively,
 fails if a CSV is added without an explicit rights decision, and enforces that
 locally present `not-cleared` files are confined to the ignored subdirectory.
 Tests that require those inputs skip when it is absent.

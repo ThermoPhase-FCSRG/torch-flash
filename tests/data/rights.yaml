@@ -169,6 +169,10 @@ artifacts:
     status: not-cleared
     basis: Table 2 transcription; publisher redistribution permission not verified.
     source: https://doi.org/10.1016/j.apgeochem.2021.105005
+  xu_2017_eppr78_figure2_digitized.csv:
+    status: not-cleared
+    basis: Visual vector-marker digitization of Figure 2; publisher redistribution permission not verified.
+    source: https://doi.org/10.1016/j.ijggc.2016.11.015
   yucelen_kidnay_1999_n2_co2_vle.csv:
     status: not-cleared
     basis: Thesis Tables C.1-C.2 transcription; repository redistribution terms not verified.

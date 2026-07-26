@@ -10,6 +10,8 @@ import torch
 from torch_flash import (
     ChemicalState,
     batched_tangent_plane_stability,
+    binary_bubble_point,
+    binary_bubble_temperature,
     binary_phase_equilibrium_point,
     component_set,
     fixed_vapor_ratio_vle_point,
@@ -17,6 +19,8 @@ from torch_flash import (
     phase_properties,
     state_derivatives,
     tangent_plane_stability,
+    trace_binary_pxy_isotherm,
+    trace_binary_txy_isobar,
     two_phase_flash,
 )
 from torch_flash.constants import STANDARD_PRESSURE, R
@@ -937,6 +941,227 @@ def test_saturation_points_and_envelope(binary_model):
             "bubble",
             initial_pressure=torch.tensor(-1.0, dtype=torch.float64),
         )
+
+
+def test_binary_bubble_temperature_recovers_isothermal_bubble_point(binary_model):
+    composition = torch.tensor([0.5, 0.5], dtype=torch.float64)
+    expected_temperature = torch.tensor(270.0, dtype=torch.float64)
+    reference = binary_bubble_point(binary_model, expected_temperature, composition)
+
+    recovered = binary_bubble_temperature(
+        binary_model,
+        reference.pressure,
+        composition,
+    )
+    bounded = binary_bubble_temperature(
+        binary_model,
+        reference.pressure,
+        composition,
+        initial_temperature=torch.tensor(260.0, dtype=torch.float64),
+        initial_vapor_composition=reference.vapor_composition,
+        minimum_temperature=240.0,
+        maximum_temperature=torch.tensor(300.0, dtype=torch.float64),
+    )
+
+    assert recovered.converged and bounded.converged
+    assert recovered.phase_separation > 0.4
+    torch.testing.assert_close(recovered.temperature, expected_temperature, rtol=2.0e-9, atol=0.0)
+    torch.testing.assert_close(
+        recovered.vapor_composition,
+        reference.vapor_composition,
+        rtol=2.0e-8,
+        atol=2.0e-10,
+    )
+    torch.testing.assert_close(bounded.temperature, expected_temperature)
+
+    rejected = binary_bubble_temperature(
+        binary_model,
+        reference.pressure,
+        composition,
+        initial_temperature=expected_temperature,
+        initial_vapor_composition=reference.vapor_composition,
+        minimum_phase_separation=1.0,
+    )
+    assert not rejected.converged
+    assert rejected.residual_norm < 1.0e-8
+
+
+@pytest.mark.parametrize(
+    ("pressure", "composition", "options", "match"),
+    [
+        (
+            torch.tensor(-1.0, dtype=torch.float64),
+            torch.tensor([0.5, 0.5], dtype=torch.float64),
+            {},
+            "pressure",
+        ),
+        (
+            torch.tensor(1.0e6, dtype=torch.float64),
+            torch.tensor([0.5, 0.5, 0.0], dtype=torch.float64),
+            {},
+            "composition",
+        ),
+        (
+            torch.tensor(1.0e6, dtype=torch.float64),
+            torch.tensor([1.0, 0.0], dtype=torch.float64),
+            {},
+            "composition",
+        ),
+        (
+            torch.tensor(1.0e6, dtype=torch.float64),
+            torch.tensor([0.5, 0.5], dtype=torch.float64),
+            {"tolerance": 0.0},
+            "solver controls",
+        ),
+        (
+            torch.tensor(1.0e6, dtype=torch.float64),
+            torch.tensor([0.5, 0.5], dtype=torch.float64),
+            {"minimum_phase_separation": -1.0},
+            "phase separation",
+        ),
+        (
+            torch.tensor(1.0e6, dtype=torch.float64),
+            torch.tensor([0.5, 0.5], dtype=torch.float64),
+            {"initial_temperature": torch.tensor(-1.0, dtype=torch.float64)},
+            "initial.*temperature",
+        ),
+        (
+            torch.tensor(1.0e6, dtype=torch.float64),
+            torch.tensor([0.5, 0.5], dtype=torch.float64),
+            {"initial_vapor_composition": torch.tensor([1.0, 0.0], dtype=torch.float64)},
+            "vapor composition",
+        ),
+        (
+            torch.tensor(1.0e6, dtype=torch.float64),
+            torch.tensor([0.5, 0.5], dtype=torch.float64),
+            {"minimum_temperature": -1.0},
+            "minimum.*temperature",
+        ),
+        (
+            torch.tensor(1.0e6, dtype=torch.float64),
+            torch.tensor([0.5, 0.5], dtype=torch.float64),
+            {"maximum_temperature": torch.tensor([300.0], dtype=torch.float64)},
+            "maximum.*temperature",
+        ),
+        (
+            torch.tensor(1.0e6, dtype=torch.float64),
+            torch.tensor([0.5, 0.5], dtype=torch.float64),
+            {"minimum_temperature": 300.0, "maximum_temperature": 200.0},
+            "below maximum",
+        ),
+    ],
+)
+def test_binary_bubble_temperature_rejects_invalid_inputs(
+    binary_model,
+    pressure,
+    composition,
+    options,
+    match,
+):
+    with pytest.raises(ValueError, match=match):
+        binary_bubble_temperature(binary_model, pressure, composition, **options)
+
+
+def test_generic_binary_pxy_and_txy_traces_use_physical_continuation(binary_model):
+    temperature = torch.tensor(270.0, dtype=torch.float64)
+    fractions = torch.tensor([0.45, 0.50, 0.55], dtype=torch.float64)
+    reference = binary_bubble_point(
+        binary_model,
+        temperature,
+        torch.tensor([0.5, 0.5], dtype=torch.float64),
+    )
+
+    pxy = trace_binary_pxy_isotherm(binary_model, temperature, fractions)
+    txy = trace_binary_txy_isobar(binary_model, reference.pressure, fractions)
+
+    assert bool(pxy.converged.all()) and bool(txy.converged.all())
+    assert pxy.pressure.shape == fractions.shape
+    assert txy.temperature.shape == fractions.shape
+    assert pxy.liquid_composition.shape == (3, 2)
+    assert txy.vapor_composition.shape == (3, 2)
+    assert pxy.iterations.dtype == torch.int64
+    assert txy.converged.dtype == torch.bool
+    torch.testing.assert_close(pxy.temperature, temperature)
+    torch.testing.assert_close(txy.pressure, reference.pressure)
+    torch.testing.assert_close(txy.temperature[1], temperature, rtol=2.0e-9, atol=0.0)
+
+    rejected_pxy = trace_binary_pxy_isotherm(
+        binary_model,
+        temperature,
+        fractions[:1],
+        initial_pressure=reference.pressure,
+        initial_vapor_composition=reference.vapor_composition,
+        minimum_phase_separation=1.0,
+    )
+    rejected_txy = trace_binary_txy_isobar(
+        binary_model,
+        reference.pressure,
+        fractions[:1],
+        initial_temperature=temperature,
+        initial_vapor_composition=reference.vapor_composition,
+        minimum_phase_separation=1.0,
+    )
+    assert not bool(rejected_pxy.converged.any())
+    assert not bool(rejected_txy.converged.any())
+
+
+@pytest.mark.parametrize(
+    ("function", "fixed_value", "fractions", "options", "match"),
+    [
+        (
+            trace_binary_pxy_isotherm,
+            torch.tensor(-1.0, dtype=torch.float64),
+            torch.tensor([0.5], dtype=torch.float64),
+            {},
+            "temperature",
+        ),
+        (
+            trace_binary_pxy_isotherm,
+            torch.tensor(270.0, dtype=torch.float64),
+            torch.tensor([], dtype=torch.float64),
+            {},
+            "fractions",
+        ),
+        (
+            trace_binary_pxy_isotherm,
+            torch.tensor(270.0, dtype=torch.float64),
+            torch.tensor([0.5], dtype=torch.float64),
+            {"minimum_phase_separation": -1.0},
+            "phase separation",
+        ),
+        (
+            trace_binary_txy_isobar,
+            torch.tensor(-1.0, dtype=torch.float64),
+            torch.tensor([0.5], dtype=torch.float64),
+            {},
+            "pressure",
+        ),
+        (
+            trace_binary_txy_isobar,
+            torch.tensor(1.0e6, dtype=torch.float64),
+            torch.tensor([0.0], dtype=torch.float64),
+            {},
+            "fractions",
+        ),
+        (
+            trace_binary_txy_isobar,
+            torch.tensor(1.0e6, dtype=torch.float64),
+            torch.tensor([0.5], dtype=torch.float64),
+            {"minimum_phase_separation": -1.0},
+            "phase separation",
+        ),
+    ],
+)
+def test_generic_binary_composition_traces_reject_invalid_inputs(
+    binary_model,
+    function,
+    fixed_value,
+    fractions,
+    options,
+    match,
+):
+    with pytest.raises(ValueError, match=match):
+        function(binary_model, fixed_value, fractions, **options)
 
 
 def test_full_phase_envelope_against_thermopack_baseline(binary_model):

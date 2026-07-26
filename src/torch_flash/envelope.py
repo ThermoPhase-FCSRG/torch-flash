@@ -175,6 +175,39 @@ class BinaryBubblePoint:
 
 
 @dataclass(frozen=True)
+class BinaryBubbleTemperature:
+    """Binary bubble temperature and incipient vapor at specified ``P, x``.
+
+    Attributes
+    ----------
+    temperature
+        Solved bubble temperature in K.
+    pressure
+        Specified pressure in Pa.
+    liquid_composition
+        Specified normalized binary liquid composition.
+    vapor_composition
+        Solved normalized incipient-vapor composition.
+    iterations, converged, residual_norm
+        Nonlinear iteration count, physical-convergence status, and maximum
+        absolute dimensionless log-fugacity residual.
+    phase_separation
+        Maximum absolute liquid-vapor mole-fraction difference. This is
+        reported separately because the algebraic homogeneous solution is not
+        a two-phase bubble point.
+    """
+
+    temperature: Tensor
+    pressure: Tensor
+    liquid_composition: Tensor
+    vapor_composition: Tensor
+    iterations: int
+    converged: bool
+    residual_norm: Tensor
+    phase_separation: Tensor
+
+
+@dataclass(frozen=True)
 class BinaryBubblePointWithVolumes(BinaryBubblePoint):
     """Binary bubble point retaining the coexisting phase molar volumes.
 
@@ -228,6 +261,39 @@ class BinaryPxyIsotherm:
 
     temperature: Tensor
     pressure: Tensor
+    liquid_composition: Tensor
+    vapor_composition: Tensor
+    iterations: Tensor
+    converged: Tensor
+    residual_norm: Tensor
+    phase_separation: Tensor
+
+
+@dataclass(frozen=True)
+class BinaryTxyIsobar:
+    """Liquid-composition continuation of a binary temperature-composition trace.
+
+    Attributes
+    ----------
+    pressure
+        Specified scalar pressure in Pa.
+    temperature
+        Attempted bubble temperatures in K.
+    liquid_composition, vapor_composition
+        Coexisting binary composition arrays with shape ``(points, 2)``.
+    iterations
+        Nonlinear iteration count for every attempted point.
+    converged
+        Physical-convergence mask requiring both the nonlinear residual and
+        minimum phase separation to pass.
+    residual_norm
+        Maximum absolute dimensionless equilibrium residual at every point.
+    phase_separation
+        Maximum absolute liquid-vapor mole-fraction difference.
+    """
+
+    pressure: Tensor
+    temperature: Tensor
     liquid_composition: Tensor
     vapor_composition: Tensor
     iterations: Tensor
@@ -1793,6 +1859,424 @@ def binary_bubble_point(
         result.iterations,
         result.converged,
         result.residual_norm,
+    )
+
+
+def binary_bubble_temperature(
+    model: StateModel,
+    pressure: Tensor,
+    liquid_composition: Tensor,
+    *,
+    initial_temperature: Tensor | None = None,
+    initial_vapor_composition: Tensor | None = None,
+    minimum_temperature: Tensor | float | None = None,
+    maximum_temperature: Tensor | float | None = None,
+    tolerance: float = 1.0e-8,
+    max_iterations: int = 30,
+    minimum_phase_separation: float = 1.0e-6,
+) -> BinaryBubbleTemperature:
+    """Solve binary bubble temperature and vapor composition at fixed ``P, x``.
+
+    Parameters
+    ----------
+    model
+        Homogeneous-state fugacity model with critical constants for default
+        initialization.
+    pressure
+        Specified finite positive scalar pressure in Pa.
+    liquid_composition
+        Strictly positive binary liquid mole fractions.
+    initial_temperature
+        Optional finite positive temperature estimate in K. The
+        composition-weighted critical temperature is used when omitted.
+    initial_vapor_composition
+        Optional strictly positive binary vapor estimate. Wilson equilibrium
+        ratios initialize the vapor when omitted.
+    minimum_temperature, maximum_temperature
+        Optional finite positive temperature bounds in K.
+    tolerance
+        Positive maximum absolute component log-fugacity residual.
+    max_iterations
+        Positive damped-Newton iteration limit.
+    minimum_phase_separation
+        Nonnegative minimum of ``max(abs(y - x))`` required for physical
+        convergence.
+
+    Returns
+    -------
+    BinaryBubbleTemperature
+        Bubble temperature, specified pressure, coexisting compositions, and
+        explicit convergence diagnostics.
+
+    Raises
+    ------
+    ValueError
+        If the state, composition, bounds, or solver controls are invalid.
+
+    Notes
+    -----
+    The unknowns are the log temperature and the logit of the first vapor
+    mole fraction. Fugacity equality is enforced with liquid and vapor roots,
+    following Michelsen and Mollerup, *Thermodynamic Models: Fundamentals &
+    Computational Aspects*, 2nd ed. (2007), chapter 12,
+    ISBN 978-87-989961-3-2. The Jacobian is assembled by PyTorch automatic
+    differentiation, so equation-of-state-specific temperature derivatives
+    are not embedded in this solver.
+
+    A converged nonlinear residual is not sufficient near a critical endpoint:
+    the homogeneous ``x == y`` solution is rejected unless the requested
+    ``minimum_phase_separation`` is exceeded.
+    """
+    if tolerance <= 0.0 or max_iterations < 1:
+        raise ValueError("binary bubble temperature requires positive solver controls")
+    if minimum_phase_separation < 0.0:
+        raise ValueError("minimum phase separation must be nonnegative")
+    if pressure.ndim != 0 or not bool(torch.isfinite(pressure) & (pressure > 0.0)):
+        raise ValueError("binary bubble pressure must be one finite positive scalar")
+
+    x = normalize_composition(liquid_composition)
+    if x.shape != (2,) or not bool(torch.isfinite(x).all() & (x > 0.0).all()):
+        raise ValueError(
+            "binary bubble-temperature liquid composition must be a finite "
+            "positive two-component vector"
+        )
+    solve_pressure = pressure.to(dtype=x.dtype, device=x.device)
+    components = _components_from_model(model)
+
+    if initial_temperature is None:
+        lower_guess = 0.2 * torch.min(components.critical_temperature)
+        upper_guess = 2.0 * torch.max(components.critical_temperature)
+
+        def wilson_closure(temperature: Tensor) -> Tensor:
+            return torch.sum(x * wilson_k_values(components, temperature, solve_pressure)) - 1.0
+
+        lower_closure = wilson_closure(lower_guess)
+        upper_closure = wilson_closure(upper_guess)
+        if bool((lower_closure <= 0.0) & (upper_closure >= 0.0)):
+            for _ in range(48):
+                midpoint = 0.5 * (lower_guess + upper_guess)
+                if bool(wilson_closure(midpoint) < 0.0):
+                    lower_guess = midpoint
+                else:
+                    upper_guess = midpoint
+            initial_temperature = 0.5 * (lower_guess + upper_guess)
+        else:
+            initial_temperature = torch.sum(x * components.critical_temperature)
+    solve_initial_temperature = initial_temperature.to(dtype=x.dtype, device=x.device)
+    if solve_initial_temperature.ndim != 0 or not bool(
+        torch.isfinite(solve_initial_temperature) & (solve_initial_temperature > 0.0)
+    ):
+        raise ValueError("initial binary bubble temperature must be one finite positive scalar")
+
+    if initial_vapor_composition is None:
+        initial_k = wilson_k_values(components, solve_initial_temperature, solve_pressure)
+        initial_y = normalize_composition(x * initial_k)
+    else:
+        initial_y = normalize_composition(
+            initial_vapor_composition.to(dtype=x.dtype, device=x.device)
+        )
+    if initial_y.shape != (2,) or not bool(
+        torch.isfinite(initial_y).all() & (initial_y > 0.0).all()
+    ):
+        raise ValueError("initial binary bubble vapor composition must be finite and positive")
+
+    def temperature_bound(value: Tensor | float | None) -> Tensor | None:
+        if value is None:
+            return None
+        return torch.as_tensor(value, dtype=x.dtype, device=x.device)
+
+    minimum = temperature_bound(minimum_temperature)
+    maximum = temperature_bound(maximum_temperature)
+    for name, value in (("minimum", minimum), ("maximum", maximum)):
+        if value is not None and (
+            value.ndim != 0 or not bool(torch.isfinite(value) & (value > 0.0))
+        ):
+            raise ValueError(f"{name} binary bubble temperature must be one finite positive scalar")
+    if minimum is not None and maximum is not None and not bool(minimum < maximum):
+        raise ValueError("minimum binary bubble temperature must be below maximum temperature")
+
+    epsilon = 32.0 * torch.finfo(x.dtype).eps
+
+    def logit(value: Tensor) -> Tensor:
+        bounded = torch.clamp(value, epsilon, 1.0 - epsilon)
+        return torch.log(bounded) - torch.log1p(-bounded)
+
+    variables = torch.stack((logit(initial_y[0]), torch.log(solve_initial_temperature)))
+
+    def residual(current: Tensor) -> Tensor:
+        y1 = torch.sigmoid(current[0])
+        y = torch.stack((y1, 1.0 - y1))
+        temperature = torch.exp(current[1])
+        return (
+            torch.log(x)
+            + model.log_fugacity_coefficients(temperature, solve_pressure, x, "liquid")
+            - torch.log(y)
+            - model.log_fugacity_coefficients(temperature, solve_pressure, y, "vapor")
+        )
+
+    lower_temperature_log = (
+        variables.new_tensor(-torch.inf) if minimum is None else torch.log(minimum)
+    )
+    upper_temperature_log = (
+        variables.new_tensor(torch.inf) if maximum is None else torch.log(maximum)
+    )
+    result = damped_newton(
+        residual,
+        variables,
+        tolerance=tolerance,
+        max_iterations=max_iterations,
+        lower_bound=torch.stack((variables.new_tensor(-30.0), lower_temperature_log)),
+        upper_bound=torch.stack((variables.new_tensor(30.0), upper_temperature_log)),
+    )
+    vapor_first = torch.sigmoid(result.solution[0])
+    vapor = torch.stack((vapor_first, 1.0 - vapor_first))
+    phase_separation = torch.max(torch.abs(vapor - x))
+    return BinaryBubbleTemperature(
+        torch.exp(result.solution[1]),
+        solve_pressure,
+        x,
+        vapor,
+        result.iterations,
+        result.converged and bool(float(phase_separation.detach()) > minimum_phase_separation),
+        result.residual_norm,
+        phase_separation,
+    )
+
+
+def trace_binary_pxy_isotherm(
+    model: StateModel,
+    temperature: Tensor,
+    liquid_first_fractions: Tensor,
+    *,
+    initial_pressure: Tensor | None = None,
+    initial_vapor_composition: Tensor | None = None,
+    minimum_pressure: Tensor | float | None = None,
+    maximum_pressure: Tensor | float | None = None,
+    tolerance: float = 1.0e-8,
+    max_iterations: int = 30,
+    minimum_phase_separation: float = 1.0e-6,
+) -> BinaryPxyIsotherm:
+    """Trace a binary ``P-x-y`` isotherm with liquid-composition continuation.
+
+    Parameters
+    ----------
+    model
+        Homogeneous-state fugacity model.
+    temperature
+        Specified finite positive scalar temperature in K.
+    liquid_first_fractions
+        One-dimensional, strictly interior liquid mole fractions of the first
+        component, in the requested continuation order.
+    initial_pressure, initial_vapor_composition
+        Optional estimates for the first point. Every physically converged
+        point initializes the next one.
+    minimum_pressure, maximum_pressure
+        Optional positive pressure bounds in Pa passed to every bubble solve.
+    tolerance, max_iterations
+        Positive damped-Newton controls.
+    minimum_phase_separation
+        Nonnegative minimum of ``max(abs(y - x))`` used to reject homogeneous
+        algebraic roots.
+
+    Returns
+    -------
+    BinaryPxyIsotherm
+        Attempted pressures, compositions, and pointwise convergence
+        diagnostics in the same order as ``liquid_first_fractions``.
+
+    Notes
+    -----
+    This fugacity-based driver is valid for any :class:`StateModel`.
+    :func:`trace_binary_helmholtz_pxy_isotherm` is a distinct volume-based
+    continuation algorithm for :class:`HelmholtzStateModel` models and can
+    follow composition folds that are not single-valued in liquid
+    composition.
+
+    The phase-equilibrium formulation follows Michelsen and Mollerup,
+    *Thermodynamic Models: Fundamentals & Computational Aspects*, 2nd ed.
+    (2007), chapter 12, ISBN 978-87-989961-3-2.
+    """
+    if temperature.ndim != 0 or not bool(torch.isfinite(temperature) & (temperature > 0.0)):
+        raise ValueError("binary P-x-y trace requires one finite positive temperature")
+    if (
+        not liquid_first_fractions.is_floating_point()
+        or liquid_first_fractions.ndim != 1
+        or liquid_first_fractions.numel() == 0
+        or not bool(
+            torch.isfinite(liquid_first_fractions).all()
+            & (liquid_first_fractions > 0.0).all()
+            & (liquid_first_fractions < 1.0).all()
+        )
+    ):
+        raise ValueError(
+            "binary P-x-y trace requires a nonempty floating vector of "
+            "strictly interior liquid first-component fractions"
+        )
+    if minimum_phase_separation < 0.0:
+        raise ValueError("minimum phase separation must be nonnegative")
+
+    pressures: list[Tensor] = []
+    liquid_compositions: list[Tensor] = []
+    vapor_compositions: list[Tensor] = []
+    iterations: list[int] = []
+    converged: list[bool] = []
+    residuals: list[Tensor] = []
+    separations: list[Tensor] = []
+    next_pressure = initial_pressure
+    next_vapor = initial_vapor_composition
+    for first_fraction in liquid_first_fractions:
+        liquid = torch.stack((first_fraction, 1.0 - first_fraction))
+        point = binary_bubble_point(
+            model,
+            temperature,
+            liquid,
+            initial_pressure=next_pressure,
+            initial_vapor_composition=next_vapor,
+            minimum_pressure=minimum_pressure,
+            maximum_pressure=maximum_pressure,
+            tolerance=tolerance,
+            max_iterations=max_iterations,
+        )
+        separation = torch.max(torch.abs(point.vapor_composition - point.liquid_composition))
+        physical = point.converged and bool(float(separation.detach()) > minimum_phase_separation)
+        pressures.append(point.pressure)
+        liquid_compositions.append(point.liquid_composition)
+        vapor_compositions.append(point.vapor_composition)
+        iterations.append(point.iterations)
+        converged.append(physical)
+        residuals.append(point.residual_norm)
+        separations.append(separation)
+        if physical:
+            next_pressure = point.pressure
+            next_vapor = point.vapor_composition
+
+    return BinaryPxyIsotherm(
+        temperature,
+        torch.stack(pressures),
+        torch.stack(liquid_compositions),
+        torch.stack(vapor_compositions),
+        torch.tensor(iterations, dtype=torch.int64, device=liquid_first_fractions.device),
+        torch.tensor(converged, dtype=torch.bool, device=liquid_first_fractions.device),
+        torch.stack(residuals),
+        torch.stack(separations),
+    )
+
+
+def trace_binary_txy_isobar(
+    model: StateModel,
+    pressure: Tensor,
+    liquid_first_fractions: Tensor,
+    *,
+    initial_temperature: Tensor | None = None,
+    initial_vapor_composition: Tensor | None = None,
+    minimum_temperature: Tensor | float | None = None,
+    maximum_temperature: Tensor | float | None = None,
+    tolerance: float = 1.0e-8,
+    max_iterations: int = 30,
+    minimum_phase_separation: float = 1.0e-6,
+) -> BinaryTxyIsobar:
+    """Trace a binary ``T-x-y`` isobar with liquid-composition continuation.
+
+    Parameters
+    ----------
+    model
+        Homogeneous-state fugacity model.
+    pressure
+        Specified finite positive scalar pressure in Pa.
+    liquid_first_fractions
+        One-dimensional, strictly interior liquid mole fractions of the first
+        component, in the requested continuation order.
+    initial_temperature, initial_vapor_composition
+        Optional estimates for the first point. Every physically converged
+        point initializes the next one.
+    minimum_temperature, maximum_temperature
+        Optional positive temperature bounds in K passed to every bubble
+        solve.
+    tolerance, max_iterations
+        Positive damped-Newton controls.
+    minimum_phase_separation
+        Nonnegative minimum of ``max(abs(y - x))`` used to reject homogeneous
+        algebraic roots.
+
+    Returns
+    -------
+    BinaryTxyIsobar
+        Attempted temperatures, compositions, and pointwise convergence
+        diagnostics in the same order as ``liquid_first_fractions``.
+
+    Notes
+    -----
+    Every point is solved by :func:`binary_bubble_temperature`; both liquid
+    and vapor branches therefore come from one fugacity-equality calculation.
+    The continuation order is scientifically significant near critical
+    endpoints and should be selected to begin on a well-separated branch.
+
+    The phase-equilibrium formulation follows Michelsen and Mollerup,
+    *Thermodynamic Models: Fundamentals & Computational Aspects*, 2nd ed.
+    (2007), chapter 12, ISBN 978-87-989961-3-2.
+    """
+    if pressure.ndim != 0 or not bool(torch.isfinite(pressure) & (pressure > 0.0)):
+        raise ValueError("binary T-x-y trace requires one finite positive pressure")
+    if (
+        not liquid_first_fractions.is_floating_point()
+        or liquid_first_fractions.ndim != 1
+        or liquid_first_fractions.numel() == 0
+        or not bool(
+            torch.isfinite(liquid_first_fractions).all()
+            & (liquid_first_fractions > 0.0).all()
+            & (liquid_first_fractions < 1.0).all()
+        )
+    ):
+        raise ValueError(
+            "binary T-x-y trace requires a nonempty floating vector of "
+            "strictly interior liquid first-component fractions"
+        )
+    if minimum_phase_separation < 0.0:
+        raise ValueError("minimum phase separation must be nonnegative")
+
+    temperatures: list[Tensor] = []
+    liquid_compositions: list[Tensor] = []
+    vapor_compositions: list[Tensor] = []
+    iterations: list[int] = []
+    converged: list[bool] = []
+    residuals: list[Tensor] = []
+    separations: list[Tensor] = []
+    next_temperature = initial_temperature
+    next_vapor = initial_vapor_composition
+    for first_fraction in liquid_first_fractions:
+        liquid = torch.stack((first_fraction, 1.0 - first_fraction))
+        point = binary_bubble_temperature(
+            model,
+            pressure,
+            liquid,
+            initial_temperature=next_temperature,
+            initial_vapor_composition=next_vapor,
+            minimum_temperature=minimum_temperature,
+            maximum_temperature=maximum_temperature,
+            tolerance=tolerance,
+            max_iterations=max_iterations,
+            minimum_phase_separation=minimum_phase_separation,
+        )
+        temperatures.append(point.temperature)
+        liquid_compositions.append(point.liquid_composition)
+        vapor_compositions.append(point.vapor_composition)
+        iterations.append(point.iterations)
+        converged.append(point.converged)
+        residuals.append(point.residual_norm)
+        separations.append(point.phase_separation)
+        if point.converged:
+            next_temperature = point.temperature
+            next_vapor = point.vapor_composition
+
+    return BinaryTxyIsobar(
+        pressure,
+        torch.stack(temperatures),
+        torch.stack(liquid_compositions),
+        torch.stack(vapor_compositions),
+        torch.tensor(iterations, dtype=torch.int64, device=liquid_first_fractions.device),
+        torch.tensor(converged, dtype=torch.bool, device=liquid_first_fractions.device),
+        torch.stack(residuals),
+        torch.stack(separations),
     )
 
 

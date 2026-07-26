@@ -126,6 +126,8 @@ nav:
           - Original UNIFAC: validation-reports/26-unifac.md
           - Predictive PR78: validation-reports/28-ppr78.md
           - H2-tailored GERG (2021): validation-reports/29-hydrogen-tailored-gerg.md
+          - Hydrogen-water model comparison: validation-reports/32-hydrogen-water-all-models.md
+          - E-PPR78 for CCS mixtures: validation-reports/33-eppr78-ccs-figure2.md
   - Reference:
       - Model scope: model-scope.md
       - Scientific references: references.md

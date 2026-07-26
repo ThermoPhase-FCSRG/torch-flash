@@ -613,3 +613,37 @@ figures:
     publication_form: rendered-plot
     machine_readable_observation_values: false
     data_tables_distributed: false
+  33_eppr78_ccs_figure2_reproduction.png:
+    study_id: 33_eppr78_ccs_figure2
+    notebook: notebooks/local-only/validation/33_eppr78_ccs_figure2.ipynb
+    cell_index: 13
+    image_index: 0
+    evidence_class: validation
+    observation_level_markers: true
+    data_artifacts:
+    - xu_2017_eppr78_figure2_digitized.csv
+    source_material:
+    - https://doi.org/10.1016/j.ijggc.2016.11.015
+    description: All eight E-PPR78 panels from Xu et al. Figure 2, with model curves
+      and visually digitized experimental markers.
+    executed_artifact_sha256: 6e966cdce89265a249d123249056356e0bf6a88183a351ea85fdedc90d26efb4
+    publication_form: rendered-plot
+    machine_readable_observation_values: false
+    data_tables_distributed: false
+  33_eppr78_ccs_figure2_parity.png:
+    study_id: 33_eppr78_ccs_figure2
+    notebook: notebooks/local-only/validation/33_eppr78_ccs_figure2.ipynb
+    cell_index: 15
+    image_index: 0
+    evidence_class: validation
+    observation_level_markers: true
+    data_artifacts:
+    - xu_2017_eppr78_figure2_digitized.csv
+    source_material:
+    - https://doi.org/10.1016/j.ijggc.2016.11.015
+    description: Temperature, pressure, and enthalpy-of-mixing parity for the visually
+      recovered Xu et al. Figure 2 markers.
+    executed_artifact_sha256: 6e966cdce89265a249d123249056356e0bf6a88183a351ea85fdedc90d26efb4
+    publication_form: rendered-plot
+    machine_readable_observation_values: false
+    data_tables_distributed: false

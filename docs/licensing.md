@@ -28,8 +28,8 @@ The detailed per-file scientific provenance is in the repository's
 [`tests/data/README.md`](https://github.com/ThermoPhase-FCSRG/torch-flash/blob/main/tests/data/README.md).
 The machine-readable
 [`tests/data/rights.yaml`](https://github.com/ThermoPhase-FCSRG/torch-flash/blob/main/tests/data/rights.yaml)
-ledger covers all 39 declared CSV artifacts: 5 have a verified open basis, 12
-are project-generated, and 22 are marked `not-cleared`. CI rejects an
+ledger covers all 40 declared CSV artifacts: 5 have a verified open basis, 12
+are project-generated, and 23 are marked `not-cleared`. CI rejects an
 unclassified CSV and enforces that locally present `not-cleared` inputs are
 confined to the ignored `tests/data/not-cleared/` subdirectory. Tests that
 consume those inputs skip in a public checkout where the directory is absent.

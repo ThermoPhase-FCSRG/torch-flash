@@ -6,6 +6,8 @@ import torch
 from torch_flash import (
     ChemicalState,
     component_set,
+    enhanced_predictive_peng_robinson_1978,
+    molar_enthalpy_of_mixing,
     pedersen_binary_interaction,
     peng_robinson_1978,
     phase_properties,
@@ -225,6 +227,140 @@ def test_volume_translation_enthalpy_correction():
     )
     torch.testing.assert_close(translated.molar_internal_energy, base.molar_internal_energy)
     torch.testing.assert_close(translated.molar_entropy, base.molar_entropy)
+
+
+def test_molar_enthalpy_of_mixing_matches_epr78_figure2_scale_and_autodiff():
+    model = enhanced_predictive_peng_robinson_1978(
+        component_set(("nitrogen", "methane"), dtype=torch.float64)
+    )
+    temperature = torch.tensor(91.5, dtype=torch.float64, requires_grad=True)
+    pressure = torch.tensor(8.22e5, dtype=torch.float64)
+    composition = torch.tensor([0.5, 0.5], dtype=torch.float64)
+
+    value = molar_enthalpy_of_mixing(
+        model,
+        temperature,
+        pressure,
+        composition,
+    )
+    derivative = torch.autograd.grad(value, temperature)[0]
+
+    assert float(value.detach()) == pytest.approx(142.85, abs=0.15)
+    assert torch.isfinite(derivative)
+    torch.testing.assert_close(
+        molar_enthalpy_of_mixing(
+            model,
+            temperature.detach(),
+            pressure,
+            torch.tensor([1.0, 0.0], dtype=torch.float64),
+        ),
+        torch.tensor(0.0, dtype=torch.float64),
+        atol=1.0e-10,
+        rtol=0.0,
+    )
+
+    ideal = molar_enthalpy_of_mixing(
+        _IdealModel(),
+        torch.tensor(300.0, dtype=torch.float64),
+        torch.tensor(1.0e5, dtype=torch.float64),
+        torch.tensor([0.25, 0.75], dtype=torch.float64),
+    )
+    torch.testing.assert_close(ideal, torch.tensor(0.0, dtype=torch.float64))
+
+
+def test_molar_enthalpy_of_mixing_batches_compositions_with_scalar_parity():
+    model = enhanced_predictive_peng_robinson_1978(
+        component_set(("nitrogen", "methane"), dtype=torch.float64)
+    )
+    temperature = torch.tensor(195.15, dtype=torch.float64)
+    pressure = torch.tensor(50.66e5, dtype=torch.float64)
+    fractions = torch.linspace(0.05, 0.95, 7, dtype=torch.float64)
+    compositions = torch.stack((fractions, 1.0 - fractions), dim=-1)
+
+    batched = molar_enthalpy_of_mixing(
+        model,
+        temperature,
+        pressure,
+        compositions,
+    )
+    scalar = torch.stack(
+        tuple(
+            molar_enthalpy_of_mixing(
+                model,
+                temperature,
+                pressure,
+                composition,
+            )
+            for composition in compositions
+        )
+    )
+
+    assert batched.shape == (7,)
+    torch.testing.assert_close(batched, scalar, rtol=2.0e-13, atol=2.0e-11)
+
+
+@pytest.mark.parametrize(
+    ("temperature", "pressure", "composition", "phase", "match"),
+    [
+        (
+            torch.tensor(-1.0),
+            torch.tensor(1.0e5),
+            torch.tensor([0.5, 0.5]),
+            "stable",
+            "temperature",
+        ),
+        (
+            torch.tensor(300.0),
+            torch.tensor([1.0e5]),
+            torch.tensor([0.5, 0.5]),
+            "stable",
+            "pressure",
+        ),
+        (
+            torch.tensor(300.0),
+            torch.tensor(1.0e5),
+            torch.tensor([1, 1]),
+            "stable",
+            "floating tensor",
+        ),
+        (
+            torch.tensor(300.0),
+            torch.tensor(1.0e5),
+            torch.tensor([0.5, -0.5]),
+            "stable",
+            "nonnegative",
+        ),
+        (
+            torch.tensor(300.0),
+            torch.tensor(1.0e5),
+            torch.tensor([1.0]),
+            "stable",
+            "at least two",
+        ),
+        (
+            torch.tensor(300.0),
+            torch.tensor(1.0e5),
+            torch.tensor([0.5, 0.5]),
+            "solid",
+            "phase",
+        ),
+    ],
+)
+def test_molar_enthalpy_of_mixing_validation(
+    temperature,
+    pressure,
+    composition,
+    phase,
+    match,
+):
+    with pytest.raises(ValueError, match=match):
+        molar_enthalpy_of_mixing(
+            _IdealModel(),
+            temperature,
+            pressure,
+            composition,
+            phase,
+        )
 
 
 def test_thermal_property_validation():

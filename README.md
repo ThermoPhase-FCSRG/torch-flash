@@ -184,12 +184,6 @@ not shared. Custom schemas, canonical naming, units, cache controls, and
 trainable-parameter conventions are described in
 [Component and model parameter databases](docs/parameters.md).
 
-Bundled parameters, repository-only scientific data, and independently
-generated software baselines have distinct provenance and redistribution
-conditions. See [Licensing and scientific-data provenance](docs/licensing.md).
-Research studies and test data are not included in the PyPI wheel or source
-distribution.
-
 ## Documentation
 
 - [Rendered documentation](https://thermophase-fcsrg.github.io/torch-flash/)

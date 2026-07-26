@@ -44,6 +44,9 @@ The reports distinguish three kinds of evidence:
 - [Hydrogen-water systems across applicable models](validation-reports/32-hydrogen-water-all-models.md)
   — H2-H2O, H2-CO-H2O, and H2-N2-H2O composition parity and water-content
   curves, including the global 40-group E-PPR78 revision.
+- [E-PPR78 for CCS mixtures](validation-reports/33-eppr78-ccs-figure2.md) —
+  all eight panels of Xu et al. Figure 2, including N2-CH4 phase behavior and
+  mixing enthalpy plus N2-CO phase behavior.
 
 ## Publication and reproduction boundary
 

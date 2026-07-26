@@ -21,7 +21,7 @@ from .state import (
     phase_properties,
     state_derivatives,
 )
-from .thermal import ThermalProperties, thermal_properties
+from .thermal import ThermalProperties, molar_enthalpy_of_mixing, thermal_properties
 
 __all__ = [
     "DEFAULT_AMBIGUITY_RELATIVE_TOLERANCE",
@@ -36,6 +36,7 @@ __all__ = [
     "identify_phase",
     "li_pseudo_critical_temperature",
     "log_fugacities_tv",
+    "molar_enthalpy_of_mixing",
     "negative_flash_residual",
     "phase_identification_parameter",
     "phase_properties",

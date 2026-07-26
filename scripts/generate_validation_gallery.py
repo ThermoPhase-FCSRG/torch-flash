@@ -521,6 +521,32 @@ FIGURES = (
         "Water-content pressure curves for H2-H2O, H2-CO-H2O, and "
         "H2-N2-H2O, including global E-PPR78.",
     ),
+    FigureSpec(
+        "33_eppr78_ccs_figure2_reproduction.png",
+        "33_eppr78_ccs_figure2",
+        "notebooks/local-only/validation/33_eppr78_ccs_figure2.ipynb",
+        13,
+        0,
+        "validation",
+        True,
+        ("xu_2017_eppr78_figure2_digitized.csv",),
+        ("https://doi.org/10.1016/j.ijggc.2016.11.015",),
+        "All eight E-PPR78 panels from Xu et al. Figure 2, with model "
+        "curves and visually digitized experimental markers.",
+    ),
+    FigureSpec(
+        "33_eppr78_ccs_figure2_parity.png",
+        "33_eppr78_ccs_figure2",
+        "notebooks/local-only/validation/33_eppr78_ccs_figure2.ipynb",
+        15,
+        0,
+        "validation",
+        True,
+        ("xu_2017_eppr78_figure2_digitized.csv",),
+        ("https://doi.org/10.1016/j.ijggc.2016.11.015",),
+        "Temperature, pressure, and enthalpy-of-mixing parity for the "
+        "visually recovered Xu et al. Figure 2 markers.",
+    ),
 )
 
 
