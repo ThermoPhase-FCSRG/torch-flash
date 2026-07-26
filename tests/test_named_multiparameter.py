@@ -327,7 +327,7 @@ def test_gerg_batched_stable_subreducing_multiple_roots_match_scalar(constructor
         (eoscg2021, ("carbon_dioxide", "water")),
     ],
 )
-def test_multifluid_analytic_pressure_derivative_matches_autodiff(constructor, names):
+def test_multiparameter_analytic_pressure_derivative_matches_autodiff(constructor, names):
     model = constructor(names)
     temperature = torch.tensor([310.0, 450.0], dtype=DTYPE)
     density = torch.tensor([500.0, 12_000.0], dtype=DTYPE)
@@ -369,20 +369,20 @@ def test_named_model_name_validation(constructor, names, message):
 
 
 def test_bundled_inventory_guards(monkeypatch):
-    broken_gerg = load_model_parameters("multifluid.gerg-2008").as_dict()
+    broken_gerg = load_model_parameters("multiparameter.gerg-2008").as_dict()
     broken_gerg["pairs"].pop(next(iter(broken_gerg["pairs"])))
     monkeypatch.setattr(named, "_read_data", lambda filename: broken_gerg)
     with pytest.raises(RuntimeError, match="GERG-2008"):
         gerg2008(("methane",))
 
-    broken_eoscg = load_model_parameters("multifluid.eos-cg-2021").as_dict()
+    broken_eoscg = load_model_parameters("multiparameter.eos-cg-2021").as_dict()
     broken_eoscg["components"].pop("mdea")
     monkeypatch.setattr(named, "_read_data", lambda filename: broken_eoscg)
     with pytest.raises(RuntimeError, match="EOS-CG-2021"):
         eoscg2021(("carbon_dioxide",))
 
     with pytest.raises(named.ParameterDatabaseError, match="H2-tailored GERG"):
-        gerg2008_hydrogen_2021(parameter_set="multifluid.gerg-2008")
+        gerg2008_hydrogen_2021(parameter_set="multiparameter.gerg-2008")
 
 
 def test_special_term_shape_validation_and_unknown_term():
@@ -537,7 +537,7 @@ def test_gerg_co2_water_hou_states_match_teqp_and_thermopack_baseline():
 
 
 def test_gerg_accepts_custom_co2_water_departure_database_and_gradients():
-    payload = load_model_parameters("multifluid.gerg-2008").as_dict()
+    payload = load_model_parameters("multiparameter.gerg-2008").as_dict()
     pair = payload["pairs"]["carbondioxide|water"]
     fitted_amplitudes = [
         0.015750,
@@ -563,8 +563,8 @@ def test_gerg_accepts_custom_co2_water_departure_database_and_gradients():
         "gamma": [0.0] * 10,
     }
     parameter_set = ModelParameterSet(
-        "multifluid.gerg-form-co2-water-test",
-        "multifluid",
+        "multiparameter.gerg-form-co2-water-test",
+        "multiparameter",
         "GERG-2008-form CO2-H2O custom departure test",
         "notebook-20-regression",
         payload,

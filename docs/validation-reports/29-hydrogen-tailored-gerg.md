@@ -15,7 +15,7 @@ The pure-fluid study checks the normal-H2 ideal and residual Helmholtz
 inventories and the complete saturation-property grid reported by Leachman et
 al. The mixture study reproduces Beckmüller et al. Table 12 and Figures 4, 7,
 and 16. Together, these studies verify the normal-H2 reference equation first
-and then its use inside the H2-tailored multifluid model.
+and then its use inside the H2-tailored multiparameter mixture model.
 
 The implementation uses the article's main five-component parameterization:
 GERG-2008 pure-fluid equations for CH4, N2, CO, and CO2; the Leachman equation

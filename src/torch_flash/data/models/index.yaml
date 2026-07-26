@@ -89,22 +89,25 @@ parameter_sets:
       - ppr78
       - ppr78-2004
       - jaubert-mutelet-ppr78
-  multifluid.eos-cg-2021:
-    path: multifluid/eos-cg-2021.yaml
+  multiparameter.eos-cg-2021:
+    path: multiparameter/eos-cg-2021.yaml
     aliases:
       - eoscg2021
       - eos-cg-2021
-  multifluid.gerg-2008:
-    path: multifluid/gerg-2008.yaml
+      - multifluid.eos-cg-2021
+  multiparameter.gerg-2008:
+    path: multiparameter/gerg-2008.yaml
     aliases:
       - gerg2008
       - gerg-2008
-  multifluid.gerg-2008-hydrogen-2021:
-    path: multifluid/gerg-2008-hydrogen-2021.yaml
+      - multifluid.gerg-2008
+  multiparameter.gerg-2008-hydrogen-2021:
+    path: multiparameter/gerg-2008-hydrogen-2021.yaml
     aliases:
       - gerg2008-hydrogen-2021
       - gerg2008-h2-2021
       - h2-tailored-gerg
+      - multifluid.gerg-2008-hydrogen-2021
   pure-helmholtz.leachman-2009-normal-hydrogen:
     path: pure_helmholtz/leachman-2009-normal-hydrogen.yaml
     aliases:

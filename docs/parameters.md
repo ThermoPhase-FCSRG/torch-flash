@@ -39,9 +39,9 @@ Published model sets are separate YAML documents under
 | `binary-interaction.segovia-2017-methane-n-decane` | Segovia PR78 `kij` plus a torch-flash `lij` density fit with a disjoint validation isotherm |
 | `volume-translation.pedersen-2024` | Rackett-based SRK/PR light-component and ASTM-anchored C7+ translation coefficients |
 | `volume-translation.whitson-2000` | Whitson Tables 4.2-4.3 pure-component and heavy-family shift factors |
-| `multifluid.gerg-2008` | complete 21-component GERG-2008 inventory |
-| `multifluid.gerg-2008-hydrogen-2021` | five-component H2-tailored GERG model for CH4, N2, CO, CO2, and normal H2 |
-| `multifluid.eos-cg-2021` | complete 16-component EOS-CG-2021 inventory |
+| `multiparameter.gerg-2008` | complete 21-component GERG-2008 inventory |
+| `multiparameter.gerg-2008-hydrogen-2021` | five-component H2-tailored GERG model for CH4, N2, CO, CO2, and normal H2 |
+| `multiparameter.eos-cg-2021` | complete 16-component EOS-CG-2021 inventory |
 | `standard-state.poling-2001` | ideal-gas heat-capacity polynomials |
 
 The primary sources include
@@ -70,7 +70,7 @@ Inspect the registry without constructing a model:
 ```python
 from torch_flash import available_parameter_sets, load_model_parameters
 
-print(available_parameter_sets(model_kind="multifluid"))
+print(available_parameter_sets(model_kind="multiparameter"))
 parameters = load_model_parameters("gerg2008")  # aliases are accepted
 print(parameters.identifier, parameters.version, parameters.units)
 ```
@@ -87,11 +87,11 @@ The same constructor accepts a bundled identifier or a custom path:
 ```python
 import torch
 
-from torch_flash import component_set, cubic_eos, multifluid_eos
+from torch_flash import component_set, cubic_eos, multiparameter_eos
 
 components = component_set(("CO2", "CH4"), dtype=torch.float64)
 pr = cubic_eos(components, "cubic.pr-1978")
-gerg = multifluid_eos("multifluid.gerg-2008", ("CO2", "CH4"))
+gerg = multiparameter_eos("multiparameter.gerg-2008", ("CO2", "CH4"))
 
 # Files using the documented schemas are handled identically.
 custom_components = component_set(
@@ -173,7 +173,7 @@ model = cubic_eos(component_set(("methane", "n_butane")), fit)
 ```
 
 `CPAEOS`, `NRTL`, `HuronVidalNRTL`, `AnchoredHuronVidalNRTL`, `Wilson`, `CubicEOS`, and
-`MultiFluidEOS` also retain their explicit tensor constructors. This is the
+`MultiparameterEOS` also retain their explicit tensor constructors. This is the
 preferred route while parameters are PyTorch `nn.Parameter` objects being
 optimized. Serialize a finalized, reviewed fit to YAML only after recording
 its units, data provenance, objective, and version.
@@ -201,7 +201,7 @@ Every model document has the following required fields:
 | `format` | exactly `torch-flash-model-parameters` |
 | `schema_version` | integer `1`; changes only for an incompatible document format |
 | `id` | stable lowercase identifier, conventionally `<kind>.<source-version>` |
-| `model_kind` | `cubic`, `cpa`, `activity`, `binary_interaction`, `group_contribution`, `characterization`, `volume_translation`, `multifluid`, or `standard_state` |
+| `model_kind` | `cubic`, `cpa`, `activity`, `binary_interaction`, `group_contribution`, `characterization`, `volume_translation`, `multiparameter`, or `standard_state` |
 | `model` | scientific model/family name, independent of the file name |
 | `version` | publication or fit version; changing coefficients requires a new version |
 | `units` | explicit unit for every dimensional parameter family |
@@ -748,9 +748,12 @@ The bundled Segovia file is labeled as a local density fit. It uses
 validation data. Neither that `lij` nor any fitted BIP should be transferred
 to a new system or temperature/pressure domain without validation.
 
-## Multifluid payload
+## Multiparameter payload
 
-`model_kind: multifluid` is the native GERG/EOS-CG coefficient inventory. Its
+`model_kind: multiparameter` is the native GERG/EOS-CG coefficient inventory.
+GERG is constructed with the published multi-fluid approximation, while
+EOS-CG is classified by its authors as a multiparameter mixture model. The
+canonical parameter kind names their shared Helmholtz EOS abstraction. Its
 payload requires:
 
 - `component_order`: canonical public names and the default model order;
@@ -777,7 +780,7 @@ requested component order reverses that direction, while gamma and departure
 scales remain symmetric. Critical constants here are model parameters and
 deliberately do not inherit from the general component database.
 
-`multifluid_eos()` dispatches compatible GERG-family and EOS-CG-family files.
+`multiparameter_eos()` dispatches compatible GERG-family and EOS-CG-family files.
 The stricter `gerg2008()` and `eoscg2021()` wrappers reject a file with a
 different declared model version.
 

@@ -16,7 +16,7 @@ from typing import Any
 import yaml
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
-MODEL_ROOT = REPO_ROOT / "src" / "torch_flash" / "data" / "models" / "multifluid"
+MODEL_ROOT = REPO_ROOT / "src" / "torch_flash" / "data" / "models" / "multiparameter"
 OUTPUT = MODEL_ROOT / "gerg-2008-hydrogen-2021.yaml"
 
 COMPONENT_ORDER = (
@@ -164,8 +164,8 @@ def build_document() -> dict[str, Any]:
     return {
         "format": "torch-flash-model-parameters",
         "schema_version": 1,
-        "id": "multifluid.gerg-2008-hydrogen-2021",
-        "model_kind": "multifluid",
+        "id": "multiparameter.gerg-2008-hydrogen-2021",
+        "model_kind": "multiparameter",
         "model": "GERG-2008 H2-tailored (Beckmüller et al. 2021)",
         "version": "2021",
         "description": (

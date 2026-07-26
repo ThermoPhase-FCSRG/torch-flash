@@ -42,7 +42,7 @@ The frozen CSV provenance is recorded in
 | Pedersen corresponding-states viscosity | K. S. Pedersen et al., "Viscosity of crude oils," *Chem. Eng. Sci.* 39 (1984) 1011-1016. [doi:10.1016/0009-2509(84)87009-8](https://doi.org/10.1016/0009-2509%2884%2987009-8) |
 | Lohrenz-Bray-Clark viscosity | J. Lohrenz, B. G. Bray, and C. R. Clark, "Calculating Viscosities of Reservoir Fluids From Their Compositions," *J. Pet. Technol.* 16 (1964) 1171-1176. [doi:10.2118/915-PA](https://doi.org/10.2118/915-PA). The implemented numerical form and C7+ critical-volume estimator follow Pedersen (2024), section 10.1.3, and are checked against Whitson Appendix B, Problem 7. |
 
-## Multifluid mixture models
+## Multiparameter Helmholtz mixture equations of state
 
 | Model or dataset | Primary source |
 |---|---|
@@ -171,7 +171,7 @@ sources.
 ## External implementation baselines
 
 - NIST [`teqp`](https://pages.nist.gov/teqp-docs/en/main/) supplies canonical
-  cubic and multifluid numerical checks. Frozen values record the exact
+  cubic and multiparameter Helmholtz numerical checks. Frozen values record the exact
   package version used.
 - [ThermoPack](https://thermotools.github.io/thermopack/) and
   [NeqSim](https://github.com/equinor/neqsim-python) are independent

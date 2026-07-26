@@ -59,8 +59,8 @@ from .eos import (
     GaoBTerms,
     HelmholtzTerms,
     IdealHelmholtzTerms,
-    MultiFluidEOS,
-    MultifluidMetadata,
+    MultiparameterEOS,
+    MultiparameterMetadata,
     NonAnalyticTerms,
     PureFluidHelmholtzEOS,
     PureFluidHelmholtzMetadata,
@@ -80,7 +80,7 @@ from .eos import (
     gerg2008,
     gerg2008_hydrogen_2021,
     leachman_normal_hydrogen,
-    multifluid_eos,
+    multiparameter_eos,
     pedersen_peneloux_translation,
     pedersen_temperature_dependent_translation,
     peng_robinson_1976,
@@ -89,6 +89,15 @@ from .eos import (
     rackett_compressibility_factor,
     soave_redlich_kwong,
     whitson_volume_translation,
+)
+from .eos import (
+    MultiFluidEOS as MultiFluidEOS,
+)
+from .eos import (
+    MultifluidMetadata as MultifluidMetadata,
+)
+from .eos import (
+    multifluid_eos as multifluid_eos,
 )
 from .flash import (
     DEFAULT_GRID_PHASE_IDENTIFICATION_METHODS,
@@ -199,8 +208,8 @@ __all__ = [
     "IdealHelmholtzTerms",
     "LumpedDistribution",
     "ModelParameterSet",
-    "MultiFluidEOS",
-    "MultifluidMetadata",
+    "MultiparameterEOS",
+    "MultiparameterMetadata",
     "NonAnalyticTerms",
     "PPR78GroupContributionParameters",
     "PhaseIdentification",
@@ -265,7 +274,7 @@ __all__ = [
     "load_component_database",
     "load_model_parameters",
     "log_fugacities_tv",
-    "multifluid_eos",
+    "multiparameter_eos",
     "multiphase_flash",
     "negative_flash_residual",
     "pedersen_binary_interaction",

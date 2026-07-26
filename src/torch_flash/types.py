@@ -67,7 +67,7 @@ def normalize_composition(
     # compiled graphs. Public eager calls retain the strict validation below;
     # compiled kernels assume the same documented input contract. Keeping the
     # numerical normalization in the graph lets torch.compile fuse the small
-    # tensor operations that dominate multifluid and association models.
+    # tensor operations that dominate multiparameter and association models.
     if not torch.compiler.is_compiling():
         if composition.ndim < 1:
             raise ValueError("composition must have at least one dimension")

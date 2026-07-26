@@ -63,7 +63,7 @@ def test_leachman_normal_hydrogen_parameter_identity_and_terms():
 
 def test_leachman_parameters_are_h2_tailored_source_of_truth():
     leachman = load_model_parameters(DEFAULT_LEACHMAN_NORMAL_HYDROGEN)
-    tailored = load_model_parameters("multifluid.gerg-2008-hydrogen-2021")
+    tailored = load_model_parameters("multiparameter.gerg-2008-hydrogen-2021")
 
     assert (
         leachman.parameters["components"]["hydrogen"]
@@ -261,4 +261,4 @@ def test_leachman_normal_hydrogen_batches_and_preserves_autodiff():
 
 def test_leachman_normal_hydrogen_rejects_another_parameter_identity():
     with pytest.raises(ParameterDatabaseError, match="Leachman normal-hydrogen"):
-        leachman_normal_hydrogen(parameter_set="multifluid.gerg-2008")
+        leachman_normal_hydrogen(parameter_set="multiparameter.gerg-2008")

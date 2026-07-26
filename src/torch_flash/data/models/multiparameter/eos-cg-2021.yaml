@@ -1,7 +1,7 @@
 format: torch-flash-model-parameters
 schema_version: 1
-id: multifluid.eos-cg-2021
-model_kind: multifluid
+id: multiparameter.eos-cg-2021
+model_kind: multiparameter
 model: EOS-CG-2021
 version: '2021'
 description: Complete 16-component EOS-CG-2021 Helmholtz mixture coefficient inventory.

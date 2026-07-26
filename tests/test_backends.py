@@ -161,7 +161,7 @@ def test_teqp_adapter_ideal_fake_and_constructors(monkeypatch):
         str(coefficient_data / "dev" / "mixtures" / "mixture_binary_pairs.json"),
         str(coefficient_data / "dev" / "mixtures" / "mixture_departure_functions.json"),
     )
-    assert eoscg.capabilities.exact_model == "EOS-CG-2015 multifluid (teqp)"
+    assert eoscg.capabilities.exact_model == "EOS-CG-2015 multiparameter mixture model (teqp)"
     with pytest.raises(ValueError, match="component must be"):
         TeqpBackend.eoscg_2015(("methane",))
 

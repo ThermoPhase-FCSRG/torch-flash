@@ -18,7 +18,7 @@ figures:
     source_material:
     - https://doi.org/10.1201/9780429457418
     description: Measured and GERG-2008 compressibility factors for the Pedersen mixture.
-    executed_artifact_sha256: 34291f2bcf058fdee54159eb3f3d4ca3ba20fbd202d104c6e599877adbaaf9ad
+    executed_artifact_sha256: f1c3b1f1b5c3b483f61d98dfbd32f56205cf11655a9dae591000e242c1c18c0c
     publication_form: rendered-plot
     machine_readable_observation_values: false
     data_tables_distributed: false
@@ -35,7 +35,7 @@ figures:
     - https://doi.org/10.1016/j.jct.2015.05.015
     description: EOS-CG parity and residual plots for the published Table 8 verification
       states.
-    executed_artifact_sha256: 34291f2bcf058fdee54159eb3f3d4ca3ba20fbd202d104c6e599877adbaaf9ad
+    executed_artifact_sha256: f1c3b1f1b5c3b483f61d98dfbd32f56205cf11655a9dae591000e242c1c18c0c
     publication_form: rendered-plot
     machine_readable_observation_values: false
     data_tables_distributed: false

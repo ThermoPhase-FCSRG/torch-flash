@@ -185,7 +185,7 @@ The practical order of optimization is:
   complete scan remains the fallback and stable-root path.
 - GERG-2008 and EOS-CG-2021 reducing functions, pure/departure Helmholtz terms,
   ideal terms, pressure, and caloric derivatives broadcast over state axes.
-- Batched multifluid density roots use a fixed vector workload. Root location
+- Batched multiparameter density roots use a fixed vector workload. Root location
   is detached from the graph; if an input or fitted parameter requires a
   gradient, one exact Newton correction restores the implicit derivative.
 - Composition validation remains strict in eager calls. Compiled graphs assume

@@ -9,6 +9,7 @@ are linked from ``src/torch_flash/eos/data/README.md``.
 from __future__ import annotations
 
 import math
+import warnings
 from collections.abc import Mapping, Sequence
 from typing import Any
 
@@ -24,12 +25,12 @@ from torch_flash.database import (
 )
 from torch_flash.exceptions import ParameterDatabaseError
 
-from .multifluid import (
+from .multiparameter import (
     GaoBTerms,
     HelmholtzTerms,
     IdealHelmholtzTerms,
-    MultiFluidEOS,
-    MultifluidMetadata,
+    MultiparameterEOS,
+    MultiparameterMetadata,
     NonAnalyticTerms,
 )
 
@@ -588,11 +589,11 @@ def _mixture_tables(
             if isinstance(blocks, Mapping):
                 blocks = (blocks,)
             if not isinstance(blocks, Sequence):
-                raise ParameterDatabaseError("multifluid departure terms must be a sequence")
+                raise ParameterDatabaseError("multiparameter departure terms must be a sequence")
             records: list[dict[str, float]] = []
             for block in blocks:
                 if not isinstance(block, Mapping):
-                    raise ParameterDatabaseError("multifluid departure term must be a mapping")
+                    raise ParameterDatabaseError("multiparameter departure term must be a mapping")
                 if "type" not in block:
                     block = {**block, "type": "ResidualHelmholtzGERG2008"}
                 _append_regular_terms(records, block)
@@ -673,7 +674,7 @@ def _gerg_eos(
     dtype: torch.dtype,
     device: torch.device | str | None,
     trainable: bool,
-) -> MultiFluidEOS:
+) -> MultiparameterEOS:
     data = _read_data(parameter_set)
     supported = _component_order(parameter_set, data)
     selected = _validate_names(names, supported)
@@ -725,7 +726,7 @@ def _gerg_eos(
     gas_constant = data.get("gas_constant")
     if not isinstance(gas_constant, int | float):
         raise ParameterDatabaseError(f"{parameter_set.identifier!r} requires gas_constant")
-    return MultiFluidEOS(
+    return MultiparameterEOS(
         selected,
         critical_temperature,
         critical_density,
@@ -733,7 +734,7 @@ def _gerg_eos(
         pure_terms,
         tables[5],
         *tables[:5],
-        MultifluidMetadata(
+        MultiparameterMetadata(
             parameter_set.model,
             reference,
             parameter_set.version,
@@ -756,7 +757,7 @@ def _eoscg_eos(
     dtype: torch.dtype,
     device: torch.device | str | None,
     trainable: bool,
-) -> MultiFluidEOS:
+) -> MultiparameterEOS:
     data = _read_data(parameter_set)
     supported = _component_order(parameter_set, data)
     selected = _validate_names(names, supported)
@@ -798,7 +799,7 @@ def _eoscg_eos(
     gas_constant = data.get("gas_constant")
     if not isinstance(gas_constant, int | float):
         raise ParameterDatabaseError(f"{parameter_set.identifier!r} requires gas_constant")
-    return MultiFluidEOS(
+    return MultiparameterEOS(
         selected,
         critical_temperature,
         critical_density,
@@ -806,7 +807,7 @@ def _eoscg_eos(
         pure_terms,
         tables[5],
         *tables[:5],
-        MultifluidMetadata(
+        MultiparameterMetadata(
             parameter_set.model,
             reference,
             parameter_set.version,
@@ -822,20 +823,20 @@ def _eoscg_eos(
     )
 
 
-def multifluid_eos(
+def multiparameter_eos(
     parameter_set: ParameterSource,
     names: tuple[str, ...] | None = None,
     *,
     dtype: torch.dtype | None = None,
     device: torch.device | str | None = None,
     trainable: bool = False,
-) -> MultiFluidEOS:
-    """Construct a native multifluid EOS from versioned parameters.
+) -> MultiparameterEOS:
+    """Construct a native multiparameter EOS from versioned parameters.
 
     Parameters
     ----------
     parameter_set
-        Bundled identifier, custom YAML path, mapping, or loaded multifluid
+        Bundled identifier, custom YAML path, mapping, or loaded multiparameter
         parameter set.
     names
         Optional ordered component subset. Omitting it selects the complete
@@ -847,20 +848,26 @@ def multifluid_eos(
 
     Returns
     -------
-    MultiFluidEOS
+    MultiparameterEOS
         GERG-family or EOS-CG model selected from the source identity.
 
     Raises
     ------
     ParameterDatabaseError
-        If the source is not a supported multifluid model or its coefficient
+        If the source is not a supported multiparameter model or its coefficient
         inventory is malformed.
     """
     dtype, device = resolve_tensor_options(dtype, device)
     loaded = load_model_parameters(parameter_set)
-    if loaded.model_kind != "multifluid":
+    if loaded.model_kind not in ("multiparameter", "multifluid"):
         raise ParameterDatabaseError(
-            f"{loaded.identifier!r} is {loaded.model_kind!r}, not 'multifluid'"
+            f"{loaded.identifier!r} is {loaded.model_kind!r}, not 'multiparameter'"
+        )
+    if loaded.model_kind == "multifluid":
+        warnings.warn(
+            "model_kind='multifluid' is deprecated; use 'multiparameter'",
+            DeprecationWarning,
+            stacklevel=2,
         )
     normalized = loaded.model.strip().lower().replace("_", "-")
     if normalized.startswith("gerg"):
@@ -880,7 +887,47 @@ def multifluid_eos(
             trainable=trainable,
         )
     raise ParameterDatabaseError(
-        f"{loaded.identifier!r} has unsupported multifluid model {loaded.model!r}"
+        f"{loaded.identifier!r} has unsupported multiparameter model {loaded.model!r}"
+    )
+
+
+def multifluid_eos(
+    parameter_set: ParameterSource,
+    names: tuple[str, ...] | None = None,
+    *,
+    dtype: torch.dtype | None = None,
+    device: torch.device | str | None = None,
+    trainable: bool = False,
+) -> MultiparameterEOS:
+    """Construct a multiparameter EOS through the deprecated factory name.
+
+    Parameters
+    ----------
+    parameter_set
+        Bundled identifier, custom YAML path, mapping, or loaded parameter set.
+    names
+        Optional ordered component subset.
+    dtype, device
+        Tensor placement, defaulting to runtime configuration.
+    trainable
+        Register supported coefficient tensors as trainable parameters.
+
+    Returns
+    -------
+    MultiparameterEOS
+        Model returned by :func:`multiparameter_eos`.
+    """
+    warnings.warn(
+        "multifluid_eos() is deprecated; use multiparameter_eos()",
+        DeprecationWarning,
+        stacklevel=2,
+    )
+    return multiparameter_eos(
+        parameter_set,
+        names,
+        dtype=dtype,
+        device=device,
+        trainable=trainable,
     )
 
 
@@ -890,8 +937,8 @@ def gerg2008(
     dtype: torch.dtype | None = None,
     device: torch.device | str | None = None,
     trainable: bool = False,
-    parameter_set: ParameterSource = "multifluid.gerg-2008",
-) -> MultiFluidEOS:
+    parameter_set: ParameterSource = "multiparameter.gerg-2008",
+) -> MultiparameterEOS:
     """Construct the complete native 21-component GERG-2008 Helmholtz model.
 
     Parameters
@@ -908,7 +955,7 @@ def gerg2008(
 
     Returns
     -------
-    MultiFluidEOS
+    MultiparameterEOS
         Native GERG-2008 model. The defining reference is Kunz and Wagner
         (2012), doi:10.1021/je300655b.
     """
@@ -933,8 +980,8 @@ def gerg2008_hydrogen_2021(
     dtype: torch.dtype | None = None,
     device: torch.device | str | None = None,
     trainable: bool = False,
-    parameter_set: ParameterSource = "multifluid.gerg-2008-hydrogen-2021",
-) -> MultiFluidEOS:
+    parameter_set: ParameterSource = "multiparameter.gerg-2008-hydrogen-2021",
+) -> MultiparameterEOS:
     """Construct the Beckmüller et al. H2-tailored GERG mixture model.
 
     Parameters
@@ -951,7 +998,7 @@ def gerg2008_hydrogen_2021(
 
     Returns
     -------
-    MultiFluidEOS
+    MultiparameterEOS
         Five-component H2-tailored GERG model using GERG-2008 pure fluids for
         CH4, N2, CO, and CO2 and the Leachman normal-hydrogen equation.
 
@@ -982,8 +1029,8 @@ def eoscg2021(
     dtype: torch.dtype | None = None,
     device: torch.device | str | None = None,
     trainable: bool = False,
-    parameter_set: ParameterSource = "multifluid.eos-cg-2021",
-) -> MultiFluidEOS:
+    parameter_set: ParameterSource = "multiparameter.eos-cg-2021",
+) -> MultiparameterEOS:
     """Construct the complete native 16-component EOS-CG-2021 Helmholtz model.
 
     Parameters
@@ -999,7 +1046,7 @@ def eoscg2021(
 
     Returns
     -------
-    MultiFluidEOS
+    MultiparameterEOS
         Native EOS-CG-2021 model defined by Neumann et al. (2023),
         doi:10.1007/s10765-023-03263-6, including its supplementary tables.
     """
@@ -1025,5 +1072,5 @@ __all__ = [
     "eoscg2021",
     "gerg2008",
     "gerg2008_hydrogen_2021",
-    "multifluid_eos",
+    "multiparameter_eos",
 ]

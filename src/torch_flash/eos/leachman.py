@@ -1,7 +1,7 @@
 """Leachman normal-hydrogen Helmholtz equation of state.
 
 This module isolates the normal-hydrogen thermodynamic equation defined by
-Leachman et al. (2009) from the multifluid models that reuse it. The same
+Leachman et al. (2009) from the multiparameter mixture models that reuse it. The same
 native PyTorch Helmholtz kernel evaluates the one-component equation and the
 hydrogen contribution inside H2-tailored GERG mixtures.
 """

@@ -51,7 +51,7 @@
   </div>
   <div class="tp-feature">
     <strong>Thermodynamic scope</strong>
-    <span>Cubic, association, activity-coefficient, and multifluid models behind a consistent typed interface.</span>
+    <span>Cubic, association, activity-coefficient, and multiparameter models behind a consistent typed interface.</span>
   </div>
   <div class="tp-feature">
     <strong>Auditable evidence</strong>

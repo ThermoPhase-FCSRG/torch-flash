@@ -92,7 +92,7 @@ The package's native fugacity-capable models include:
 - SRK and Peng-Robinson cubic families, including predictive and translated
   variants;
 - cubic-plus-association models for associating mixtures;
-- GERG-2008 and EOS-CG multifluid Helmholtz models; and
+- GERG-2008 and EOS-CG multiparameter Helmholtz mixture models; and
 - cubic models coupled to Huron-Vidal activity terms.
 
 Each family has a different parameter identity and validity range. Use

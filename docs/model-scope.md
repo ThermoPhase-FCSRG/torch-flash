@@ -152,11 +152,15 @@ molecular-weight tail, which preserves total moles and mass but gives that bin
 a conditional average mass above its nominal SCN label. CPA-specific mapping
 of characterized boiling-point/gravity cuts is kept in a separate adapter.
 
-## Multifluid models
+## Multiparameter mixture equations of state
 
-`MultiFluidEOS` implements differentiable ideal and residual Helmholtz
-energies, multifluid reducing functions, power/exponential/Gaussian terms,
-GERG binary terms, Gao-B terms, and Span-Wagner non-analytic terms.
+`MultiparameterEOS` implements differentiable ideal and residual Helmholtz
+energies, composition-dependent reducing functions,
+power/exponential/Gaussian terms, GERG binary terms, Gao-B terms, and
+Span-Wagner non-analytic terms. GERG formally uses a multi-fluid
+approximation; EOS-CG is described by its authors as a multiparameter mixture
+model. The shared `torch-flash` abstraction is named for the broader
+multiparameter Helmholtz EOS family.
 
 `gerg2008()` bundles the complete 21-component thermodynamic model: all pure
 ideal and residual equations, 210 binary reducing-parameter sets, and 15

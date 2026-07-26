@@ -9,7 +9,7 @@ from torch import Tensor, nn
 
 from torch_flash.types import PhaseKind
 
-from .multifluid import MultiFluidEOS
+from .multiparameter import MultiparameterEOS
 
 
 @dataclass(frozen=True)
@@ -38,7 +38,7 @@ class PureFluidHelmholtzEOS(nn.Module):
     """One-component thermodynamic Helmholtz equation.
 
     The internal kernel shares the differentiable Helmholtz term evaluators
-    used by multifluid models, while this public wrapper exposes pure-fluid
+    used by multiparameter mixture models, while this public wrapper exposes pure-fluid
     signatures without a redundant composition argument.
 
     Parameters
@@ -53,7 +53,7 @@ class PureFluidHelmholtzEOS(nn.Module):
 
     def __init__(
         self,
-        kernel: MultiFluidEOS,
+        kernel: MultiparameterEOS,
         metadata: PureFluidHelmholtzMetadata,
     ) -> None:
         super().__init__()

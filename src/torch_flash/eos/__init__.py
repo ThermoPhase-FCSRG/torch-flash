@@ -36,11 +36,17 @@ from .leachman import (
     leachman_normal_hydrogen,
 )
 from .multifluid import (
+    MultiFluidEOS as MultiFluidEOS,
+)
+from .multifluid import (
+    MultifluidMetadata as MultifluidMetadata,
+)
+from .multiparameter import (
     GaoBTerms,
     HelmholtzTerms,
     IdealHelmholtzTerms,
-    MultiFluidEOS,
-    MultifluidMetadata,
+    MultiparameterEOS,
+    MultiparameterMetadata,
     NonAnalyticTerms,
 )
 from .named import (
@@ -50,7 +56,10 @@ from .named import (
     eoscg2021,
     gerg2008,
     gerg2008_hydrogen_2021,
-    multifluid_eos,
+    multiparameter_eos,
+)
+from .named import (
+    multifluid_eos as multifluid_eos,
 )
 from .volume_translation import (
     HydrocarbonFamily,
@@ -82,8 +91,8 @@ __all__ = [
     "HelmholtzTerms",
     "HydrocarbonFamily",
     "IdealHelmholtzTerms",
-    "MultiFluidEOS",
-    "MultifluidMetadata",
+    "MultiparameterEOS",
+    "MultiparameterMetadata",
     "NonAnalyticTerms",
     "PureFluidHelmholtzEOS",
     "PureFluidHelmholtzMetadata",
@@ -104,7 +113,7 @@ __all__ = [
     "gerg2008",
     "gerg2008_hydrogen_2021",
     "leachman_normal_hydrogen",
-    "multifluid_eos",
+    "multiparameter_eos",
     "pedersen_peneloux_translation",
     "pedersen_temperature_dependent_translation",
     "peng_robinson_1976",
