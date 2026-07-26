@@ -1563,6 +1563,12 @@ def binary_helmholtz_vle_point(
     ISBN 978-3-18-355706-6. Retaining both volumes removes nested density-root
     inversions from continuation residual evaluations.
 
+    Before the coupled solve, each supplied phase volume is pressure-matched
+    by a bounded one-dimensional Newton correction at its supplied
+    composition. This retains the nearby density root while preventing modest
+    continuation-predictor errors in both volumes from steering the coupled
+    solve toward the homogeneous root.
+
     The discrete physical-separation decision is non-differentiable. The
     returned tensors otherwise preserve their PyTorch graphs.
     """
@@ -1614,17 +1620,51 @@ def binary_helmholtz_vle_point(
         bounded = torch.clamp(value, epsilon, 1.0 - epsilon)
         return torch.log(bounded) - torch.log1p(-bounded)
 
+    pressure_scale = torch.clamp_min(
+        specified_pressure.detach().abs(),
+        x.new_tensor(1.0),
+    )
+    density_lower_bound = x.new_tensor(-20.0)
+    density_upper_bound = x.new_tensor(20.0)
+
+    def pressure_matched_log_density(composition: Tensor, volume: Tensor) -> Tensor:
+        initial_log_density = torch.log(volume.reciprocal()).reshape(1)
+
+        def pressure_residual(current: Tensor) -> Tensor:
+            current_volume = torch.exp(-current[0])
+            current_pressure: Tensor = pressure_function(
+                specified_temperature,
+                current_volume,
+                composition,
+            )
+            return ((current_pressure - specified_pressure) / pressure_scale).reshape(1)
+
+        initial_residual_norm = pressure_residual(initial_log_density).abs().max()
+        if bool(initial_residual_norm <= tolerance):
+            return initial_log_density[0]
+        density_result = damped_newton(
+            pressure_residual,
+            initial_log_density,
+            tolerance=tolerance,
+            max_iterations=min(max_iterations, 12),
+            lower_bound=density_lower_bound.reshape(1),
+            upper_bound=density_upper_bound.reshape(1),
+            jacobian_refresh_interval=1,
+        )
+        if bool(
+            torch.isfinite(density_result.residual_norm)
+            & (density_result.residual_norm < initial_residual_norm)
+        ):
+            return density_result.solution[0]
+        return initial_log_density[0]
+
     variables = torch.stack(
         (
             logit(x[0]),
             logit(y[0]),
-            torch.log(liquid_volume.reciprocal()),
-            torch.log(vapor_volume.reciprocal()),
+            pressure_matched_log_density(x, liquid_volume),
+            pressure_matched_log_density(y, vapor_volume),
         )
-    )
-    pressure_scale = torch.clamp_min(
-        specified_pressure.detach().abs(),
-        variables.new_tensor(1.0),
     )
 
     def residual(current: Tensor) -> Tensor:
@@ -1699,7 +1739,7 @@ def binary_helmholtz_vle_point(
                 variables.new_tensor(20.0),
             )
         ),
-        jacobian_refresh_interval=4,
+        jacobian_refresh_interval=1,
     )
     liquid_first = torch.sigmoid(result.solution[0])
     vapor_first = torch.sigmoid(result.solution[1])
@@ -2531,6 +2571,7 @@ def trace_binary_helmholtz_pxy_isotherm(
     tolerance: float = 1.0e-8,
     max_iterations: int = 30,
     minimum_phase_separation: float = 1.0e-5,
+    minimum_pressure_step_separation_ratio: float = 0.1,
     stop_on_failure: bool = True,
     composition_failure_refinement_steps: int = 0,
     continue_in_pressure_on_failure: bool = False,
@@ -2565,6 +2606,12 @@ def trace_binary_helmholtz_pxy_isotherm(
     minimum_phase_separation
         Nonnegative minimum of ``max(abs(y - x))`` required for physical
         convergence.
+    minimum_pressure_step_separation_ratio
+        Positive ratio, no greater than one, between a candidate phase
+        separation and the preceding accepted separation during fixed-pressure
+        continuation. A larger contraction is treated as a branch jump and
+        triggers pressure refinement instead of accepting a nearly homogeneous
+        algebraic root.
     stop_on_failure
         Stop after the first rejected point once a physical branch has begun.
     composition_failure_refinement_steps
@@ -2615,10 +2662,14 @@ def trace_binary_helmholtz_pxy_isotherm(
     coordinate to pressure and solves coexistence with
     :func:`binary_helmholtz_vle_point`. An open branch continues to the
     requested pressure bound; a closed branch is refined toward its critical
-    endpoint after the first rejected pressure. The routine never forces a
-    physically open branch to close. Bisection and the discrete
-    accept/stop/coordinate-switch decisions are not differentiable, but
-    accepted equilibrium tensors preserve their PyTorch graphs.
+    endpoint after the first rejected pressure. Fixed-pressure initial states
+    use a bounded secant extrapolation of both composition logits and both
+    logarithmic phase volumes. A candidate whose phase split contracts by more
+    than ``minimum_pressure_step_separation_ratio`` is rejected as a possible
+    jump to the algebraic homogeneous root and causes pressure refinement. The
+    routine never forces a physically open branch to close. Bisection and the
+    discrete accept/stop/coordinate-switch decisions are not differentiable,
+    but accepted equilibrium tensors preserve their PyTorch graphs.
     """
     if temperature.ndim != 0 or not bool(torch.isfinite(temperature) & (temperature > 0.0)):
         raise ValueError("binary p-x-y isotherm requires one finite positive temperature")
@@ -2637,6 +2688,15 @@ def trace_binary_helmholtz_pxy_isotherm(
         raise ValueError("binary p-x-y max_iterations must be positive")
     if minimum_phase_separation < 0.0 or not torch.isfinite(torch.tensor(minimum_phase_separation)):
         raise ValueError("binary p-x-y minimum phase separation must be finite and nonnegative")
+    if (
+        minimum_pressure_step_separation_ratio <= 0.0
+        or minimum_pressure_step_separation_ratio > 1.0
+        or not torch.isfinite(torch.tensor(minimum_pressure_step_separation_ratio))
+    ):
+        raise ValueError(
+            "binary p-x-y minimum pressure-step separation ratio must be finite "
+            "and in the interval (0, 1]"
+        )
     if composition_failure_refinement_steps < 0:
         raise ValueError("binary p-x-y composition failure refinement steps must be nonnegative")
     if pressure_continuation_points < 1:
@@ -2660,6 +2720,7 @@ def trace_binary_helmholtz_pxy_isotherm(
     points: list[BinaryBubblePointWithVolumes | BinaryVLEPoint] = []
     accepted: list[Tensor] = []
     separations: list[Tensor] = []
+    physical_volume_points: list[BinaryBubblePointWithVolumes | BinaryVLEPointWithVolumes] = []
     previous: BinaryBubblePointWithVolumes | None = None
     failed_liquid: Tensor | None = None
 
@@ -2673,6 +2734,91 @@ def trace_binary_helmholtz_pxy_isotherm(
             and bool(separation > minimum_phase_separation)
         )
         return physical, separation
+
+    def pressure_continuation_diagnostics(
+        point: BinaryVLEPointWithVolumes,
+        preceding_point: BinaryBubblePointWithVolumes | BinaryVLEPointWithVolumes,
+    ) -> tuple[bool, Tensor]:
+        physical, separation = physical_diagnostics(point)
+        preceding_separation = torch.max(
+            torch.abs(preceding_point.vapor_composition - preceding_point.liquid_composition)
+        )
+        branch_continuous = bool(
+            separation >= minimum_pressure_step_separation_ratio * preceding_separation
+        )
+        return physical and branch_continuous, separation
+
+    def pressure_predictor(
+        target_pressure: Tensor,
+        fallback: BinaryBubblePointWithVolumes | BinaryVLEPointWithVolumes,
+    ) -> BinaryVLEPointWithVolumes:
+        """Extrapolate the last two physical states in logarithmic pressure."""
+        if len(physical_volume_points) < 2:
+            return BinaryVLEPointWithVolumes(
+                fallback.temperature,
+                target_pressure,
+                fallback.liquid_composition,
+                fallback.vapor_composition,
+                fallback.iterations,
+                fallback.converged,
+                fallback.residual_norm,
+                fallback.liquid_molar_volume,
+                fallback.vapor_molar_volume,
+            )
+
+        predecessor, current = physical_volume_points[-2:]
+        log_pressure_step = torch.log(current.pressure) - torch.log(predecessor.pressure)
+        if not bool(
+            torch.isfinite(log_pressure_step)
+            & (torch.abs(log_pressure_step) > torch.finfo(log_pressure_step.dtype).eps)
+        ):
+            factor = log_pressure_step.new_tensor(0.0)
+        else:
+            factor = (torch.log(target_pressure) - torch.log(current.pressure)) / log_pressure_step
+            factor = torch.clamp(factor, 0.0, 2.0)
+
+        epsilon = 32.0 * torch.finfo(current.liquid_composition.dtype).eps
+
+        def logit(value: Tensor) -> Tensor:
+            bounded = torch.clamp(value, epsilon, 1.0 - epsilon)
+            return torch.log(bounded) - torch.log1p(-bounded)
+
+        def extrapolate_composition(previous_composition: Tensor, composition: Tensor) -> Tensor:
+            predicted_first = torch.sigmoid(
+                logit(composition[0])
+                + factor * (logit(composition[0]) - logit(previous_composition[0]))
+            )
+            return torch.stack((predicted_first, 1.0 - predicted_first))
+
+        predicted_liquid = extrapolate_composition(
+            predecessor.liquid_composition,
+            current.liquid_composition,
+        )
+        predicted_vapor = extrapolate_composition(
+            predecessor.vapor_composition,
+            current.vapor_composition,
+        )
+        predicted_liquid_volume = torch.exp(
+            torch.log(current.liquid_molar_volume)
+            + factor
+            * (torch.log(current.liquid_molar_volume) - torch.log(predecessor.liquid_molar_volume))
+        )
+        predicted_vapor_volume = torch.exp(
+            torch.log(current.vapor_molar_volume)
+            + factor
+            * (torch.log(current.vapor_molar_volume) - torch.log(predecessor.vapor_molar_volume))
+        )
+        return BinaryVLEPointWithVolumes(
+            current.temperature,
+            target_pressure,
+            predicted_liquid,
+            predicted_vapor,
+            current.iterations,
+            current.converged,
+            current.residual_norm,
+            predicted_liquid_volume,
+            predicted_vapor_volume,
+        )
 
     for liquid in compositions:
         point = binary_helmholtz_bubble_point(
@@ -2691,6 +2837,7 @@ def trace_binary_helmholtz_pxy_isotherm(
         separations.append(separation)
         if physical:
             previous = point
+            physical_volume_points.append(point)
         elif previous is not None and stop_on_failure:
             failed_liquid = liquid
             break
@@ -2722,6 +2869,7 @@ def trace_binary_helmholtz_pxy_isotherm(
             separations.append(separation)
             if physical:
                 previous = point
+                physical_volume_points.append(point)
             else:
                 rejected_liquid = candidate_liquid
 
@@ -2745,27 +2893,36 @@ def trace_binary_helmholtz_pxy_isotherm(
         pressure_initial_point: BinaryBubblePointWithVolumes | BinaryVLEPointWithVolumes = previous
         rejected_pressure: Tensor | None = None
         for pressure in continuation_pressures:
+            predicted_initial_point = pressure_predictor(pressure, pressure_initial_point)
             vle_point = binary_helmholtz_vle_point(
                 model,
                 temperature.to(dtype=pressure.dtype, device=pressure.device),
                 pressure,
-                pressure_initial_point,
+                predicted_initial_point,
                 tolerance=tolerance,
                 max_iterations=max_iterations,
                 minimum_phase_separation=minimum_phase_separation,
             )
-            physical, separation = physical_diagnostics(vle_point)
+            physical, separation = pressure_continuation_diagnostics(
+                vle_point,
+                pressure_initial_point,
+            )
             points.append(vle_point)
             accepted.append(pressure.new_tensor(physical, dtype=torch.bool))
             separations.append(separation)
             if physical:
                 pressure_initial_point = vle_point
+                physical_volume_points.append(vle_point)
             elif stop_on_failure:
                 rejected_pressure = pressure
                 break
         if rejected_pressure is not None:
             for _ in range(pressure_failure_refinement_steps):
                 candidate_pressure = torch.sqrt(pressure_initial_point.pressure * rejected_pressure)
+                predicted_initial_point = pressure_predictor(
+                    candidate_pressure,
+                    pressure_initial_point,
+                )
                 vle_point = binary_helmholtz_vle_point(
                     model,
                     temperature.to(
@@ -2773,17 +2930,21 @@ def trace_binary_helmholtz_pxy_isotherm(
                         device=candidate_pressure.device,
                     ),
                     candidate_pressure,
-                    pressure_initial_point,
+                    predicted_initial_point,
                     tolerance=tolerance,
                     max_iterations=max_iterations,
                     minimum_phase_separation=minimum_phase_separation,
                 )
-                physical, separation = physical_diagnostics(vle_point)
+                physical, separation = pressure_continuation_diagnostics(
+                    vle_point,
+                    pressure_initial_point,
+                )
                 points.append(vle_point)
                 accepted.append(candidate_pressure.new_tensor(physical, dtype=torch.bool))
                 separations.append(separation)
                 if physical:
                     pressure_initial_point = vle_point
+                    physical_volume_points.append(vle_point)
                 else:
                     rejected_pressure = candidate_pressure
 

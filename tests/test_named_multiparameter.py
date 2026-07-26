@@ -6,12 +6,15 @@ from pathlib import Path
 
 import pytest
 import torch
+from hypothesis import given, settings
+from hypothesis import strategies as st
 
 import torch_flash.envelope as envelope
 import torch_flash.eos.named as named
 from torch_flash.database import ModelParameterSet, load_model_parameters
 from torch_flash.envelope import (
     BinaryBubblePointWithVolumes,
+    BinaryVLEPointWithVolumes,
     binary_bubble_point,
     binary_helmholtz_bubble_point,
     binary_helmholtz_vle_point,
@@ -276,6 +279,7 @@ def test_gerg2008_open_pxy_branch_continues_through_liquid_composition_fold():
     assert result.vapor_composition[accepted, 1][-1] > result.vapor_composition[accepted, 1][-10]
 
 
+@pytest.mark.serial
 def test_hydrogen_tailored_gerg_pxy_closes_and_resolves_low_pressure_vapor_branch():
     parameter = torch.linspace(0.0, 1.0, 31, dtype=DTYPE)
     liquid_hydrogen = 0.002 + (0.98 - 0.002) * parameter.pow(2.5)
@@ -289,27 +293,134 @@ def test_hydrogen_tailored_gerg_pxy_closes_and_resolves_low_pressure_vapor_branc
         composition_failure_refinement_steps=8,
         continue_in_pressure_on_failure=True,
         pressure_continuation_points=4,
-        pressure_failure_refinement_steps=14,
+        pressure_failure_refinement_steps=20,
     )
     accepted = result.converged
     liquid = result.liquid_composition[accepted, 1]
     vapor = result.vapor_composition[accepted, 1]
     pressure_MPa = result.pressure[accepted] / 1.0e6
-    assert result.phase_separation[accepted][-1] <= 1.0e-3
-    torch.testing.assert_close(
-        result.pressure[accepted][-1],
-        torch.tensor(182.36462144e6, dtype=DTYPE),
-        rtol=2.0e-8,
-        atol=2.0,
+    accepted_separation = result.phase_separation[accepted]
+    assert 1.0e-5 < accepted_separation[-1] <= 2.0e-3
+    assert torch.all(result.residual_norm[accepted] <= 1.0e-8)
+    near_critical = accepted & (result.pressure > 180.0e6)
+    near_critical_pressure = result.pressure[near_critical]
+    near_critical_separation = result.phase_separation[near_critical]
+    assert torch.all(torch.diff(near_critical_pressure) > 0.0)
+    assert torch.all(near_critical_separation[1:] >= 0.1 * near_critical_separation[:-1])
+
+    critical_fit = (
+        accepted
+        & (result.pressure > 180.0e6)
+        & (result.phase_separation >= 4.0e-3)
+        & (result.phase_separation <= 4.0e-2)
     )
+    fit_pressure = result.pressure[critical_fit] / 1.0e6
+    squared_separation = result.phase_separation[critical_fit].square()
+    assert fit_pressure.numel() >= 4
+    design = torch.stack((fit_pressure, torch.ones_like(fit_pressure)), dim=-1)
+    slope, intercept = torch.linalg.lstsq(design, squared_separation).solution
+    extrapolated_critical_pressure = -intercept / slope * 1.0e6
     torch.testing.assert_close(
-        liquid[-1],
-        vapor[-1],
+        extrapolated_critical_pressure,
+        torch.tensor(182.35045e6, dtype=DTYPE),
         rtol=0.0,
-        atol=1.0e-3,
+        atol=500.0,
     )
+    assert torch.abs(result.pressure[accepted][-1] - extrapolated_critical_pressure) <= 2.0e3
+    torch.testing.assert_close(liquid[-1], vapor[-1], rtol=0.0, atol=2.0e-3)
     low_pressure_vapor = vapor[pressure_MPa <= 30.0]
     assert torch.abs(torch.diff(low_pressure_vapor)).max() <= 0.15
+
+
+@pytest.fixture(scope="module")
+def hydrogen_tailored_gerg_near_critical_initial():
+    model = gerg2008_hydrogen_2021(("carbon_dioxide", "hydrogen"))
+    temperature = torch.tensor(235.0, dtype=DTYPE)
+    base_pressure = torch.tensor(182.102477069e6, dtype=DTYPE)
+    liquid = torch.tensor([0.3804500250285683, 0.6195499749714317], dtype=DTYPE)
+    vapor = torch.tensor([0.34463638514213485, 0.6553636148578652], dtype=DTYPE)
+    initial = BinaryVLEPointWithVolumes(
+        temperature,
+        base_pressure,
+        liquid,
+        vapor,
+        0,
+        True,
+        torch.tensor(0.0, dtype=DTYPE),
+        torch.tensor(2.8010879336186383e-5, dtype=DTYPE),
+        torch.tensor(2.794423012530755e-5, dtype=DTYPE),
+    )
+    return model, temperature, initial
+
+
+@settings(max_examples=8, deadline=None, derandomize=True)
+@given(
+    pressure_mpa=st.floats(
+        min_value=181.98,
+        max_value=182.25,
+        allow_nan=False,
+        allow_infinity=False,
+    ),
+    liquid_shift=st.floats(
+        min_value=-2.0e-4,
+        max_value=2.0e-4,
+        allow_nan=False,
+        allow_infinity=False,
+    ),
+    vapor_shift=st.floats(
+        min_value=-2.0e-4,
+        max_value=2.0e-4,
+        allow_nan=False,
+        allow_infinity=False,
+    ),
+    liquid_volume_scale=st.floats(
+        min_value=0.995,
+        max_value=1.005,
+        allow_nan=False,
+        allow_infinity=False,
+    ),
+    vapor_volume_scale=st.floats(
+        min_value=0.995,
+        max_value=1.005,
+        allow_nan=False,
+        allow_infinity=False,
+    ),
+)
+def test_hydrogen_tailored_gerg_vle_retains_near_critical_branch_under_perturbations(
+    hydrogen_tailored_gerg_near_critical_initial,
+    pressure_mpa,
+    liquid_shift,
+    vapor_shift,
+    liquid_volume_scale,
+    vapor_volume_scale,
+):
+    model, temperature, base = hydrogen_tailored_gerg_near_critical_initial
+    liquid_hydrogen = base.liquid_composition[1] + liquid_shift
+    vapor_hydrogen = base.vapor_composition[1] + vapor_shift
+    liquid = torch.stack((1.0 - liquid_hydrogen, liquid_hydrogen))
+    vapor = torch.stack((1.0 - vapor_hydrogen, vapor_hydrogen))
+    initial = replace(
+        base,
+        liquid_composition=liquid,
+        vapor_composition=vapor,
+        liquid_molar_volume=base.liquid_molar_volume * liquid_volume_scale,
+        vapor_molar_volume=base.vapor_molar_volume * vapor_volume_scale,
+    )
+    pressure = torch.tensor(pressure_mpa * 1.0e6, dtype=DTYPE)
+    result = binary_helmholtz_vle_point(
+        model,
+        temperature,
+        pressure,
+        initial,
+        max_iterations=40,
+        minimum_phase_separation=1.0e-4,
+    )
+    assert result.converged
+    assert result.residual_norm <= 1.0e-8
+    assert result.vapor_composition[1] > result.liquid_composition[1]
+    assert result.vapor_composition[1] - result.liquid_composition[1] > 1.0e-2
+    torch.testing.assert_close(result.liquid_composition.sum(), torch.tensor(1.0, dtype=DTYPE))
+    torch.testing.assert_close(result.vapor_composition.sum(), torch.tensor(1.0, dtype=DTYPE))
 
 
 def test_helmholtz_volume_vle_point_matches_pressure_form():
@@ -322,7 +433,7 @@ def test_helmholtz_volume_vle_point_matches_pressure_form():
         minimum_pressure=1.0e3,
         maximum_pressure=105.0e6,
     )
-    pressure = torch.tensor(40.0e6, dtype=DTYPE)
+    pressure = torch.tensor(40.0e6, dtype=DTYPE, requires_grad=True)
     volume_result = binary_helmholtz_vle_point(
         model,
         temperature,
@@ -355,6 +466,12 @@ def test_helmholtz_volume_vle_point_matches_pressure_form():
         atol=2.0e-9,
     )
     assert volume_result.residual_norm <= 1.0e-8
+    pressure_gradient = torch.autograd.grad(
+        volume_result.vapor_composition[0],
+        pressure,
+    )[0]
+    assert torch.isfinite(pressure_gradient)
+    assert pressure_gradient != 0.0
 
 
 def test_helmholtz_volume_vle_point_validates_inputs():
@@ -720,6 +837,18 @@ def test_fixed_composition_boundary_clips_midscan_pressure(monkeypatch):
             torch.tensor([[0.8, 0.2]], dtype=DTYPE),
             {"minimum_phase_separation": -1.0},
             "phase separation",
+        ),
+        (
+            torch.tensor(90.8, dtype=DTYPE),
+            torch.tensor([[0.8, 0.2]], dtype=DTYPE),
+            {"minimum_pressure_step_separation_ratio": 0.0},
+            "pressure-step separation ratio",
+        ),
+        (
+            torch.tensor(90.8, dtype=DTYPE),
+            torch.tensor([[0.8, 0.2]], dtype=DTYPE),
+            {"minimum_pressure_step_separation_ratio": 1.01},
+            "pressure-step separation ratio",
         ),
         (
             torch.tensor(90.8, dtype=DTYPE),
