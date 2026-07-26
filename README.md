@@ -1,4 +1,10 @@
-# torch-flash
+<p align="center">
+  <img
+    src="docs/assets/branding/torch-flash-logo.svg"
+    alt="torch-flash — Differentiable Thermodynamics powered by PyTorch"
+    width="680"
+  />
+</p>
 
 [![Tests](https://github.com/ThermoPhase-FCSRG/torch-flash/actions/workflows/tests.yml/badge.svg)](https://github.com/ThermoPhase-FCSRG/torch-flash/actions/workflows/tests.yml)
 [![Coverage](https://codecov.io/gh/ThermoPhase-FCSRG/torch-flash/branch/main/graph/badge.svg)](https://codecov.io/gh/ThermoPhase-FCSRG/torch-flash)
