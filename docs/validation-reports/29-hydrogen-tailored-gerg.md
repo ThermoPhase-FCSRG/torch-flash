@@ -1,25 +1,45 @@
-# H2-tailored GERG (2021)
+# Leachman normal H2 and H2-tailored GERG
 
-This report reproduces selected numerical and graphical results from
-R. Beckmüller et al., “New Equations of State for Binary Hydrogen Mixtures
-Containing Methane, Nitrogen, Carbon Monoxide, and Carbon Dioxide,” *Journal of
-Physical and Chemical Reference Data* **50** (2021), 013102,
-[doi:10.1063/5.0040533](https://doi.org/10.1063/5.0040533). The article
-develops hydrogen-tailored multifluid equations for the CH4/H2, N2/H2, CO/H2,
-and CO2/H2 binaries to improve their representation relative to GERG-2008.
+This report combines verification of the normal-hydrogen pure-fluid equation
+from J. W. Leachman et al., “Fundamental Equations of State for Parahydrogen,
+Normal Hydrogen, and Orthohydrogen,” *Journal of Physical and Chemical
+Reference Data* **38** (2009), 721–748,
+[doi:10.1063/1.3160306](https://doi.org/10.1063/1.3160306), with reproduction
+of selected mixture results from R. Beckmüller et al., “New Equations of State
+for Binary Hydrogen Mixtures Containing Methane, Nitrogen, Carbon Monoxide,
+and Carbon Dioxide,” *Journal of Physical and Chemical Reference Data* **50**
+(2021), 013102,
+[doi:10.1063/5.0040533](https://doi.org/10.1063/5.0040533).
 
-The `torch-flash` study specifically reproduces the paper's Table 12 and
-Figures 4, 7, and 16. Table 12 is the fundamental numerical implementation
-criterion; Figure 4 compares calculated CH4/H2 densities and phase boundaries
-from GERG-2008 and the H2-tailored model; Figures 7 and 16 compare calculated
-N2/H2 and CO2/H2 phase-equilibrium curves with the experimental markers shown
-in the article.
+The pure-fluid study checks the normal-H2 ideal and residual Helmholtz
+inventories and the complete saturation-property grid reported by Leachman et
+al. The mixture study reproduces Beckmüller et al. Table 12 and Figures 4, 7,
+and 16. Together, these studies verify the normal-H2 reference equation first
+and then its use inside the H2-tailored multifluid model.
 
 The implementation uses the article's main five-component parameterization:
 GERG-2008 pure-fluid equations for CH4, N2, CO, and CO2; the Leachman equation
 for normal hydrogen; and the published binary reducing and departure
 parameters. The supplementary parameterization based on newer reference
 equations is a distinct model and is not substituted here.
+
+## Leachman normal-H2 pure-fluid verification
+
+![Leachman normal-H2 Table 14 property parity](../assets/validation/31_leachman_normal_hydrogen_table14_parity.png)
+
+All 14 residual terms, the ideal-gas coefficients, the equation gas constant,
+and the fixed critical properties match the defining paper. Across the 23
+normal-H2 saturation states, the maximum absolute differences are 0.0078
+kJ/kg for enthalpy, 0.00063 kJ/(kg K) for entropy, 0.00010 kJ/(kg K) for
+isochoric heat capacity, 0.066 kJ/(kg K) for isobaric heat capacity, and 0.060
+m/s for speed of sound. The largest isobaric-heat-capacity difference occurs
+near the critical point and is \(1.36\times10^{-4}\) in relative terms.
+
+The printed liquid densities are strongly pressure-conditioned near the
+triple point. Solving the reported temperature-pressure states instead
+reproduces both phase densities within 0.0027 kg/m³ through 32 K and within
+0.020 kg/m³ at 33 K. The maximum liquid-vapor Gibbs-energy difference at the
+printed states is 0.015 J/mol.
 
 ## Table 12 implementation verification
 

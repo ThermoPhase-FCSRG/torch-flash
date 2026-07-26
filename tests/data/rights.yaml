@@ -21,6 +21,10 @@ artifacts:
     status: not-cleared
     basis: Visual digitization of Figures 7 and 16; publisher redistribution permission not verified.
     source: https://doi.org/10.1063/5.0040533
+  leachman_2009_normal_hydrogen_table14.csv:
+    status: not-cleared
+    basis: Table 14 transcription; publisher redistribution permission not verified.
+    source: https://doi.org/10.1063/1.3160306
   cpa_yan_2009_water_content_digitized.csv:
     status: not-cleared
     basis: Visual digitization of publisher-controlled figures.

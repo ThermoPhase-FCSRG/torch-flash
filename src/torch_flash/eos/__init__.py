@@ -30,6 +30,11 @@ from .cubic import (
     predictive_peng_robinson_1978,
     soave_redlich_kwong,
 )
+from .helmholtz import PureFluidHelmholtzEOS, PureFluidHelmholtzMetadata
+from .leachman import (
+    DEFAULT_LEACHMAN_NORMAL_HYDROGEN,
+    leachman_normal_hydrogen,
+)
 from .multifluid import (
     GaoBTerms,
     HelmholtzTerms,
@@ -60,6 +65,7 @@ from .volume_translation import (
 
 __all__ = [
     "CPAEOS",
+    "DEFAULT_LEACHMAN_NORMAL_HYDROGEN",
     "EOSCG2021_COMPONENTS",
     "GERG2008_COMPONENTS",
     "GERG2008_HYDROGEN_2021_COMPONENTS",
@@ -79,6 +85,8 @@ __all__ = [
     "MultiFluidEOS",
     "MultifluidMetadata",
     "NonAnalyticTerms",
+    "PureFluidHelmholtzEOS",
+    "PureFluidHelmholtzMetadata",
     "VolumeTranslation",
     "VolumeTranslationEOS",
     "cpa_components_from_cuts",
@@ -95,6 +103,7 @@ __all__ = [
     "eoscg2021",
     "gerg2008",
     "gerg2008_hydrogen_2021",
+    "leachman_normal_hydrogen",
     "multifluid_eos",
     "pedersen_peneloux_translation",
     "pedersen_temperature_dependent_translation",

@@ -4,8 +4,7 @@ The four new binary reducing and departure functions are transcribed from
 Tables 2 and 3 of doi:10.1063/5.0040533. The GERG-2008 pure-fluid inventories
 for CH4, N2, CO, and CO2 and their unaffected binary pairs are selected from
 the bundled GERG-2008 document. Normal-hydrogen coefficients are selected
-from the bundled Leachman pure-fluid inventory and checked against the
-paper-provided critical-curve source.
+from the standalone bundled Leachman parameter document.
 """
 
 from __future__ import annotations
@@ -138,18 +137,16 @@ def _tailored_pair(values: dict[str, Any]) -> dict[str, Any]:
 def build_document() -> dict[str, Any]:
     """Return the complete five-component parameter document."""
     gerg = _load(MODEL_ROOT / "gerg-2008.yaml")["parameters"]
-    eoscg = _load(MODEL_ROOT / "eos-cg-2021.yaml")["parameters"]
+    leachman = _load(MODEL_ROOT.parent / "pure_helmholtz" / "leachman-2009-normal-hydrogen.yaml")[
+        "parameters"
+    ]
 
     components = {
         RAW_NAMES[name]: deepcopy(gerg["components"][RAW_NAMES[name]])
         for name in COMPONENT_ORDER
         if name != "hydrogen"
     }
-    hydrogen = deepcopy(eoscg["components"]["hydrogen"])
-    # Leachman et al. (2009), CoolProp 8.0.0, and the paper-provided
-    # GERGdata.py all give the third Gaussian amplitude as positive.
-    hydrogen["residual"][1]["n"][2] = 0.032187
-    components["hydrogen"] = hydrogen
+    components["hydrogen"] = deepcopy(leachman["components"]["hydrogen"])
 
     base_pairs = _pair_lookup(gerg["pairs"])
     pairs: dict[str, Any] = {}

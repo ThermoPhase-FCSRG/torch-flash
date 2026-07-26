@@ -37,6 +37,7 @@ _MODEL_KINDS = frozenset(
         "cubic",
         "group_contribution",
         "multifluid",
+        "pure_helmholtz",
         "standard_state",
         "volume_translation",
     }

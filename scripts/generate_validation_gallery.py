@@ -462,6 +462,19 @@ FIGURES = (
         "Native CO2-H2 phase-equilibrium traces for the three Figure 16 "
         "isotherms with digitized experimental markers.",
     ),
+    FigureSpec(
+        "31_leachman_normal_hydrogen_table14_parity.png",
+        "31_leachman_normal_hydrogen",
+        "notebooks/local-only/verification/31_leachman_normal_hydrogen.ipynb",
+        13,
+        0,
+        "verification",
+        True,
+        ("leachman_2009_normal_hydrogen_table14.csv",),
+        ("https://doi.org/10.1063/1.3160306",),
+        "Normal-hydrogen pressure, enthalpy, entropy, heat-capacity, and "
+        "speed-of-sound parity against Leachman et al. Table 14.",
+    ),
 )
 
 

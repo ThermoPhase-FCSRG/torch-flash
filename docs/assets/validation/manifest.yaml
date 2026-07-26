@@ -550,3 +550,20 @@ figures:
     publication_form: rendered-plot
     machine_readable_observation_values: false
     data_tables_distributed: false
+  31_leachman_normal_hydrogen_table14_parity.png:
+    study_id: 31_leachman_normal_hydrogen
+    notebook: notebooks/local-only/verification/31_leachman_normal_hydrogen.ipynb
+    cell_index: 13
+    image_index: 0
+    evidence_class: verification
+    observation_level_markers: true
+    data_artifacts:
+    - leachman_2009_normal_hydrogen_table14.csv
+    source_material:
+    - https://doi.org/10.1063/1.3160306
+    description: Normal-hydrogen pressure, enthalpy, entropy, heat-capacity, and speed-of-sound
+      parity against Leachman et al. Table 14.
+    executed_artifact_sha256: 4d6e6255a06f338cc5968d9ca19c75a50ad7d2ec435aedf54810192893ba3bb3
+    publication_form: rendered-plot
+    machine_readable_observation_values: false
+    data_tables_distributed: false

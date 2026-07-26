@@ -105,6 +105,12 @@ parameter_sets:
       - gerg2008-hydrogen-2021
       - gerg2008-h2-2021
       - h2-tailored-gerg
+  pure-helmholtz.leachman-2009-normal-hydrogen:
+    path: pure_helmholtz/leachman-2009-normal-hydrogen.yaml
+    aliases:
+      - leachman
+      - leachman-hydrogen
+      - normal-hydrogen
   standard-state.poling-2001:
     path: standard_state/poling-2001.yaml
     aliases:
