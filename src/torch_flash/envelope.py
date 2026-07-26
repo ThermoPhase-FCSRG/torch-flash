@@ -1752,6 +1752,7 @@ def trace_binary_helmholtz_pxy_isotherm(
     composition_failure_refinement_steps: int = 0,
     continue_in_pressure_on_failure: bool = False,
     pressure_continuation_points: int = 25,
+    pressure_failure_refinement_steps: int = 0,
 ) -> BinaryPxyIsotherm:
     """Trace a binary pressure-composition isotherm by bubble continuation.
 
@@ -1796,6 +1797,11 @@ def trace_binary_helmholtz_pxy_isotherm(
     pressure_continuation_points
         Number of logarithmically spaced fixed-pressure solves used by the
         pressure continuation, including its final pressure.
+    pressure_failure_refinement_steps
+        Number of logarithmic bisection refinements between the last accepted
+        and first rejected fixed-pressure states. This approaches the critical
+        endpoint of a closed curve without uniformly refining the entire
+        pressure path.
 
     Returns
     -------
@@ -1821,13 +1827,15 @@ def trace_binary_helmholtz_pxy_isotherm(
     Michelsen and Mollerup, *Thermodynamic Models*, 2nd ed. (2007), chapter
     12, ISBN 978-87-989961-3-2.
 
-    Liquid-composition continuation becomes singular at a fold of an open
-    phase boundary. The optional fallback changes the continuation coordinate
-    to pressure and solves coexistence with
-    :func:`binary_helmholtz_vle_point`; it does not close a physically open
-    branch. Bisection and the discrete accept/stop/coordinate-switch decisions
-    are not differentiable, but accepted equilibrium tensors preserve their
-    PyTorch graphs.
+    Liquid-composition continuation becomes singular at a fold of an open or
+    closed phase boundary. The optional fallback changes the continuation
+    coordinate to pressure and solves coexistence with
+    :func:`binary_helmholtz_vle_point`. An open branch continues to the
+    requested pressure bound; a closed branch is refined toward its critical
+    endpoint after the first rejected pressure. The routine never forces a
+    physically open branch to close. Bisection and the discrete
+    accept/stop/coordinate-switch decisions are not differentiable, but
+    accepted equilibrium tensors preserve their PyTorch graphs.
     """
     if temperature.ndim != 0 or not bool(torch.isfinite(temperature) & (temperature > 0.0)):
         raise ValueError("binary p-x-y isotherm requires one finite positive temperature")
@@ -1850,6 +1858,8 @@ def trace_binary_helmholtz_pxy_isotherm(
         raise ValueError("binary p-x-y composition failure refinement steps must be nonnegative")
     if pressure_continuation_points < 1:
         raise ValueError("binary p-x-y pressure continuation points must be positive")
+    if pressure_failure_refinement_steps < 0:
+        raise ValueError("binary p-x-y pressure failure refinement steps must be nonnegative")
     if continue_in_pressure_on_failure and not stop_on_failure:
         raise ValueError("binary p-x-y pressure continuation requires stop_on_failure=True")
     if continue_in_pressure_on_failure and maximum_pressure is None:
@@ -1950,6 +1960,7 @@ def trace_binary_helmholtz_pxy_isotherm(
             )
         )
         pressure_initial_point: BinaryBubblePointWithVolumes | BinaryVLEPointWithVolumes = previous
+        rejected_pressure: Tensor | None = None
         for pressure in continuation_pressures:
             vle_point = binary_helmholtz_vle_point(
                 model,
@@ -1967,7 +1978,31 @@ def trace_binary_helmholtz_pxy_isotherm(
             if physical:
                 pressure_initial_point = vle_point
             elif stop_on_failure:
+                rejected_pressure = pressure
                 break
+        if rejected_pressure is not None:
+            for _ in range(pressure_failure_refinement_steps):
+                candidate_pressure = torch.sqrt(pressure_initial_point.pressure * rejected_pressure)
+                vle_point = binary_helmholtz_vle_point(
+                    model,
+                    temperature.to(
+                        dtype=candidate_pressure.dtype,
+                        device=candidate_pressure.device,
+                    ),
+                    candidate_pressure,
+                    pressure_initial_point,
+                    tolerance=tolerance,
+                    max_iterations=max_iterations,
+                    minimum_phase_separation=minimum_phase_separation,
+                )
+                physical, separation = physical_diagnostics(vle_point)
+                points.append(vle_point)
+                accepted.append(candidate_pressure.new_tensor(physical, dtype=torch.bool))
+                separations.append(separation)
+                if physical:
+                    pressure_initial_point = vle_point
+                else:
+                    rejected_pressure = candidate_pressure
 
     return BinaryPxyIsotherm(
         temperature.to(dtype=compositions.dtype, device=compositions.device),

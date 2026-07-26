@@ -276,6 +276,42 @@ def test_gerg2008_open_pxy_branch_continues_through_liquid_composition_fold():
     assert result.vapor_composition[accepted, 1][-1] > result.vapor_composition[accepted, 1][-10]
 
 
+def test_hydrogen_tailored_gerg_pxy_closes_and_resolves_low_pressure_vapor_branch():
+    parameter = torch.linspace(0.0, 1.0, 31, dtype=DTYPE)
+    liquid_hydrogen = 0.002 + (0.98 - 0.002) * parameter.pow(2.5)
+    result = trace_binary_helmholtz_pxy_isotherm(
+        gerg2008_hydrogen_2021(("carbon_dioxide", "hydrogen")),
+        torch.tensor(235.0, dtype=DTYPE),
+        torch.stack((1.0 - liquid_hydrogen, liquid_hydrogen), dim=-1),
+        minimum_pressure=1.0e3,
+        maximum_pressure=315.0e6,
+        max_iterations=40,
+        composition_failure_refinement_steps=8,
+        continue_in_pressure_on_failure=True,
+        pressure_continuation_points=4,
+        pressure_failure_refinement_steps=14,
+    )
+    accepted = result.converged
+    liquid = result.liquid_composition[accepted, 1]
+    vapor = result.vapor_composition[accepted, 1]
+    pressure_MPa = result.pressure[accepted] / 1.0e6
+    assert result.phase_separation[accepted][-1] <= 1.0e-3
+    torch.testing.assert_close(
+        result.pressure[accepted][-1],
+        torch.tensor(182.36462144e6, dtype=DTYPE),
+        rtol=2.0e-8,
+        atol=2.0,
+    )
+    torch.testing.assert_close(
+        liquid[-1],
+        vapor[-1],
+        rtol=0.0,
+        atol=1.0e-3,
+    )
+    low_pressure_vapor = vapor[pressure_MPa <= 30.0]
+    assert torch.abs(torch.diff(low_pressure_vapor)).max() <= 0.15
+
+
 def test_helmholtz_volume_vle_point_matches_pressure_form():
     model = gerg2008(("nitrogen", "hydrogen"))
     temperature = torch.tensor(70.4, dtype=DTYPE)
@@ -696,6 +732,12 @@ def test_fixed_composition_boundary_clips_midscan_pressure(monkeypatch):
             torch.tensor([[0.8, 0.2]], dtype=DTYPE),
             {"pressure_continuation_points": 0},
             "continuation points",
+        ),
+        (
+            torch.tensor(90.8, dtype=DTYPE),
+            torch.tensor([[0.8, 0.2]], dtype=DTYPE),
+            {"pressure_failure_refinement_steps": -1},
+            "pressure failure refinement steps",
         ),
         (
             torch.tensor(90.8, dtype=DTYPE),
