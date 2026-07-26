@@ -113,12 +113,14 @@ class BinaryBubblePoint:
 
 
 @dataclass(frozen=True)
-class BinaryHelmholtzBubblePoint(BinaryBubblePoint):
-    """Binary bubble point solved with explicit coexisting phase volumes.
+class BinaryBubblePointWithVolumes(BinaryBubblePoint):
+    """Binary bubble point retaining the coexisting phase molar volumes.
 
-    The two molar volumes are retained as continuation variables. Reusing
-    them at the next state avoids the nested liquid and vapor density
-    inversions required by the pressure-based formulation.
+    This result extends :class:`BinaryBubblePoint` with the liquid and vapor
+    molar volumes used by a volume-based equilibrium solver. The payload is a
+    thermodynamic result rather than an equation-of-state implementation:
+    any compatible algorithm can populate it. A Helmholtz-specific public
+    operation currently produces it in :func:`binary_helmholtz_bubble_point`.
 
     Attributes
     ----------
@@ -131,11 +133,84 @@ class BinaryHelmholtzBubblePoint(BinaryBubblePoint):
         Nonlinear iteration count, convergence status, and maximum absolute
         dimensionless residual.
     liquid_molar_volume, vapor_molar_volume
-        Coexisting molar volumes in m3/mol retained for continuation.
+        Coexisting molar volumes in m3/mol. Reusing them as continuation
+        variables can avoid nested liquid and vapor density inversions.
     """
 
     liquid_molar_volume: Tensor
     vapor_molar_volume: Tensor
+
+
+@dataclass(frozen=True)
+class BinaryPxyIsotherm:
+    """Liquid-composition continuation of a binary pressure-composition trace.
+
+    Attributes
+    ----------
+    temperature
+        Specified scalar temperature in K.
+    pressure
+        Attempted bubble pressures in Pa.
+    liquid_composition, vapor_composition
+        Coexisting binary composition arrays with shape ``(points, 2)``.
+    iterations
+        Nonlinear iteration count for every attempted point.
+    converged
+        Physical-convergence mask requiring the nonlinear residual and minimum
+        phase separation to pass.
+    residual_norm
+        Maximum absolute dimensionless equilibrium residual at every point.
+    phase_separation
+        Maximum absolute liquid-vapor mole-fraction difference.
+    """
+
+    temperature: Tensor
+    pressure: Tensor
+    liquid_composition: Tensor
+    vapor_composition: Tensor
+    iterations: Tensor
+    converged: Tensor
+    residual_norm: Tensor
+    phase_separation: Tensor
+
+
+@dataclass(frozen=True)
+class BinaryFixedCompositionBoundary:
+    """Pressure boundaries of a binary two-phase region at fixed composition.
+
+    Attributes
+    ----------
+    temperature
+        Requested one-dimensional temperature grid in K.
+    bubble_pressure, dew_pressure
+        Upper and lower boundary pressures in Pa. Missing crossings are NaN;
+        an upper boundary above the requested reporting limit is clipped to
+        that limit.
+    bubble_converged, dew_converged
+        Whether each boundary was resolved from physically separated,
+        residual-converged bubble points.
+    bubble_above_reporting_limit
+        Whether the upper boundary lies at or above the reporting limit.
+    dew_below_scan
+        Whether the lower crossing lies below the liquid-composition scan.
+    bubble_separation
+        Vapor-liquid separation in the selected volatile-component coordinate
+        at the upper boundary.
+    bubble_residual, dew_residual
+        Conservative dimensionless residual associated with each interpolated
+        boundary.
+    """
+
+    temperature: Tensor
+    bubble_pressure: Tensor
+    dew_pressure: Tensor
+    bubble_converged: Tensor
+    bubble_above_reporting_limit: Tensor
+    dew_converged: Tensor
+    dew_below_scan: Tensor
+    bubble_separation: Tensor
+    bubble_residual: Tensor
+    dew_residual: Tensor
 
 
 @dataclass(frozen=True)
@@ -1180,14 +1255,14 @@ def binary_helmholtz_bubble_point(
     temperature: Tensor,
     liquid_composition: Tensor,
     *,
-    initial_point: BinaryHelmholtzBubblePoint | None = None,
+    initial_point: BinaryBubblePointWithVolumes | None = None,
     initial_pressure: Tensor | None = None,
     initial_vapor_composition: Tensor | None = None,
     minimum_pressure: Tensor | float | None = None,
     maximum_pressure: Tensor | float | None = None,
     tolerance: float = 1.0e-8,
     max_iterations: int = 30,
-) -> BinaryHelmholtzBubblePoint:
+) -> BinaryBubblePointWithVolumes:
     """Solve a binary bubble point using phase volumes as Newton variables.
 
     Parameters
@@ -1218,7 +1293,7 @@ def binary_helmholtz_bubble_point(
 
     Returns
     -------
-    BinaryHelmholtzBubblePoint
+    BinaryBubblePointWithVolumes
         Bubble pressure, both phase compositions and volumes, and explicit
         nonlinear convergence diagnostics.
 
@@ -1228,8 +1303,11 @@ def binary_helmholtz_bubble_point(
     first point and its two density roots. Continuation then solves directly
     for vapor composition, liquid density, and vapor density from equality of
     both component fugacities and pressure. This is the volume-based GERG
-    phase-equilibrium formulation described in the GERG-2004 monograph and
-    eliminates density inversion from every outer residual evaluation.
+    phase-equilibrium formulation described by Kunz, Klimeck, Wagner, and
+    Jaeschke, *The GERG-2004 Wide-Range Equation of State for Natural Gases
+    and Other Mixtures*, GERG Technical Monograph 15 (2007), Sec. 5.4.3,
+    ISBN 978-3-18-355706-6. It eliminates density inversion from every outer
+    residual evaluation.
 
     A failed direct solve remains explicitly non-converged. Callers tracing a
     difficult branch can retry without ``initial_point`` to invoke the robust
@@ -1282,7 +1360,7 @@ def binary_helmholtz_bubble_point(
             initialized.vapor_composition,
             "vapor",
         )
-        return BinaryHelmholtzBubblePoint(
+        return BinaryBubblePointWithVolumes(
             initialized.temperature,
             initialized.pressure,
             initialized.liquid_composition,
@@ -1400,7 +1478,7 @@ def binary_helmholtz_bubble_point(
         pressure_in_range = pressure_in_range & (pressure >= minimum)
     if maximum is not None:
         pressure_in_range = pressure_in_range & (pressure <= maximum)
-    return BinaryHelmholtzBubblePoint(
+    return BinaryBubblePointWithVolumes(
         temperature,
         pressure,
         x,
@@ -1410,4 +1488,589 @@ def binary_helmholtz_bubble_point(
         result.residual_norm,
         liquid_volume,
         vapor_volume,
+    )
+
+
+def trace_binary_helmholtz_pxy_isotherm(
+    model: HelmholtzStateModel,
+    temperature: Tensor,
+    liquid_compositions: Tensor,
+    *,
+    minimum_pressure: Tensor | float | None = None,
+    maximum_pressure: Tensor | float | None = None,
+    tolerance: float = 1.0e-8,
+    max_iterations: int = 30,
+    minimum_phase_separation: float = 1.0e-5,
+    stop_on_failure: bool = True,
+) -> BinaryPxyIsotherm:
+    """Trace a binary pressure-composition isotherm by bubble continuation.
+
+    Each row of ``liquid_compositions`` specifies a successive liquid point.
+    The first state uses the pressure-formulation initializer; later states
+    reuse both coexisting phase volumes in
+    :func:`binary_helmholtz_bubble_point`. This exposes a high-level ``p-x-y``
+    workflow without embedding continuation logic in an application study.
+
+    Parameters
+    ----------
+    model
+        Two-component Helmholtz state model with pressure, molar-volume, and
+        residual-Helmholtz methods.
+    temperature
+        One finite positive scalar temperature in K.
+    liquid_compositions
+        Ordered, strictly positive liquid mole fractions with shape
+        ``(points, 2)``. Rows are normalized internally.
+    minimum_pressure, maximum_pressure
+        Optional finite positive pressure bounds in Pa. When a converged point
+        reaches 99.5% of ``maximum_pressure``, tracing stops.
+    tolerance
+        Positive maximum absolute dimensionless equilibrium residual.
+    max_iterations
+        Positive maximum damped-Newton iteration count per point.
+    minimum_phase_separation
+        Nonnegative minimum of ``max(abs(y - x))`` required for physical
+        convergence.
+    stop_on_failure
+        Stop after the first rejected point once a physical branch has begun.
+
+    Returns
+    -------
+    BinaryPxyIsotherm
+        Attempted pressures, both phase compositions, iterations, residuals,
+        separation, and a physical-convergence mask. All floating tensors
+        retain the input composition dtype and device.
+
+    Raises
+    ------
+    ValueError
+        If temperature, compositions, tolerances, or iteration settings are
+        invalid. Pressure-bound validation is delegated to the point solver.
+
+    Notes
+    -----
+    The equilibrium equations and reuse of prior solutions as initial
+    estimates follow Kunz, Klimeck, Wagner, and Jaeschke, *The GERG-2004
+    Wide-Range Equation of State for Natural Gases and Other Mixtures*, GERG
+    Technical Monograph 15 (2007), Sec. 5.4.3, ISBN 978-3-18-355706-6, and
+    Michelsen and Mollerup, *Thermodynamic Models*, 2nd ed. (2007), chapter
+    12, ISBN 978-87-989961-3-2. The discrete accept/stop decisions are not
+    differentiable, but accepted pressure and composition tensors preserve
+    their PyTorch graphs.
+    """
+    if temperature.ndim != 0 or not bool(torch.isfinite(temperature) & (temperature > 0.0)):
+        raise ValueError("binary p-x-y isotherm requires one finite positive temperature")
+    if not liquid_compositions.is_floating_point():
+        raise ValueError("binary p-x-y liquid compositions must use a floating dtype")
+    compositions = normalize_composition(
+        liquid_compositions.to(dtype=liquid_compositions.dtype, device=liquid_compositions.device)
+    )
+    if compositions.ndim != 2 or compositions.shape[0] < 1 or compositions.shape[1] != 2:
+        raise ValueError("binary p-x-y liquid compositions must have nonempty shape (points, 2)")
+    if not bool(torch.isfinite(compositions).all() & (compositions > 0.0).all()):
+        raise ValueError("binary p-x-y liquid compositions must be finite and positive")
+    if tolerance <= 0.0 or not torch.isfinite(torch.tensor(tolerance)):
+        raise ValueError("binary p-x-y tolerance must be finite and positive")
+    if max_iterations < 1:
+        raise ValueError("binary p-x-y max_iterations must be positive")
+    if minimum_phase_separation < 0.0 or not torch.isfinite(torch.tensor(minimum_phase_separation)):
+        raise ValueError("binary p-x-y minimum phase separation must be finite and nonnegative")
+
+    maximum = (
+        None
+        if maximum_pressure is None
+        else torch.as_tensor(
+            maximum_pressure,
+            dtype=compositions.dtype,
+            device=compositions.device,
+        )
+    )
+    points: list[BinaryBubblePointWithVolumes] = []
+    accepted: list[Tensor] = []
+    separations: list[Tensor] = []
+    previous: BinaryBubblePointWithVolumes | None = None
+    for liquid in compositions:
+        point = binary_helmholtz_bubble_point(
+            model,
+            temperature.to(dtype=liquid.dtype, device=liquid.device),
+            liquid,
+            initial_point=previous,
+            minimum_pressure=minimum_pressure,
+            maximum_pressure=maximum_pressure,
+            tolerance=tolerance,
+            max_iterations=max_iterations,
+        )
+        separation = torch.max(torch.abs(point.vapor_composition - liquid))
+        physical = (
+            point.converged
+            and bool(point.residual_norm <= tolerance)
+            and bool(separation > minimum_phase_separation)
+        )
+        points.append(point)
+        accepted.append(liquid.new_tensor(physical, dtype=torch.bool))
+        separations.append(separation)
+        if physical:
+            previous = point
+        elif previous is not None and stop_on_failure:
+            break
+        if physical and maximum is not None and bool(point.pressure >= 0.995 * maximum):
+            break
+
+    return BinaryPxyIsotherm(
+        temperature.to(dtype=compositions.dtype, device=compositions.device),
+        torch.stack(tuple(point.pressure for point in points)),
+        torch.stack(tuple(point.liquid_composition for point in points)),
+        torch.stack(tuple(point.vapor_composition for point in points)),
+        torch.tensor(
+            [point.iterations for point in points],
+            dtype=torch.int64,
+            device=compositions.device,
+        ),
+        torch.stack(accepted),
+        torch.stack(tuple(point.residual_norm for point in points)),
+        torch.stack(separations),
+    )
+
+
+@dataclass(frozen=True)
+class _BoundaryScanPoint:
+    difference: Tensor
+    log_pressure: Tensor
+    residual: Tensor
+    liquid_fraction: Tensor
+
+
+def trace_binary_helmholtz_fixed_composition_boundary(
+    model: HelmholtzStateModel,
+    temperatures: Tensor,
+    overall_composition: Tensor,
+    *,
+    volatile_component_index: int = 1,
+    reporting_pressure_limit: Tensor | float,
+    maximum_pressure: Tensor | float,
+    minimum_pressure: Tensor | float = 1.0e3,
+    minimum_volatile_liquid_fraction: float = 1.0e-5,
+    transition_volatile_liquid_fraction: float = 0.05,
+    lean_scan_points: int = 12,
+    rich_scan_points: int = 15,
+    tolerance: float = 1.0e-8,
+    max_iterations: int = 25,
+    minimum_phase_separation: float = 1.0e-5,
+) -> BinaryFixedCompositionBoundary:
+    """Trace a binary two-phase pressure band at fixed overall composition.
+
+    At each temperature, this routine continues the bubble locus from a
+    volatile-component-lean liquid toward the specified overall composition.
+    The first crossing of ``y[volatile_component_index]`` through the overall
+    fraction gives the lower (dew) boundary. The upper boundary is the bubble
+    state at ``x == z`` or, beyond a critical composition, the return crossing
+    of the vapor branch. Previous-temperature solutions initialize matching
+    liquid-composition points.
+
+    Parameters
+    ----------
+    model
+        Two-component Helmholtz state model.
+    temperatures
+        Nonempty one-dimensional ordered temperature grid in K. Either
+        increasing or decreasing order is accepted.
+    overall_composition
+        Strictly positive binary overall mole fractions.
+    volatile_component_index
+        Component coordinate expected to be enriched in the vapor phase,
+        either ``0`` or ``1``.
+    reporting_pressure_limit
+        Positive reporting limit in Pa. Upper boundaries beyond it are clipped
+        and identified by ``bubble_above_reporting_limit``.
+    maximum_pressure
+        Positive numerical bubble-solver ceiling in Pa, strictly greater than
+        or equal to ``reporting_pressure_limit``.
+    minimum_pressure
+        Positive numerical bubble-solver floor in Pa.
+    minimum_volatile_liquid_fraction
+        Positive starting mole fraction for the volatile-component scan.
+    transition_volatile_liquid_fraction
+        Positive fraction separating geometric lean-side spacing from linear
+        spacing toward the overall composition.
+    lean_scan_points, rich_scan_points
+        Number of geometric and linear scan points. Each must be at least two.
+    tolerance
+        Positive maximum absolute dimensionless equilibrium residual.
+    max_iterations
+        Positive maximum damped-Newton iterations per bubble point.
+    minimum_phase_separation
+        Positive minimum ``y_volatile - x_volatile`` for an accepted state.
+
+    Returns
+    -------
+    BinaryFixedCompositionBoundary
+        Boundary pressures in Pa plus convergence, out-of-range, separation,
+        and residual diagnostics on the requested temperature grid. Floating
+        outputs preserve the input dtype and device.
+
+    Raises
+    ------
+    ValueError
+        If state grids, compositions, pressure limits, scan settings, or
+        nonlinear tolerances are invalid.
+
+    Notes
+    -----
+    This is a fixed-composition specialization of bubble-locus continuation
+    and crossing interpolation. The phase-equilibrium equations,
+    Newton-Raphson solution, and continuation initial estimates follow Kunz,
+    Klimeck, Wagner, and Jaeschke, *The GERG-2004 Wide-Range Equation of State
+    for Natural Gases and Other Mixtures*, GERG Technical Monograph 15 (2007),
+    Sec. 5.4.3 and Table 5.3, ISBN 978-3-18-355706-6. Log-pressure
+    interpolation and pressure-limit clipping are numerical continuation
+    choices made explicitly by `torch-flash`, not additional equilibrium
+    equations. Discrete branch and clipping decisions are non-differentiable.
+    """
+    if not temperatures.is_floating_point() or temperatures.ndim != 1 or temperatures.numel() < 1:
+        raise ValueError("binary fixed-composition temperatures must be a nonempty float vector")
+    if not bool(torch.isfinite(temperatures).all() & (temperatures > 0.0).all()):
+        raise ValueError("binary fixed-composition temperatures must be finite and positive")
+    if not overall_composition.is_floating_point():
+        raise ValueError("binary fixed-composition overall composition must use a floating dtype")
+    composition = normalize_composition(
+        overall_composition.to(dtype=temperatures.dtype, device=temperatures.device)
+    )
+    if composition.shape != (2,) or not bool(
+        torch.isfinite(composition).all() & (composition > 0.0).all()
+    ):
+        raise ValueError(
+            "binary fixed-composition overall composition must contain two finite positive values"
+        )
+    if volatile_component_index not in (0, 1):
+        raise ValueError("binary fixed-composition volatile_component_index must be 0 or 1")
+    if lean_scan_points < 2 or rich_scan_points < 2:
+        raise ValueError("binary fixed-composition scan point counts must each be at least two")
+    if max_iterations < 1:
+        raise ValueError("binary fixed-composition max_iterations must be positive")
+    scalar_settings = (
+        ("minimum_volatile_liquid_fraction", minimum_volatile_liquid_fraction),
+        (
+            "transition_volatile_liquid_fraction",
+            transition_volatile_liquid_fraction,
+        ),
+        ("tolerance", tolerance),
+        ("minimum_phase_separation", minimum_phase_separation),
+    )
+    for name, value in scalar_settings:
+        if value <= 0.0 or not torch.isfinite(torch.tensor(value)):
+            raise ValueError(f"binary fixed-composition {name} must be finite and positive")
+
+    lower_pressure = torch.as_tensor(
+        minimum_pressure,
+        dtype=temperatures.dtype,
+        device=temperatures.device,
+    )
+    reported_limit = torch.as_tensor(
+        reporting_pressure_limit,
+        dtype=temperatures.dtype,
+        device=temperatures.device,
+    )
+    solver_limit = torch.as_tensor(
+        maximum_pressure,
+        dtype=temperatures.dtype,
+        device=temperatures.device,
+    )
+    if any(
+        value.ndim != 0 or not bool(torch.isfinite(value) & (value > 0.0))
+        for value in (lower_pressure, reported_limit, solver_limit)
+    ):
+        raise ValueError("binary fixed-composition pressure limits must be finite positive scalars")
+    if not bool(lower_pressure < reported_limit <= solver_limit):
+        raise ValueError(
+            "binary fixed-composition pressures require minimum < reporting <= maximum"
+        )
+
+    target_fraction = composition[volatile_component_index]
+    if not bool(minimum_volatile_liquid_fraction < target_fraction):
+        raise ValueError(
+            "binary fixed-composition minimum volatile liquid fraction must be below "
+            "the overall fraction"
+        )
+    transition = torch.minimum(
+        target_fraction,
+        target_fraction.new_tensor(transition_volatile_liquid_fraction),
+    )
+    transition = torch.maximum(
+        transition,
+        target_fraction.new_tensor(minimum_volatile_liquid_fraction),
+    )
+    lean_fractions = torch.exp(
+        torch.linspace(
+            torch.log(target_fraction.new_tensor(minimum_volatile_liquid_fraction)),
+            torch.log(transition),
+            lean_scan_points,
+            dtype=temperatures.dtype,
+            device=temperatures.device,
+        )
+    )
+    if bool(target_fraction > transition):
+        rich_fractions = torch.linspace(
+            transition,
+            target_fraction,
+            rich_scan_points,
+            dtype=temperatures.dtype,
+            device=temperatures.device,
+        )[1:]
+        scan_fractions = torch.cat((lean_fractions, rich_fractions))
+    else:
+        scan_fractions = lean_fractions
+        scan_fractions = torch.cat((scan_fractions[:-1], target_fraction.reshape(1)))
+
+    temperature_points: list[BinaryBubblePointWithVolumes | None] = [None] * len(scan_fractions)
+    branch_above_limit = False
+    bubble_history: list[tuple[Tensor, Tensor]] = []
+    output_rows: list[tuple[Tensor, Tensor, bool, bool, bool, bool, Tensor, Tensor, Tensor]] = []
+
+    for temperature in temperatures:
+        if len(bubble_history) == 2:
+            previous_temperature, previous_log_pressure = bubble_history[-1]
+            earlier_temperature, earlier_log_pressure = bubble_history[-2]
+            temperature_step = previous_temperature - earlier_temperature
+            if bool(temperature_step != 0.0):
+                ratio = (temperature - previous_temperature) / temperature_step
+                predicted_log_pressure = previous_log_pressure + ratio * (
+                    previous_log_pressure - earlier_log_pressure
+                )
+                branch_above_limit = branch_above_limit or bool(
+                    predicted_log_pressure >= torch.log(reported_limit)
+                )
+
+        previous_scan: _BoundaryScanPoint | None = None
+        scan_point: BinaryBubblePointWithVolumes | None = None
+        next_temperature_points: list[BinaryBubblePointWithVolumes | None] = [None] * len(
+            scan_fractions
+        )
+        first_difference: Tensor | None = None
+        nan = temperature.new_tensor(torch.nan)
+        bubble_pressure = reported_limit if branch_above_limit else nan
+        bubble_residual = nan
+        bubble_separation = nan
+        bubble_converged = False
+        bubble_above_reporting_limit = branch_above_limit
+        final_scan_pressure = nan
+        dew_pressure = nan
+        dew_residual = nan
+        dew_converged = False
+
+        for scan_index, liquid_fraction in enumerate(scan_fractions):
+            liquid = (
+                torch.stack((liquid_fraction, 1.0 - liquid_fraction))
+                if volatile_component_index == 0
+                else torch.stack((1.0 - liquid_fraction, liquid_fraction))
+            )
+            initial_point = temperature_points[scan_index]
+            if initial_point is None:
+                initial_point = scan_point
+            scan = binary_helmholtz_bubble_point(
+                model,
+                temperature,
+                liquid,
+                initial_point=initial_point,
+                minimum_pressure=lower_pressure,
+                maximum_pressure=solver_limit,
+                tolerance=tolerance,
+                max_iterations=max_iterations,
+            )
+            phase_separation = scan.vapor_composition[volatile_component_index] - liquid_fraction
+            invalid_scan = (
+                not scan.converged
+                or bool(scan.residual_norm > tolerance)
+                or bool(phase_separation <= minimum_phase_separation)
+            )
+            if (
+                invalid_scan
+                and temperature_points[scan_index] is not None
+                and scan_point is not None
+            ):
+                scan = binary_helmholtz_bubble_point(
+                    model,
+                    temperature,
+                    liquid,
+                    initial_point=scan_point,
+                    minimum_pressure=lower_pressure,
+                    maximum_pressure=solver_limit,
+                    tolerance=tolerance,
+                    max_iterations=max_iterations,
+                )
+                phase_separation = (
+                    scan.vapor_composition[volatile_component_index] - liquid_fraction
+                )
+                invalid_scan = (
+                    not scan.converged
+                    or bool(scan.residual_norm > tolerance)
+                    or bool(phase_separation <= minimum_phase_separation)
+                )
+            branch_terminated = (
+                invalid_scan
+                and scan_point is not None
+                and previous_scan is not None
+                and bool(previous_scan.difference > 0.0)
+                and (
+                    dew_converged or (first_difference is not None and bool(first_difference > 0.0))
+                )
+            )
+            if branch_terminated:
+                break
+            if invalid_scan:
+                pressure_seed = scan_point if scan_point is not None else initial_point
+                scan = binary_helmholtz_bubble_point(
+                    model,
+                    temperature,
+                    liquid,
+                    initial_pressure=(None if pressure_seed is None else pressure_seed.pressure),
+                    initial_vapor_composition=(
+                        None if pressure_seed is None else pressure_seed.vapor_composition
+                    ),
+                    minimum_pressure=lower_pressure,
+                    maximum_pressure=solver_limit,
+                    tolerance=tolerance,
+                    max_iterations=max_iterations,
+                )
+                phase_separation = (
+                    scan.vapor_composition[volatile_component_index] - liquid_fraction
+                )
+                invalid_scan = (
+                    not scan.converged
+                    or bool(scan.residual_norm > tolerance)
+                    or bool(phase_separation <= minimum_phase_separation)
+                )
+            at_target = scan_index == len(scan_fractions) - 1
+            if at_target:
+                final_scan_pressure = scan.pressure
+            if invalid_scan:
+                continue
+
+            current_scan = _BoundaryScanPoint(
+                scan.vapor_composition[volatile_component_index] - target_fraction,
+                torch.log(scan.pressure),
+                scan.residual_norm,
+                liquid_fraction,
+            )
+            if first_difference is None:
+                first_difference = current_scan.difference
+            if (
+                not dew_converged
+                and previous_scan is not None
+                and bool(previous_scan.difference <= 0.0)
+                and bool(current_scan.difference >= 0.0)
+            ):
+                fraction = -previous_scan.difference / (
+                    current_scan.difference - previous_scan.difference
+                )
+                log_pressure = previous_scan.log_pressure + fraction * (
+                    current_scan.log_pressure - previous_scan.log_pressure
+                )
+                dew_pressure = torch.exp(log_pressure)
+                dew_residual = torch.maximum(
+                    previous_scan.residual,
+                    current_scan.residual,
+                )
+                dew_converged = True
+            elif (
+                dew_converged
+                and not bubble_converged
+                and previous_scan is not None
+                and bool(previous_scan.difference >= 0.0)
+                and bool(current_scan.difference <= 0.0)
+            ):
+                fraction = previous_scan.difference / (
+                    previous_scan.difference - current_scan.difference
+                )
+                log_pressure = previous_scan.log_pressure + fraction * (
+                    current_scan.log_pressure - previous_scan.log_pressure
+                )
+                liquid_at_boundary = previous_scan.liquid_fraction + fraction * (
+                    current_scan.liquid_fraction - previous_scan.liquid_fraction
+                )
+                final_scan_pressure = torch.exp(log_pressure)
+                bubble_pressure = final_scan_pressure
+                bubble_residual = torch.maximum(
+                    previous_scan.residual,
+                    current_scan.residual,
+                )
+                bubble_separation = target_fraction - liquid_at_boundary
+                bubble_converged = True
+            if at_target and not bubble_converged:
+                bubble_pressure = final_scan_pressure
+                bubble_residual = scan.residual_norm
+                bubble_separation = phase_separation
+                bubble_converged = True
+
+            previous_scan = current_scan
+            scan_point = scan
+            next_temperature_points[scan_index] = scan
+            positive_first_difference = first_difference is not None and bool(
+                first_difference > 0.0
+            )
+            if branch_above_limit and (dew_converged or positive_first_difference):
+                break
+            if bool(scan.pressure >= reported_limit) and (
+                dew_converged or positive_first_difference
+            ):
+                bubble_pressure = reported_limit
+                bubble_above_reporting_limit = True
+                branch_above_limit = True
+                break
+            if bubble_converged and not at_target:
+                break
+
+        dew_below_scan = (
+            not dew_converged and first_difference is not None and bool(first_difference > 0.0)
+        )
+        if bool(final_scan_pressure >= reported_limit):
+            bubble_above_reporting_limit = True
+            bubble_pressure = reported_limit
+            branch_above_limit = True
+        elif bubble_converged:
+            bubble_history.append((temperature, torch.log(final_scan_pressure)))
+            bubble_history = bubble_history[-2:]
+        output_rows.append(
+            (
+                bubble_pressure,
+                dew_pressure,
+                bubble_converged,
+                bubble_above_reporting_limit,
+                dew_converged,
+                dew_below_scan,
+                bubble_separation,
+                bubble_residual,
+                dew_residual,
+            )
+        )
+        for scan_index, next_point in enumerate(next_temperature_points):
+            if next_point is not None:
+                temperature_points[scan_index] = next_point
+
+    return BinaryFixedCompositionBoundary(
+        temperatures,
+        torch.stack(tuple(row[0] for row in output_rows)),
+        torch.stack(tuple(row[1] for row in output_rows)),
+        torch.tensor(
+            [row[2] for row in output_rows],
+            dtype=torch.bool,
+            device=temperatures.device,
+        ),
+        torch.tensor(
+            [row[3] for row in output_rows],
+            dtype=torch.bool,
+            device=temperatures.device,
+        ),
+        torch.tensor(
+            [row[4] for row in output_rows],
+            dtype=torch.bool,
+            device=temperatures.device,
+        ),
+        torch.tensor(
+            [row[5] for row in output_rows],
+            dtype=torch.bool,
+            device=temperatures.device,
+        ),
+        torch.stack(tuple(row[6] for row in output_rows)),
+        torch.stack(tuple(row[7] for row in output_rows)),
+        torch.stack(tuple(row[8] for row in output_rows)),
     )

@@ -6,12 +6,16 @@ from pathlib import Path
 import pytest
 import torch
 
+import torch_flash.envelope as envelope
 import torch_flash.eos.named as named
 from torch_flash.database import ModelParameterSet, load_model_parameters
 from torch_flash.envelope import (
+    BinaryBubblePointWithVolumes,
     binary_bubble_point,
     binary_helmholtz_bubble_point,
     phase_envelope,
+    trace_binary_helmholtz_fixed_composition_boundary,
+    trace_binary_helmholtz_pxy_isotherm,
 )
 from torch_flash.eos import (
     EOSCG2021_COMPONENTS,
@@ -200,6 +204,468 @@ def test_hydrogen_tailored_gerg_volume_bubble_continuation_matches_pressure_form
         rtol=3.0e-8,
         atol=2.0e-3,
     )
+
+
+def test_hydrogen_tailored_gerg_high_level_pxy_isotherm_and_autodiff():
+    model = gerg2008_hydrogen_2021(("nitrogen", "hydrogen"))
+    fractions = torch.linspace(0.002, 0.47, 5, dtype=DTYPE, requires_grad=True)
+    liquid = torch.stack((1.0 - fractions, fractions), dim=-1)
+    result = trace_binary_helmholtz_pxy_isotherm(
+        model,
+        torch.tensor(90.8, dtype=DTYPE),
+        liquid,
+        minimum_pressure=1.0e3,
+        maximum_pressure=1.05e8,
+        max_iterations=25,
+    )
+    assert result.pressure.shape == (5,)
+    assert result.liquid_composition.shape == (5, 2)
+    assert result.vapor_composition.shape == (5, 2)
+    assert result.iterations.dtype == torch.int64
+    assert result.converged.tolist() == [True] * 5
+    assert torch.all(result.residual_norm <= 1.0e-8)
+    assert torch.all(result.phase_separation > 1.0e-5)
+    torch.testing.assert_close(
+        result.pressure,
+        torch.tensor(
+            [
+                473604.53876677965,
+                4860041.687633225,
+                9005470.309133109,
+                12691482.24207196,
+                15030260.898923744,
+            ],
+            dtype=DTYPE,
+        ),
+        rtol=2.0e-10,
+        atol=2.0e-3,
+    )
+    gradient = torch.autograd.grad(result.pressure.sum(), fractions)[0]
+    assert torch.isfinite(gradient).all()
+    assert torch.all(gradient > 0.0)
+
+
+def test_high_level_pxy_isotherm_stops_on_failure_and_pressure_limit(monkeypatch):
+    calls = 0
+
+    def fake_bubble_point(model, temperature, liquid, **options):
+        del model, options
+        nonlocal calls
+        calls += 1
+        converged = calls != 2
+        pressure = liquid.new_tensor(1.0e6 * calls)
+        vapor = torch.stack((liquid[0] - 0.1, liquid[1] + 0.1))
+        return BinaryBubblePointWithVolumes(
+            temperature,
+            pressure,
+            liquid,
+            vapor,
+            2,
+            converged,
+            liquid.new_tensor(1.0e-10 if converged else 1.0),
+            liquid.new_tensor(1.0e-4),
+            liquid.new_tensor(1.0e-3),
+        )
+
+    monkeypatch.setattr(envelope, "binary_helmholtz_bubble_point", fake_bubble_point)
+    liquid = torch.tensor([[0.8, 0.2], [0.7, 0.3], [0.6, 0.4]], dtype=DTYPE)
+    failed = trace_binary_helmholtz_pxy_isotherm(
+        object(),
+        torch.tensor(100.0, dtype=DTYPE),
+        liquid,
+    )
+    assert failed.converged.tolist() == [True, False]
+
+    calls = 0
+
+    def pressure_limited_point(model, temperature, composition, **options):
+        del model, options
+        nonlocal calls
+        calls += 1
+        vapor = torch.stack((composition[0] - 0.1, composition[1] + 0.1))
+        return BinaryBubblePointWithVolumes(
+            temperature,
+            composition.new_tensor(9.96e6),
+            composition,
+            vapor,
+            1,
+            True,
+            composition.new_tensor(1.0e-10),
+            composition.new_tensor(1.0e-4),
+            composition.new_tensor(1.0e-3),
+        )
+
+    monkeypatch.setattr(envelope, "binary_helmholtz_bubble_point", pressure_limited_point)
+    limited = trace_binary_helmholtz_pxy_isotherm(
+        object(),
+        torch.tensor(100.0, dtype=DTYPE),
+        liquid,
+        maximum_pressure=1.0e7,
+    )
+    assert calls == 1
+    assert limited.converged.tolist() == [True]
+
+
+def test_hydrogen_tailored_gerg_high_level_fixed_composition_boundary():
+    result = trace_binary_helmholtz_fixed_composition_boundary(
+        gerg2008_hydrogen_2021(("methane", "hydrogen")),
+        torch.linspace(155.0, 60.0, 7, dtype=DTYPE),
+        torch.tensor([0.5, 0.5], dtype=DTYPE),
+        reporting_pressure_limit=70.0e6,
+        maximum_pressure=75.0e6,
+    )
+    assert result.bubble_converged.tolist() == [
+        False,
+        True,
+        True,
+        True,
+        False,
+        False,
+        False,
+    ]
+    assert result.bubble_above_reporting_limit.tolist() == [
+        False,
+        False,
+        False,
+        False,
+        True,
+        True,
+        True,
+    ]
+    assert result.dew_converged.tolist() == [
+        True,
+        True,
+        True,
+        True,
+        True,
+        False,
+        False,
+    ]
+    assert result.dew_below_scan.tolist() == [
+        False,
+        False,
+        False,
+        False,
+        False,
+        True,
+        True,
+    ]
+    torch.testing.assert_close(
+        result.bubble_pressure[1:4],
+        torch.tensor(
+            [31128040.37708861, 41983556.14551598, 63452327.12045838],
+            dtype=DTYPE,
+        ),
+        rtol=3.0e-9,
+        atol=3.0e-2,
+    )
+    torch.testing.assert_close(
+        result.dew_pressure[:5],
+        torch.tensor(
+            [
+                3353956.8690104545,
+                1398163.4914000928,
+                513559.3041102533,
+                147002.6978222458,
+                26947.28598205394,
+            ],
+            dtype=DTYPE,
+        ),
+        rtol=3.0e-9,
+        atol=3.0e-3,
+    )
+    assert torch.all(result.bubble_separation[result.bubble_converged] > 1.0e-5)
+    finite_residuals = torch.cat(
+        (
+            result.bubble_residual[result.bubble_converged],
+            result.dew_residual[result.dew_converged],
+        )
+    )
+    assert torch.all(finite_residuals <= 1.0e-8)
+
+
+def test_fixed_composition_boundary_interpolates_return_crossing(monkeypatch):
+    def fake_bubble_point(model, temperature, liquid, **options):
+        del model, options
+        fraction = float(liquid[1])
+        if fraction < 0.01:
+            vapor_fraction = 0.3
+        elif fraction < 0.1:
+            vapor_fraction = 0.7
+        else:
+            vapor_fraction = 0.3
+        vapor = torch.stack(
+            (liquid.new_tensor(1.0 - vapor_fraction), liquid.new_tensor(vapor_fraction))
+        )
+        pressure = liquid.new_tensor(1.0e6 * (1.0 + 5.0 * fraction))
+        return BinaryBubblePointWithVolumes(
+            temperature,
+            pressure,
+            liquid,
+            vapor,
+            1,
+            True,
+            liquid.new_tensor(1.0e-10),
+            liquid.new_tensor(1.0e-4),
+            liquid.new_tensor(1.0e-3),
+        )
+
+    monkeypatch.setattr(envelope, "binary_helmholtz_bubble_point", fake_bubble_point)
+    result = trace_binary_helmholtz_fixed_composition_boundary(
+        object(),
+        torch.tensor([100.0], dtype=DTYPE),
+        torch.tensor([0.5, 0.5], dtype=DTYPE),
+        reporting_pressure_limit=10.0e6,
+        maximum_pressure=11.0e6,
+        lean_scan_points=2,
+        rich_scan_points=4,
+    )
+    assert result.dew_converged.tolist() == [True]
+    assert result.bubble_converged.tolist() == [True]
+    assert 0.0 < float(result.bubble_pressure[0]) < 10.0e6
+    assert float(result.bubble_separation[0]) > 0.0
+
+
+def test_fixed_composition_boundary_retries_failed_initializations(monkeypatch):
+    calls_by_state = {}
+
+    def fake_bubble_point(model, temperature, liquid, **options):
+        del model
+        fraction = round(float(liquid[1]), 8)
+        key = (float(temperature), fraction)
+        calls_by_state[key] = calls_by_state.get(key, 0) + 1
+        initial_point = options.get("initial_point")
+        first_state_call = calls_by_state[key] == 1
+        first_temperature_start = float(temperature) == 100.0 and fraction < 1.1e-5
+        stale_temperature_guess = (
+            float(temperature) == 99.0
+            and initial_point is not None
+            and float(initial_point.temperature) == 100.0
+            and fraction > 1.1e-5
+        )
+        converged = not (
+            (first_temperature_start and first_state_call)
+            or (stale_temperature_guess and first_state_call)
+        )
+        vapor_fraction = min(fraction + 0.01, 0.99)
+        vapor = torch.stack(
+            (liquid.new_tensor(1.0 - vapor_fraction), liquid.new_tensor(vapor_fraction))
+        )
+        return BinaryBubblePointWithVolumes(
+            temperature,
+            liquid.new_tensor(2.0e6 + 1.0e5 * fraction),
+            liquid,
+            vapor,
+            1,
+            converged,
+            liquid.new_tensor(1.0e-10 if converged else 1.0),
+            liquid.new_tensor(1.0e-4),
+            liquid.new_tensor(1.0e-3),
+        )
+
+    monkeypatch.setattr(envelope, "binary_helmholtz_bubble_point", fake_bubble_point)
+    result = trace_binary_helmholtz_fixed_composition_boundary(
+        object(),
+        torch.tensor([100.0, 99.0], dtype=DTYPE),
+        torch.tensor([0.98, 0.02], dtype=DTYPE),
+        reporting_pressure_limit=10.0e6,
+        maximum_pressure=11.0e6,
+        lean_scan_points=3,
+        rich_scan_points=3,
+    )
+    assert calls_by_state[(100.0, 1.0e-5)] == 2
+    assert any(
+        count == 2 for (temperature, _), count in calls_by_state.items() if temperature == 99.0
+    )
+    assert result.bubble_converged.tolist() == [True, True]
+    assert result.dew_converged.tolist() == [True, True]
+
+
+def test_fixed_composition_boundary_clips_midscan_pressure(monkeypatch):
+    def fake_bubble_point(model, temperature, liquid, **options):
+        del model, options
+        fraction = float(liquid[1])
+        vapor_fraction = min(fraction + 0.4, 0.99)
+        vapor = torch.stack(
+            (liquid.new_tensor(1.0 - vapor_fraction), liquid.new_tensor(vapor_fraction))
+        )
+        return BinaryBubblePointWithVolumes(
+            temperature,
+            liquid.new_tensor(12.0e6),
+            liquid,
+            vapor,
+            1,
+            True,
+            liquid.new_tensor(1.0e-10),
+            liquid.new_tensor(1.0e-4),
+            liquid.new_tensor(1.0e-3),
+        )
+
+    monkeypatch.setattr(envelope, "binary_helmholtz_bubble_point", fake_bubble_point)
+    result = trace_binary_helmholtz_fixed_composition_boundary(
+        object(),
+        torch.tensor([100.0], dtype=DTYPE),
+        torch.tensor([0.5, 0.5], dtype=DTYPE),
+        reporting_pressure_limit=10.0e6,
+        maximum_pressure=15.0e6,
+        lean_scan_points=2,
+        rich_scan_points=3,
+    )
+    torch.testing.assert_close(result.bubble_pressure, torch.tensor([10.0e6], dtype=DTYPE))
+    assert result.bubble_above_reporting_limit.tolist() == [True]
+
+
+@pytest.mark.parametrize(
+    ("temperature", "liquid", "options", "message"),
+    [
+        (
+            torch.tensor([90.8], dtype=DTYPE),
+            torch.tensor([[0.8, 0.2]], dtype=DTYPE),
+            {},
+            "one finite positive temperature",
+        ),
+        (
+            torch.tensor(90.8, dtype=DTYPE),
+            torch.tensor([[8, 2]]),
+            {},
+            "floating dtype",
+        ),
+        (
+            torch.tensor(90.8, dtype=DTYPE),
+            torch.empty((0, 2), dtype=DTYPE),
+            {},
+            r"shape \(points, 2\)",
+        ),
+        (
+            torch.tensor(90.8, dtype=DTYPE),
+            torch.tensor([[1.0, 0.0]], dtype=DTYPE),
+            {},
+            "finite and positive",
+        ),
+        (
+            torch.tensor(90.8, dtype=DTYPE),
+            torch.tensor([[0.8, 0.2]], dtype=DTYPE),
+            {"tolerance": 0.0},
+            "tolerance",
+        ),
+        (
+            torch.tensor(90.8, dtype=DTYPE),
+            torch.tensor([[0.8, 0.2]], dtype=DTYPE),
+            {"max_iterations": 0},
+            "max_iterations",
+        ),
+        (
+            torch.tensor(90.8, dtype=DTYPE),
+            torch.tensor([[0.8, 0.2]], dtype=DTYPE),
+            {"minimum_phase_separation": -1.0},
+            "phase separation",
+        ),
+    ],
+)
+def test_trace_binary_helmholtz_pxy_isotherm_validates_high_level_inputs(
+    temperature,
+    liquid,
+    options,
+    message,
+):
+    with pytest.raises(ValueError, match=message):
+        trace_binary_helmholtz_pxy_isotherm(
+            gerg2008_hydrogen_2021(("nitrogen", "hydrogen")),
+            temperature,
+            liquid,
+            **options,
+        )
+
+
+@pytest.mark.parametrize(
+    ("temperatures", "composition", "options", "message"),
+    [
+        (
+            torch.tensor([100]),
+            torch.tensor([0.5, 0.5], dtype=DTYPE),
+            {},
+            "nonempty float vector",
+        ),
+        (
+            torch.tensor([[100.0]], dtype=DTYPE),
+            torch.tensor([0.5, 0.5], dtype=DTYPE),
+            {},
+            "nonempty float vector",
+        ),
+        (
+            torch.tensor([100.0], dtype=DTYPE),
+            torch.tensor([1, 1]),
+            {},
+            "floating dtype",
+        ),
+        (
+            torch.tensor([100.0], dtype=DTYPE),
+            torch.tensor([1.0, 0.0], dtype=DTYPE),
+            {},
+            "two finite positive",
+        ),
+        (
+            torch.tensor([100.0], dtype=DTYPE),
+            torch.tensor([0.5, 0.5], dtype=DTYPE),
+            {"volatile_component_index": 2},
+            "must be 0 or 1",
+        ),
+        (
+            torch.tensor([100.0], dtype=DTYPE),
+            torch.tensor([0.5, 0.5], dtype=DTYPE),
+            {"lean_scan_points": 1},
+            "at least two",
+        ),
+        (
+            torch.tensor([100.0], dtype=DTYPE),
+            torch.tensor([0.5, 0.5], dtype=DTYPE),
+            {"max_iterations": 0},
+            "max_iterations",
+        ),
+        (
+            torch.tensor([100.0], dtype=DTYPE),
+            torch.tensor([0.5, 0.5], dtype=DTYPE),
+            {"minimum_phase_separation": 0.0},
+            "minimum_phase_separation",
+        ),
+        (
+            torch.tensor([100.0], dtype=DTYPE),
+            torch.tensor([0.5, 0.5], dtype=DTYPE),
+            {"reporting_pressure_limit": torch.tensor([70.0e6], dtype=DTYPE)},
+            "pressure limits",
+        ),
+        (
+            torch.tensor([100.0], dtype=DTYPE),
+            torch.tensor([0.5, 0.5], dtype=DTYPE),
+            {"maximum_pressure": 60.0e6},
+            "minimum < reporting <= maximum",
+        ),
+        (
+            torch.tensor([100.0], dtype=DTYPE),
+            torch.tensor([0.999995, 0.000005], dtype=DTYPE),
+            {},
+            "minimum volatile liquid fraction",
+        ),
+    ],
+)
+def test_trace_binary_helmholtz_fixed_composition_boundary_validates_high_level_inputs(
+    temperatures,
+    composition,
+    options,
+    message,
+):
+    settings = {
+        "reporting_pressure_limit": 70.0e6,
+        "maximum_pressure": 75.0e6,
+    }
+    settings.update(options)
+    with pytest.raises(ValueError, match=message):
+        trace_binary_helmholtz_fixed_composition_boundary(
+            gerg2008_hydrogen_2021(("methane", "hydrogen")),
+            temperatures,
+            composition,
+            **settings,
+        )
 
 
 def test_eoscg_volume_bubble_continuation_matches_pressure_form():

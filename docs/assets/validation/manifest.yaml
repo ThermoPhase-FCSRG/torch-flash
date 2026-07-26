@@ -496,14 +496,14 @@ figures:
     - https://doi.org/10.1063/5.0040533
     description: Parity for all six properties and all 16 states in Beckmuller et
       al. Table 12.
-    executed_artifact_sha256: 87e1af862519b75344cdc812e394d8c3cd9b6cac09a4da197e3296ade04d1713
+    executed_artifact_sha256: 93aa41d21eaef00c8c707aecd01cccafa1f3c8b9a6b384f997e4ee093d35defd
     publication_form: rendered-plot
     machine_readable_observation_values: false
     data_tables_distributed: false
   29_h2_gerg_figure4_density_difference.png:
     study_id: 29_hydrogen_tailored_gerg_2021
     notebook: notebooks/local-only/validation/29_hydrogen_tailored_gerg_2021.ipynb
-    cell_index: 16
+    cell_index: 15
     image_index: 0
     evidence_class: verification
     observation_level_markers: false
@@ -512,14 +512,14 @@ figures:
     - https://doi.org/10.1063/5.0040533
     description: CH4-H2 density difference between GERG-2008 and the H2-tailored parameterization
       with calculated phase boundaries.
-    executed_artifact_sha256: 87e1af862519b75344cdc812e394d8c3cd9b6cac09a4da197e3296ade04d1713
+    executed_artifact_sha256: 93aa41d21eaef00c8c707aecd01cccafa1f3c8b9a6b384f997e4ee093d35defd
     publication_form: rendered-plot
     machine_readable_observation_values: false
     data_tables_distributed: false
   29_h2_gerg_figure7_n2_h2_vle.png:
     study_id: 29_hydrogen_tailored_gerg_2021
     notebook: notebooks/local-only/validation/29_hydrogen_tailored_gerg_2021.ipynb
-    cell_index: 19
+    cell_index: 18
     image_index: 0
     evidence_class: validation
     observation_level_markers: true
@@ -529,14 +529,14 @@ figures:
     - https://doi.org/10.1063/5.0040533
     description: Native N2-H2 phase-equilibrium traces for the three Figure 7 isotherms
       with digitized experimental markers.
-    executed_artifact_sha256: 87e1af862519b75344cdc812e394d8c3cd9b6cac09a4da197e3296ade04d1713
+    executed_artifact_sha256: 93aa41d21eaef00c8c707aecd01cccafa1f3c8b9a6b384f997e4ee093d35defd
     publication_form: rendered-plot
     machine_readable_observation_values: false
     data_tables_distributed: false
   29_h2_gerg_figure16_co2_h2_vle.png:
     study_id: 29_hydrogen_tailored_gerg_2021
     notebook: notebooks/local-only/validation/29_hydrogen_tailored_gerg_2021.ipynb
-    cell_index: 19
+    cell_index: 18
     image_index: 1
     evidence_class: validation
     observation_level_markers: true
@@ -546,7 +546,7 @@ figures:
     - https://doi.org/10.1063/5.0040533
     description: Native CO2-H2 phase-equilibrium traces for the three Figure 16 isotherms
       with digitized experimental markers.
-    executed_artifact_sha256: 87e1af862519b75344cdc812e394d8c3cd9b6cac09a4da197e3296ade04d1713
+    executed_artifact_sha256: 93aa41d21eaef00c8c707aecd01cccafa1f3c8b9a6b384f997e4ee093d35defd
     publication_form: rendered-plot
     machine_readable_observation_values: false
     data_tables_distributed: false

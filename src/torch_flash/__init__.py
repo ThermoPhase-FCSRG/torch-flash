@@ -32,9 +32,11 @@ from .database import (
 )
 from .envelope import (
     BinaryBubblePoint,
+    BinaryBubblePointWithVolumes,
     BinaryCriticalPoint,
-    BinaryHelmholtzBubblePoint,
+    BinaryFixedCompositionBoundary,
     BinaryPhaseEquilibriumPoint,
+    BinaryPxyIsotherm,
     BinaryVLEPoint,
     SaturationPoint,
     binary_bubble_point,
@@ -45,6 +47,8 @@ from .envelope import (
     continue_saturation_branch,
     phase_envelope,
     saturation_point,
+    trace_binary_helmholtz_fixed_composition_boundary,
+    trace_binary_helmholtz_pxy_isotherm,
 )
 from .eos import (
     CPAEOS,
@@ -183,9 +187,11 @@ __all__ = [
     "BatchedStabilityResult",
     "BatchedTwoPhaseFlashResult",
     "BinaryBubblePoint",
+    "BinaryBubblePointWithVolumes",
     "BinaryCriticalPoint",
-    "BinaryHelmholtzBubblePoint",
+    "BinaryFixedCompositionBoundary",
     "BinaryPhaseEquilibriumPoint",
+    "BinaryPxyIsotherm",
     "BinaryThreePhaseInvariant",
     "BinaryVLEPoint",
     "CPACharacterizedComponents",
@@ -303,6 +309,8 @@ __all__ = [
     "state_derivatives",
     "tangent_plane_stability",
     "thermal_properties",
+    "trace_binary_helmholtz_fixed_composition_boundary",
+    "trace_binary_helmholtz_pxy_isotherm",
     "two_phase_flash",
     "unifac_groups_from_identifiers",
     "unifac_model",
