@@ -54,6 +54,7 @@ thermo = ">=0.4"
 ugropy = ">=3.2,<4"
 
 [feature.benchmarks.dependencies]
+numba = ">=0.61"
 openjdk = ">=17"
 pytest-benchmark = ">=5"
 

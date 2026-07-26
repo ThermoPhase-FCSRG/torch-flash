@@ -162,6 +162,32 @@ GERG binary terms, Gao-B terms, and Span-Wagner non-analytic terms.
 ideal and residual equations, 210 binary reducing-parameter sets, and 15
 nonzero departure functions, as defined by
 [Kunz and Wagner (2012)](https://doi.org/10.1021/je300655b).
+`gerg2008_hydrogen_2021()` bundles the H2-tailored five-component model of
+[Beckmüller et al. (2021)](https://doi.org/10.1063/5.0040533). It uses the
+GERG-2008 pure-fluid equations for CH4, N2, CO, and CO2, the Leachman
+normal-hydrogen equation, and the four published H2 binary reducing and
+departure functions. Its precise scope is the paper's main parameterization;
+the supplementary alternative fitted with newer reference pure fluids is a
+different parameter set.
+
+The H2-tailored implementation is checked against all 16 single-phase states
+in the paper's Table 12. Pressure, isobaric heat capacity, speed of sound, and
+enthalpy agree at the printed precision. Entropy and Helmholtz energy retain a
+small additive reference-zero difference associated with the pure-fluid
+gas-constant convention; their derivative properties are unchanged and no
+unpublished offset is fitted.
+
+For binary Helmholtz models, `binary_helmholtz_bubble_point()` exposes a
+volume-based continuation path. The first state uses the conservative
+pressure formulation; subsequent states solve directly for vapor composition
+and both phase volumes from component-fugacity and pressure equality. This
+implements the formulation of Kunz et al. (2007, section 7.7.2) and avoids
+iterative density inversion inside every phase-equilibrium residual. Exact
+PyTorch Jacobians are refreshed periodically with safeguarded Broyden updates
+between them. Convergence and the final equilibrium residual remain explicit,
+and callers can retry a failed continuation state through the pressure
+initializer.
+
 `eoscg2021()` bundles the 16-component
 EOS-CG-2021 model: all pure ideal and residual equations, 120 binary
 reducing-parameter sets, and 21 departure functions from

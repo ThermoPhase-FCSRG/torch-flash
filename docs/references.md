@@ -47,6 +47,7 @@ The frozen CSV provenance is recorded in
 | Model or dataset | Primary source |
 |---|---|
 | GERG-2008 | O. Kunz and W. Wagner, "The GERG-2008 Wide-Range Equation of State for Natural Gases and Other Mixtures: An Expansion of GERG-2004," *J. Chem. Eng. Data* 57 (2012) 3032-3091. [doi:10.1021/je300655b](https://doi.org/10.1021/je300655b) |
+| GERG-2004 algorithms | O. Kunz, R. Klimeck, W. Wagner, and M. Jaeschke, *The GERG-2004 Wide-Range Equation of State for Natural Gases and Other Mixtures*, GERG Technical Monograph 15, VDI Verlag (2007), ISBN 978-3-18-355706-6. |
 | EOS-CG (2015 formulation) | J. Gernert and R. Span, "EOS-CG: A Helmholtz energy mixture model for humid gases and CCS mixtures," *J. Chem. Thermodyn.* 93 (2016) 274-293. [doi:10.1016/j.jct.2015.05.015](https://doi.org/10.1016/j.jct.2015.05.015) |
 | EOS-CG-2021 | T. Neumann et al., "EOS-CG-2021: A Mixture Model for the Calculation of Thermodynamic Properties of CCS Mixtures," *Int. J. Thermophys.* 44 (2023), article 178. [doi:10.1007/s10765-023-03263-6](https://doi.org/10.1007/s10765-023-03263-6); [supplementary coefficient and data tables](https://static-content.springer.com/esm/art%3A10.1007%2Fs10765-023-03263-6/MediaObjects/10765_2023_3263_MOESM1_ESM.pdf) |
 | MDEA pure-fluid equation and experiments | T. Neumann et al., "Thermodynamic Properties of Methyl Diethanolamine," *Int. J. Thermophys.* 43 (2022), article 10. [doi:10.1007/s10765-021-02933-7](https://doi.org/10.1007/s10765-021-02933-7) |

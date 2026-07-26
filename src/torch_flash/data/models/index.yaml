@@ -99,6 +99,12 @@ parameter_sets:
     aliases:
       - gerg2008
       - gerg-2008
+  multifluid.gerg-2008-hydrogen-2021:
+    path: multifluid/gerg-2008-hydrogen-2021.yaml
+    aliases:
+      - gerg2008-hydrogen-2021
+      - gerg2008-h2-2021
+      - h2-tailored-gerg
   standard-state.poling-2001:
     path: standard_state/poling-2001.yaml
     aliases:

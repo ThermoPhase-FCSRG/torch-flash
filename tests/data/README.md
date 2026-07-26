@@ -34,9 +34,9 @@ redistribution status is unresolved live only under
 as excluded from package distributions. Keeping data out of a package does
 not by itself grant permission to publish it in a public Git repository.
 
-The machine-readable [`rights.yaml`](rights.yaml) ledger covers all 33
+The machine-readable [`rights.yaml`](rights.yaml) ledger covers all 35
 declared CSV artifacts: 5 have a verified open basis, 12 are project-generated
-software outputs, and 16 are marked `not-cleared`. The audit scans recursively,
+software outputs, and 18 are marked `not-cleared`. The audit scans recursively,
 fails if a CSV is added without an explicit rights decision, and enforces that
 locally present `not-cleared` files are confined to the ignored subdirectory.
 Tests that require those inputs skip when it is absent.
@@ -85,6 +85,17 @@ The source authors do not endorse `torch-flash`.
 
 ## Published experimental and model tables
 
+- `beckmuller_2021_h2_gerg_table12.csv` retains all 16 single-phase
+  implementation states from Table 12 for CH4, N2, CO, and CO2 mixed with
+  40 mol % H2. The local-only notebook evaluates pressure, isobaric heat
+  capacity, speed of sound, enthalpy, entropy, and molar Helmholtz energy
+  without fitting an offset.
+- `beckmuller_2021_h2_vle_digitized.csv` contains approximate visual
+  digitizations of the experimental markers in Figures 7 and 16. Pixel
+  calibration used the linear H2-composition axis and logarithmic pressure
+  ticks; the CSV records the conservative digitization uncertainty used by
+  the notebook. It is not a substitute for the primary experimental tables.
+  [doi:10.1063/5.0040533](https://doi.org/10.1063/5.0040533).
 - `jaubert_ppr78_hydrocarbon_vle.csv` retains 103 phase-complete experimental
   VLE states used in notebook 28: methane/ethane at 199.93 and 230.00 K
   (38 states), and methane/n-decane at 410.93, 477.59, 510.93, and 563.25 K

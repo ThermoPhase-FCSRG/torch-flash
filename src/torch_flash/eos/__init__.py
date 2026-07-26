@@ -41,8 +41,10 @@ from .multifluid import (
 from .named import (
     EOSCG2021_COMPONENTS,
     GERG2008_COMPONENTS,
+    GERG2008_HYDROGEN_2021_COMPONENTS,
     eoscg2021,
     gerg2008,
+    gerg2008_hydrogen_2021,
     multifluid_eos,
 )
 from .volume_translation import (
@@ -60,6 +62,7 @@ __all__ = [
     "CPAEOS",
     "EOSCG2021_COMPONENTS",
     "GERG2008_COMPONENTS",
+    "GERG2008_HYDROGEN_2021_COMPONENTS",
     "PR76",
     "PR78",
     "SRK",
@@ -91,6 +94,7 @@ __all__ = [
     "density_matched_translation",
     "eoscg2021",
     "gerg2008",
+    "gerg2008_hydrogen_2021",
     "multifluid_eos",
     "pedersen_peneloux_translation",
     "pedersen_temperature_dependent_translation",

@@ -43,6 +43,7 @@ def damped_newton(
     max_line_search: int = 16,
     lower_bound: Tensor | None = None,
     upper_bound: Tensor | None = None,
+    jacobian_refresh_interval: int = 1,
 ) -> NewtonResult:
     """Solve a square nonlinear system with autodiff and backtracking.
 
@@ -61,6 +62,10 @@ def damped_newton(
         Maximum residual-decreasing backtracking trials per iteration.
     lower_bound, upper_bound
         Optional elementwise projection bounds broadcastable to ``initial``.
+    jacobian_refresh_interval
+        Recompute the exact autodiff Jacobian after this many accepted
+        iterations. Values above one use rank-one Broyden updates between
+        refreshes; the default preserves full Newton behavior.
 
     Returns
     -------
@@ -73,6 +78,8 @@ def damped_newton(
     converge is reported in the result and is never silently converted into a
     successful solve.
     """
+    if jacobian_refresh_interval < 1:
+        raise ValueError("Jacobian refresh interval must be positive")
     variables = initial.clone()
 
     def project(candidate: Tensor) -> Tensor:
@@ -85,12 +92,16 @@ def damped_newton(
     variables = project(variables)
     converged = False
     value = residual_function(variables)
+    jacobian: Tensor | None = None
+    accepted_since_refresh = jacobian_refresh_interval
     for _iteration in range(1, max_iterations + 1):
         residual_norm = value.abs().max()
         if float(residual_norm.detach()) <= tolerance:
             converged = True
             break
-        jacobian = torch.func.jacrev(residual_function)(variables)
+        if jacobian is None or accepted_since_refresh >= jacobian_refresh_interval:
+            jacobian = torch.func.jacrev(residual_function)(variables)
+            accepted_since_refresh = 0
         try:
             step = torch.linalg.solve(jacobian, -value)
         except torch.linalg.LinAlgError:
@@ -105,6 +116,25 @@ def damped_newton(
             if bool(torch.isfinite(candidate_value.detach()).all()) and float(
                 candidate_value.detach().abs().max()
             ) < float(residual_norm.detach()):
+                accepted_step = candidate - variables
+                residual_step = candidate_value - value
+                denominator = torch.dot(accepted_step, accepted_step)
+                if bool(
+                    torch.isfinite(denominator)
+                    & (denominator > torch.finfo(denominator.dtype).tiny)
+                ):
+                    jacobian = (
+                        jacobian
+                        + torch.outer(
+                            residual_step - jacobian @ accepted_step,
+                            accepted_step,
+                        )
+                        / denominator
+                    )
+                    accepted_since_refresh += 1
+                else:
+                    jacobian = None
+                    accepted_since_refresh = jacobian_refresh_interval
                 variables = candidate
                 value = candidate_value
                 accepted = True
@@ -113,6 +143,8 @@ def damped_newton(
         if not accepted:
             variables = project(variables + factor * step)
             value = residual_function(variables)
+            jacobian = None
+            accepted_since_refresh = jacobian_refresh_interval
     residual_norm = value.abs().max()
     if float(residual_norm.detach()) <= tolerance:
         converged = True

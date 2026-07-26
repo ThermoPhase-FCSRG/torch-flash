@@ -58,6 +58,15 @@ GERG2008_COMPONENTS = (
 )
 """Canonical 21-component inventory supported by bundled GERG-2008."""
 
+GERG2008_HYDROGEN_2021_COMPONENTS = (
+    "methane",
+    "nitrogen",
+    "carbon_monoxide",
+    "carbon_dioxide",
+    "hydrogen",
+)
+"""Canonical inventory of the Beckmüller et al. H2-tailored GERG model."""
+
 EOSCG2021_COMPONENTS = (
     "carbon_dioxide",
     "water",
@@ -383,33 +392,60 @@ def _ideal_terms_gerg(
     device: torch.device | str | None,
 ) -> IdealHelmholtzTerms:
     leads = []
+    power_rows = []
+    planck_rows = []
     gerg_rows = []
     gas_scale = []
     for name in selected:
         raw_name = _GERG_FROM_CANONICAL.get(name, name)
-        ideal = data["components"][raw_name]["ideal"]
-        n0 = ideal["n0"]
-        theta0 = ideal["theta0"]
-        leads.append(
-            {
-                "lead_constant": float(n0[1]),
-                "lead_tau": float(n0[2]),
-                "log_tau": float(n0[3]),
-                "tau_log_tau": 0.0,
-            }
-        )
-        gerg_rows.append(
-            [
-                {"n": float(n0[index]), "theta": abs(float(theta0[index])), "sign": sign}
-                for index, sign in ((4, 1.0), (5, -1.0), (6, 1.0), (7, -1.0))
-                if float(n0[index]) != 0.0
-            ]
-        )
-        gas_scale.append(float(ideal["source_gas_constant"]) / float(data["gas_constant"]))
+        component_data = data["components"][raw_name]
+        ideal = component_data["ideal"]
+        if isinstance(ideal, Mapping):
+            n0 = ideal["n0"]
+            theta0 = ideal["theta0"]
+            leads.append(
+                {
+                    "lead_constant": float(n0[1]),
+                    "lead_tau": float(n0[2]),
+                    "log_tau": float(n0[3]),
+                    "tau_log_tau": 0.0,
+                }
+            )
+            gerg_rows.append(
+                [
+                    {
+                        "n": float(n0[index]),
+                        "theta": abs(float(theta0[index])),
+                        "sign": sign,
+                    }
+                    for index, sign in ((4, 1.0), (5, -1.0), (6, 1.0), (7, -1.0))
+                    if float(n0[index]) != 0.0
+                ]
+            )
+            source_gas_constant = ideal["source_gas_constant"]
+        elif isinstance(ideal, Sequence) and not isinstance(ideal, str):
+            lead, power, planck = _canonical_ideal_blocks(
+                ideal,
+                float(component_data["critical_temperature"]),
+            )
+            leads.append(lead)
+            gerg_rows.append([])
+            source_gas_constant = component_data["source_gas_constant"]
+            power_rows.append(power)
+            planck_rows.append(planck)
+            gas_scale.append(float(source_gas_constant) / float(data["gas_constant"]))
+            continue
+        else:
+            raise ParameterDatabaseError(
+                f"GERG component {name!r} has an unsupported ideal Helmholtz inventory"
+            )
+        power_rows.append([])
+        planck_rows.append([])
+        gas_scale.append(float(source_gas_constant) / float(data["gas_constant"]))
     return _pad_ideal(
         leads,
-        [[] for _ in selected],
-        [[] for _ in selected],
+        power_rows,
+        planck_rows,
         gerg_rows,
         gas_scale,
         dtype=dtype,
@@ -465,11 +501,26 @@ def _pure_rows_eoscg(
 
 def _pure_rows_gerg(
     data: Mapping[str, Any], selected: tuple[str, ...]
-) -> list[list[dict[str, float]]]:
-    rows = []
+) -> tuple[
+    list[list[dict[str, float]]],
+    list[list[dict[str, float]]],
+    list[list[dict[str, float]]],
+]:
+    regular_rows = []
+    gaob_rows = []
+    nonanalytic_rows = []
     for name in selected:
         raw_name = _GERG_FROM_CANONICAL.get(name, name)
         component = data["components"][raw_name]
+        if "residual" in component:
+            component_rows, component_gaob, component_nonanalytic = _pure_rows_eoscg(
+                {"components": {name: component}},
+                (name,),
+            )
+            regular_rows.extend(component_rows)
+            gaob_rows.extend(component_gaob)
+            nonanalytic_rows.extend(component_nonanalytic)
+            continue
         records = []
         for n, d, t, coefficient, exponent in zip(
             component["n"],
@@ -483,8 +534,10 @@ def _pure_rows_gerg(
             record.update(n=float(n), d=float(d), t=float(t))
             record["decay"] = float(exponent) if coefficient != 0.0 else 0.0
             records.append(record)
-        rows.append(records)
-    return rows
+        regular_rows.append(records)
+        gaob_rows.append([])
+        nonanalytic_rows.append([])
+    return regular_rows, gaob_rows, nonanalytic_rows
 
 
 def _pair_lookup(
@@ -633,8 +686,22 @@ def _gerg_eos(
     expected_pairs = len(supported) * (len(supported) - 1) // 2
     if len(components) != len(supported) or len(pairs) != expected_pairs:
         raise RuntimeError(f"{parameter_set.model} coefficient inventory is incomplete")
-    pure_rows = _pure_rows_gerg(data, selected)
-    pure_terms = _pad_records(pure_rows, (len(selected),), dtype=dtype, device=device)
+    regular_rows, gaob_rows, nonanalytic_rows = _pure_rows_gerg(data, selected)
+    pure_terms = _pad_records(regular_rows, (len(selected),), dtype=dtype, device=device)
+    gaob_values = _pad_special(
+        gaob_rows,
+        ("n", "d", "t", "eta", "epsilon", "beta", "gamma", "b"),
+        dtype=dtype,
+        device=device,
+        safe_one=("b",),
+    )
+    nonanalytic_values = _pad_special(
+        nonanalytic_rows,
+        ("n", "capital_a", "capital_b", "capital_c", "capital_d", "a", "b", "beta"),
+        dtype=dtype,
+        device=device,
+        safe_one=("a", "b", "beta"),
+    )
     tables = _mixture_tables(
         data,
         selected,
@@ -674,6 +741,8 @@ def _gerg_eos(
         ),
         trainable=trainable,
         gas_constant=float(gas_constant),
+        pure_gaob_terms=GaoBTerms(**gaob_values),
+        pure_nonanalytic_terms=NonAnalyticTerms(**nonanalytic_values),
         ideal_terms=_ideal_terms_gerg(data, selected, dtype=dtype, device=device),
         critical_pressure=critical_pressure,
         acentric_factor=acentric_factor,
@@ -858,6 +927,55 @@ def gerg2008(
     )
 
 
+def gerg2008_hydrogen_2021(
+    names: tuple[str, ...] | None = None,
+    *,
+    dtype: torch.dtype | None = None,
+    device: torch.device | str | None = None,
+    trainable: bool = False,
+    parameter_set: ParameterSource = "multifluid.gerg-2008-hydrogen-2021",
+) -> MultiFluidEOS:
+    """Construct the Beckmüller et al. H2-tailored GERG mixture model.
+
+    Parameters
+    ----------
+    names
+        Optional ordered subset of methane, nitrogen, carbon monoxide, carbon
+        dioxide, and hydrogen.
+    dtype, device
+        Tensor placement.
+    trainable
+        Register supported coefficient tensors as trainable parameters.
+    parameter_set
+        Compatible H2-tailored GERG parameter source.
+
+    Returns
+    -------
+    MultiFluidEOS
+        Five-component H2-tailored GERG model using GERG-2008 pure fluids for
+        CH4, N2, CO, and CO2 and the Leachman normal-hydrogen equation.
+
+    References
+    ----------
+    Beckmüller et al., *J. Phys. Chem. Ref. Data* 50, 013102 (2021),
+    doi:10.1063/5.0040533.
+    """
+    dtype, device = resolve_tensor_options(dtype, device)
+    loaded = load_model_parameters(parameter_set)
+    if not loaded.model.upper().startswith("GERG-2008 H2-TAILORED"):
+        raise ParameterDatabaseError(
+            "gerg2008_hydrogen_2021 requires the Beckmüller et al. "
+            f"H2-tailored GERG parameter set, got {loaded.model!r}"
+        )
+    return _gerg_eos(
+        loaded,
+        names,
+        dtype=dtype,
+        device=device,
+        trainable=trainable,
+    )
+
+
 def eoscg2021(
     names: tuple[str, ...] | None = None,
     *,
@@ -903,7 +1021,9 @@ def eoscg2021(
 __all__ = [
     "EOSCG2021_COMPONENTS",
     "GERG2008_COMPONENTS",
+    "GERG2008_HYDROGEN_2021_COMPONENTS",
     "eoscg2021",
     "gerg2008",
+    "gerg2008_hydrogen_2021",
     "multifluid_eos",
 ]

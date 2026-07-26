@@ -15,7 +15,7 @@ from torch import Tensor
 
 from torch_flash.components import ComponentSet
 from torch_flash.initialization import wilson_k_values
-from torch_flash.properties.state import StateModel
+from torch_flash.properties.state import HelmholtzStateModel, StateModel
 from torch_flash.solvers import damped_newton
 from torch_flash.types import PhaseKind, normalize_composition
 
@@ -110,6 +110,32 @@ class BinaryBubblePoint:
     iterations: int
     converged: bool
     residual_norm: Tensor
+
+
+@dataclass(frozen=True)
+class BinaryHelmholtzBubblePoint(BinaryBubblePoint):
+    """Binary bubble point solved with explicit coexisting phase volumes.
+
+    The two molar volumes are retained as continuation variables. Reusing
+    them at the next state avoids the nested liquid and vapor density
+    inversions required by the pressure-based formulation.
+
+    Attributes
+    ----------
+    temperature, pressure
+        Specified temperature in K and solved bubble pressure in Pa.
+    liquid_composition, vapor_composition
+        Specified binary liquid composition and solved incipient-vapor
+        composition.
+    iterations, converged, residual_norm
+        Nonlinear iteration count, convergence status, and maximum absolute
+        dimensionless residual.
+    liquid_molar_volume, vapor_molar_volume
+        Coexisting molar volumes in m3/mol retained for continuation.
+    """
+
+    liquid_molar_volume: Tensor
+    vapor_molar_volume: Tensor
 
 
 @dataclass(frozen=True)
@@ -1146,4 +1172,242 @@ def binary_bubble_point(
         result.iterations,
         result.converged,
         result.residual_norm,
+    )
+
+
+def binary_helmholtz_bubble_point(
+    model: HelmholtzStateModel,
+    temperature: Tensor,
+    liquid_composition: Tensor,
+    *,
+    initial_point: BinaryHelmholtzBubblePoint | None = None,
+    initial_pressure: Tensor | None = None,
+    initial_vapor_composition: Tensor | None = None,
+    minimum_pressure: Tensor | float | None = None,
+    maximum_pressure: Tensor | float | None = None,
+    tolerance: float = 1.0e-8,
+    max_iterations: int = 30,
+) -> BinaryHelmholtzBubblePoint:
+    """Solve a binary bubble point using phase volumes as Newton variables.
+
+    Parameters
+    ----------
+    model
+        Helmholtz state model providing residual Helmholtz energy, pressure,
+        molar-volume roots, and critical constants.
+    temperature
+        Scalar temperature in K.
+    liquid_composition
+        Strictly positive binary liquid mole fractions.
+    initial_point
+        Previously converged volume-formulation point used as the continuation
+        estimate. When omitted, the pressure formulation initializes the
+        first point.
+    initial_pressure
+        Optional positive pressure estimate in Pa for first-point
+        initialization.
+    initial_vapor_composition
+        Optional strictly positive vapor estimate for first-point
+        initialization.
+    minimum_pressure, maximum_pressure
+        Optional positive pressure bounds in Pa.
+    tolerance
+        Maximum absolute dimensionless equilibrium residual.
+    max_iterations
+        Maximum damped-Newton iterations.
+
+    Returns
+    -------
+    BinaryHelmholtzBubblePoint
+        Bubble pressure, both phase compositions and volumes, and explicit
+        nonlinear convergence diagnostics.
+
+    Notes
+    -----
+    With no ``initial_point``, the pressure formulation supplies a robust
+    first point and its two density roots. Continuation then solves directly
+    for vapor composition, liquid density, and vapor density from equality of
+    both component fugacities and pressure. This is the volume-based GERG
+    phase-equilibrium formulation described in the GERG-2004 monograph and
+    eliminates density inversion from every outer residual evaluation.
+
+    A failed direct solve remains explicitly non-converged. Callers tracing a
+    difficult branch can retry without ``initial_point`` to invoke the robust
+    pressure initializer.
+    """
+    pressure_function = getattr(model, "pressure", None)
+    if not callable(pressure_function):
+        raise TypeError("volume-formulation bubble points require a Helmholtz pressure method")
+
+    x = normalize_composition(liquid_composition)
+    if x.shape != (2,):
+        raise ValueError("binary bubble point requires one two-component liquid composition")
+    if not bool(torch.isfinite(x).all() & (x > 0.0).all()):
+        raise ValueError("binary bubble-point liquid composition must be finite and positive")
+
+    def pressure_bound(value: Tensor | float | None, name: str) -> Tensor | None:
+        if value is None:
+            return None
+        bound = torch.as_tensor(value, dtype=x.dtype, device=x.device)
+        if bound.ndim != 0 or not bool(torch.isfinite(bound) & (bound > 0.0)):
+            raise ValueError(f"{name} binary bubble pressure must be one finite positive scalar")
+        return bound
+
+    minimum = pressure_bound(minimum_pressure, "minimum")
+    maximum = pressure_bound(maximum_pressure, "maximum")
+    if minimum is not None and maximum is not None and not bool(minimum < maximum):
+        raise ValueError("minimum binary bubble pressure must be below maximum pressure")
+
+    if initial_point is None:
+        initialized = binary_bubble_point(
+            model,
+            temperature,
+            x,
+            initial_pressure=initial_pressure,
+            initial_vapor_composition=initial_vapor_composition,
+            minimum_pressure=minimum,
+            maximum_pressure=maximum,
+            tolerance=tolerance,
+            max_iterations=max_iterations,
+        )
+        liquid_volume = model.molar_volume(
+            temperature,
+            initialized.pressure,
+            x,
+            "liquid",
+        )
+        vapor_volume = model.molar_volume(
+            temperature,
+            initialized.pressure,
+            initialized.vapor_composition,
+            "vapor",
+        )
+        return BinaryHelmholtzBubblePoint(
+            initialized.temperature,
+            initialized.pressure,
+            initialized.liquid_composition,
+            initialized.vapor_composition,
+            initialized.iterations,
+            initialized.converged,
+            initialized.residual_norm,
+            liquid_volume,
+            vapor_volume,
+        )
+
+    initial_y = normalize_composition(
+        initial_point.vapor_composition.to(dtype=x.dtype, device=x.device)
+    )
+    initial_liquid_volume = initial_point.liquid_molar_volume.to(
+        dtype=x.dtype,
+        device=x.device,
+    )
+    initial_vapor_volume = initial_point.vapor_molar_volume.to(
+        dtype=x.dtype,
+        device=x.device,
+    )
+    if initial_y.shape != (2,) or not bool(
+        torch.isfinite(initial_y).all() & (initial_y > 0.0).all()
+    ):
+        raise ValueError("initial binary bubble vapor composition must be finite and positive")
+    if not bool(
+        torch.isfinite(initial_liquid_volume)
+        & torch.isfinite(initial_vapor_volume)
+        & (initial_liquid_volume > 0.0)
+        & (initial_vapor_volume > 0.0)
+    ):
+        raise ValueError("initial binary bubble molar volumes must be finite and positive")
+
+    epsilon = 32.0 * torch.finfo(x.dtype).eps
+
+    def logit(value: Tensor) -> Tensor:
+        bounded = torch.clamp(value, epsilon, 1.0 - epsilon)
+        return torch.log(bounded) - torch.log1p(-bounded)
+
+    variables = torch.stack(
+        (
+            logit(initial_y[0]),
+            torch.log(initial_liquid_volume.reciprocal()),
+            torch.log(initial_vapor_volume.reciprocal()),
+        )
+    )
+    pressure_scale = torch.clamp_min(
+        initial_point.pressure.to(dtype=x.dtype, device=x.device).detach().abs(),
+        variables.new_tensor(1.0),
+    )
+
+    def residual(current: Tensor) -> Tensor:
+        vapor_first = torch.sigmoid(current[0])
+        vapor = torch.stack((vapor_first, 1.0 - vapor_first))
+        liquid_volume = torch.exp(-current[1])
+        vapor_volume = torch.exp(-current[2])
+        liquid_mu_residual: Tensor = torch.func.grad(
+            lambda moles: model.residual_helmholtz_rt(
+                temperature,
+                liquid_volume,
+                moles,
+            ).sum()
+        )(x)
+        vapor_mu_residual: Tensor = torch.func.grad(
+            lambda moles: model.residual_helmholtz_rt(
+                temperature,
+                vapor_volume,
+                moles,
+            ).sum()
+        )(vapor)
+        log_fugacity_difference = (
+            torch.log(x / liquid_volume)
+            + liquid_mu_residual
+            - torch.log(vapor / vapor_volume)
+            - vapor_mu_residual
+        )
+        liquid_pressure = pressure_function(temperature, liquid_volume, x)
+        vapor_pressure = pressure_function(temperature, vapor_volume, vapor)
+        pressure_difference = (liquid_pressure - vapor_pressure) / pressure_scale
+        return torch.cat((log_fugacity_difference, pressure_difference.reshape(1)))
+
+    lower_bound = torch.stack(
+        (
+            variables.new_tensor(-30.0),
+            variables.new_tensor(-20.0),
+            variables.new_tensor(-20.0),
+        )
+    )
+    upper_bound = torch.stack(
+        (
+            variables.new_tensor(30.0),
+            variables.new_tensor(20.0),
+            variables.new_tensor(20.0),
+        )
+    )
+    result = damped_newton(
+        residual,
+        variables,
+        tolerance=tolerance,
+        max_iterations=max_iterations,
+        lower_bound=lower_bound,
+        upper_bound=upper_bound,
+        jacobian_refresh_interval=4,
+    )
+    vapor_first = torch.sigmoid(result.solution[0])
+    vapor = torch.stack((vapor_first, 1.0 - vapor_first))
+    liquid_volume = torch.exp(-result.solution[1])
+    vapor_volume = torch.exp(-result.solution[2])
+    liquid_pressure = pressure_function(temperature, liquid_volume, x)
+    vapor_pressure = pressure_function(temperature, vapor_volume, vapor)
+    pressure = 0.5 * (liquid_pressure + vapor_pressure)
+    pressure_in_range = torch.isfinite(pressure) & (pressure > 0.0)
+    if minimum is not None:
+        pressure_in_range = pressure_in_range & (pressure >= minimum)
+    if maximum is not None:
+        pressure_in_range = pressure_in_range & (pressure <= maximum)
+    return BinaryHelmholtzBubblePoint(
+        temperature,
+        pressure,
+        x,
+        vapor,
+        result.iterations,
+        result.converged and bool(pressure_in_range),
+        result.residual_norm,
+        liquid_volume,
+        vapor_volume,
     )

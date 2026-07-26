@@ -13,6 +13,14 @@ artifacts:
     status: not-cleared
     basis: Table 6 transcription; publisher redistribution permission not verified.
     source: https://doi.org/10.1016/j.fluid.2018.02.002
+  beckmuller_2021_h2_gerg_table12.csv:
+    status: not-cleared
+    basis: Table 12 transcription; publisher redistribution permission not verified.
+    source: https://doi.org/10.1063/5.0040533
+  beckmuller_2021_h2_vle_digitized.csv:
+    status: not-cleared
+    basis: Visual digitization of Figures 7 and 16; publisher redistribution permission not verified.
+    source: https://doi.org/10.1063/5.0040533
   cpa_yan_2009_water_content_digitized.csv:
     status: not-cleared
     basis: Visual digitization of publisher-controlled figures.

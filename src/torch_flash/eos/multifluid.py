@@ -13,7 +13,7 @@ doi:10.1007/s10765-023-03263-6, respectively.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Literal
+from typing import Literal, overload
 
 import torch
 from torch import Tensor, nn
@@ -391,6 +391,14 @@ class MultiFluidEOS(nn.Module):
         self._store_nonanalytic_terms(
             pure_nonanalytic_terms, ncomponents, critical_temperature, trainable
         )
+        # Padded absent critical terms are common in GERG parameter documents.
+        # Keep trainable tables active because a caller may intentionally fit a
+        # coefficient initialized at zero; immutable all-zero tables can bypass
+        # otherwise relatively expensive critical-term algebra.
+        self._has_gaob_terms = trainable or bool(torch.count_nonzero(self.pure_gaob_n))
+        self._has_nonanalytic_terms = trainable or bool(
+            torch.count_nonzero(self.pure_nonanalytic_n)
+        )
         self._store_ideal_terms(ideal_terms, ncomponents, critical_temperature, trainable)
         self._store_parameter("beta_temperature", beta_temperature, trainable)
         self._store_parameter("gamma_temperature", gamma_temperature, trainable)
@@ -511,21 +519,8 @@ class MultiFluidEOS(nn.Module):
         ):
             self.register_buffer(f"ideal_{name}", getattr(terms, name).clone())
 
-    def reducing_functions(self, composition: Tensor) -> tuple[Tensor, Tensor]:
-        """Evaluate composition-dependent mixture reducing functions.
-
-        Parameters
-        ----------
-        composition
-            Mole fractions with components on the final axis.
-
-        Returns
-        -------
-        tuple
-            Reducing temperature in K and reducing molar density in mol/m3,
-            with the broadcast leading shape.
-        """
-        x = normalize_composition(composition)
+    def _reducing_functions_normalized(self, x: Tensor) -> tuple[Tensor, Tensor]:
+        """Evaluate reducing functions for an already normalized composition."""
         xi = x[..., :, None]
         xj = x[..., None, :]
         pair_fraction_t = (
@@ -562,6 +557,22 @@ class MultiFluidEOS(nn.Module):
         )
         return reducing_temperature, inverse_reducing_density.reciprocal()
 
+    def reducing_functions(self, composition: Tensor) -> tuple[Tensor, Tensor]:
+        """Evaluate composition-dependent mixture reducing functions.
+
+        Parameters
+        ----------
+        composition
+            Mole fractions with components on the final axis.
+
+        Returns
+        -------
+        tuple
+            Reducing temperature in K and reducing molar density in mol/m3,
+            with the broadcast leading shape.
+        """
+        return self._reducing_functions_normalized(normalize_composition(composition))
+
     @staticmethod
     def _evaluate_terms(
         n: Tensor,
@@ -591,6 +602,41 @@ class MultiFluidEOS(nn.Module):
             dim=-1,
         )
 
+    @staticmethod
+    def _evaluate_terms_delta(
+        n: Tensor,
+        d: Tensor,
+        t: Tensor,
+        decay: Tensor,
+        eta: Tensor,
+        epsilon: Tensor,
+        beta: Tensor,
+        gamma: Tensor,
+        linear_density: Tensor,
+        linear_shift: Tensor,
+        delta: Tensor,
+        tau: Tensor,
+    ) -> Tensor:
+        """Evaluate the derivative of standard residual terms with respect to delta."""
+        term_axes = (None,) * n.ndim
+        delta = delta[(..., *term_axes)]
+        tau = tau[(..., *term_axes)]
+        active_decay = decay != 0.0
+        exponent = (
+            -delta.pow(decay) * active_decay
+            - eta * (delta - epsilon).square()
+            - beta * (tau - gamma).square()
+            - linear_density * (delta - linear_shift)
+        )
+        terms = n * delta.pow(d) * tau.pow(t) * torch.exp(exponent)
+        logarithmic_derivative = (
+            d / delta
+            - decay * delta.pow(decay - 1.0) * active_decay
+            - 2.0 * eta * (delta - epsilon)
+            - linear_density
+        )
+        return torch.sum(terms * logarithmic_derivative, dim=-1)
+
     def _evaluate_gaob(self, delta: Tensor, tau: Tensor) -> Tensor:
         delta = delta[(..., None, None)]
         tau = tau[(..., None, None)]
@@ -603,6 +649,24 @@ class MultiFluidEOS(nn.Module):
             ).reciprocal()
         )
         return torch.sum(self.pure_gaob_n * torch.exp(exponent), dim=-1)
+
+    def _evaluate_gaob_delta(self, delta: Tensor, tau: Tensor) -> Tensor:
+        """Evaluate the Gao-B residual derivative with respect to delta."""
+        delta = delta[(..., None, None)]
+        tau = tau[(..., None, None)]
+        exponent = (
+            self.pure_gaob_d * torch.log(delta)
+            + self.pure_gaob_t * torch.log(tau)
+            + self.pure_gaob_eta * (delta - self.pure_gaob_epsilon).square()
+            + (
+                self.pure_gaob_beta * (tau - self.pure_gaob_gamma).square() + self.pure_gaob_b
+            ).reciprocal()
+        )
+        terms = self.pure_gaob_n * torch.exp(exponent)
+        logarithmic_derivative = self.pure_gaob_d / delta + 2.0 * self.pure_gaob_eta * (
+            delta - self.pure_gaob_epsilon
+        )
+        return torch.sum(terms * logarithmic_derivative, dim=-1)
 
     def _evaluate_nonanalytic(self, delta: Tensor, tau: Tensor) -> Tensor:
         delta = delta[(..., None, None)]
@@ -625,6 +689,61 @@ class MultiFluidEOS(nn.Module):
             dim=-1,
         )
 
+    def _evaluate_nonanalytic_delta(self, delta: Tensor, tau: Tensor) -> Tensor:
+        """Evaluate the nonanalytic critical-term derivative with respect to delta."""
+        delta = delta[(..., None, None)]
+        tau = tau[(..., None, None)]
+        delta_offset = delta - 1.0
+        raw_delta_squared = delta_offset.square()
+        tiny = torch.finfo(delta.dtype).tiny
+        delta_squared = raw_delta_squared.clamp_min(tiny)
+        delta_squared_derivative = torch.where(
+            raw_delta_squared > tiny,
+            2.0 * delta_offset,
+            torch.zeros_like(delta_offset),
+        )
+        tau_offset = tau - 1.0
+        psi = torch.exp(
+            -self.pure_nonanalytic_capital_c * delta_squared
+            - self.pure_nonanalytic_capital_d * tau_offset.square()
+        )
+        theta_power = 0.5 / self.pure_nonanalytic_beta
+        theta = -tau_offset + self.pure_nonanalytic_capital_a * delta_squared.pow(theta_power)
+        theta_derivative = (
+            self.pure_nonanalytic_capital_a
+            * theta_power
+            * delta_squared.pow(theta_power - 1.0)
+            * delta_squared_derivative
+        )
+        capital_delta = theta.square() + self.pure_nonanalytic_capital_b * delta_squared.pow(
+            self.pure_nonanalytic_a
+        )
+        capital_delta_derivative = (
+            2.0 * theta * theta_derivative
+            + self.pure_nonanalytic_capital_b
+            * self.pure_nonanalytic_a
+            * delta_squared.pow(self.pure_nonanalytic_a - 1.0)
+            * delta_squared_derivative
+        )
+        capital_delta_safe = capital_delta.clamp_min(tiny)
+        capital_delta_power = capital_delta_safe.pow(self.pure_nonanalytic_b)
+        psi_log_derivative = -self.pure_nonanalytic_capital_c * delta_squared_derivative
+        derivative = (
+            self.pure_nonanalytic_n
+            * psi
+            * (
+                capital_delta_power
+                + delta
+                * (
+                    psi_log_derivative * capital_delta_power
+                    + self.pure_nonanalytic_b
+                    * capital_delta_safe.pow(self.pure_nonanalytic_b - 1.0)
+                    * capital_delta_derivative
+                )
+            )
+        )
+        return torch.sum(derivative, dim=-1)
+
     def alpha_residual(
         self, temperature: Tensor, molar_density: Tensor, composition: Tensor
     ) -> Tensor:
@@ -645,7 +764,7 @@ class MultiFluidEOS(nn.Module):
             Dimensionless ``alpha^r = a^r/(RT)``.
         """
         x = normalize_composition(composition)
-        reducing_temperature, reducing_density = self.reducing_functions(x)
+        reducing_temperature, reducing_density = self._reducing_functions_normalized(x)
         tau = reducing_temperature / temperature
         delta = molar_density / reducing_density
         pure_values = self._evaluate_terms(
@@ -662,9 +781,10 @@ class MultiFluidEOS(nn.Module):
             delta,
             tau,
         )
-        pure_values = (
-            pure_values + self._evaluate_gaob(delta, tau) + self._evaluate_nonanalytic(delta, tau)
-        )
+        if self._has_gaob_terms:
+            pure_values = pure_values + self._evaluate_gaob(delta, tau)
+        if self._has_nonanalytic_terms:
+            pure_values = pure_values + self._evaluate_nonanalytic(delta, tau)
         departure_values = self._evaluate_terms(
             self.departure_n,
             self.departure_d,
@@ -684,6 +804,61 @@ class MultiFluidEOS(nn.Module):
             x[..., :, None] * x[..., None, :] * self.departure_scale * self._upper_triangle
         )
         return pure + torch.sum(pair_weights * departure_values, dim=(-2, -1))
+
+    def alpha_residual_delta(
+        self, temperature: Tensor, molar_density: Tensor, composition: Tensor
+    ) -> Tensor:
+        """Return the residual Helmholtz derivative with respect to reduced density."""
+        x = normalize_composition(composition)
+        reducing_temperature, reducing_density = self._reducing_functions_normalized(x)
+        tau = reducing_temperature / temperature
+        delta = molar_density / reducing_density
+        return self._alpha_residual_delta_reduced(delta, tau, x)
+
+    def _alpha_residual_delta_reduced(
+        self,
+        delta: Tensor,
+        tau: Tensor,
+        x: Tensor,
+    ) -> Tensor:
+        """Evaluate ``d(alpha_r)/d(delta)`` from reduced state variables."""
+        pure_derivatives = self._evaluate_terms_delta(
+            self.pure_n,
+            self.pure_d,
+            self.pure_t,
+            self.pure_decay,
+            self.pure_eta,
+            self.pure_epsilon,
+            self.pure_beta,
+            self.pure_gamma,
+            self.pure_linear_density,
+            self.pure_linear_shift,
+            delta,
+            tau,
+        )
+        if self._has_gaob_terms:
+            pure_derivatives = pure_derivatives + self._evaluate_gaob_delta(delta, tau)
+        if self._has_nonanalytic_terms:
+            pure_derivatives = pure_derivatives + self._evaluate_nonanalytic_delta(delta, tau)
+        departure_derivatives = self._evaluate_terms_delta(
+            self.departure_n,
+            self.departure_d,
+            self.departure_t,
+            self.departure_decay,
+            self.departure_eta,
+            self.departure_epsilon,
+            self.departure_beta,
+            self.departure_gamma,
+            self.departure_linear_density,
+            self.departure_linear_shift,
+            delta,
+            tau,
+        )
+        pure = torch.sum(x * pure_derivatives, dim=-1)
+        pair_weights = (
+            x[..., :, None] * x[..., None, :] * self.departure_scale * self._upper_triangle
+        )
+        return pure + torch.sum(pair_weights * departure_derivatives, dim=(-2, -1))
 
     def alpha_ideal(
         self, temperature: Tensor, molar_density: Tensor, composition: Tensor
@@ -1028,18 +1203,14 @@ class MultiFluidEOS(nn.Module):
         return torch.sqrt((cp / cv) * dp_drho / mixture_molar_mass)
 
     def pressure(self, temperature: Tensor, molar_volume: Tensor, composition: Tensor) -> Tensor:
-        """Return pressure from a residual-Helmholtz density derivative.
-
-        Leading state dimensions are broadcast. The summed scalar objective
-        used by ``torch.func.grad`` differentiates independent batch entries
-        elementwise because the Helmholtz kernel contains no cross-state terms.
-        """
+        """Return pressure from the exact residual-Helmholtz density derivative."""
         x = normalize_composition(composition)
         molar_density = molar_volume.reciprocal()
-        derivative: Tensor = torch.func.grad(
-            lambda density: self.alpha_residual(temperature, density, x).sum()
-        )(molar_density)
-        return self.gas_constant * temperature * molar_density * (1.0 + molar_density * derivative)
+        reducing_temperature, reducing_density = self._reducing_functions_normalized(x)
+        delta = molar_density / reducing_density
+        tau = reducing_temperature / temperature
+        alpha_delta = self._alpha_residual_delta_reduced(delta, tau, x)
+        return self.gas_constant * temperature * molar_density * (1.0 + delta * alpha_delta)
 
     def molar_volume(
         self,
@@ -1074,20 +1245,8 @@ class MultiFluidEOS(nn.Module):
             x = torch.broadcast_to(x, (*batch_shape, len(self.names)))
             if phase in ("vapor", "liquid"):
                 return self._batched_phase_volume(temperature, pressure, x, phase)
-            flattened_temperature = temperature.reshape(-1)
-            flattened_pressure = pressure.reshape(-1)
-            flattened_composition = x.reshape(-1, len(self.names))
-            return torch.stack(
-                [
-                    self.molar_volume(current_temperature, current_pressure, current_x, phase)
-                    for current_temperature, current_pressure, current_x in zip(
-                        flattened_temperature,
-                        flattened_pressure,
-                        flattened_composition,
-                        strict=True,
-                    )
-                ]
-            ).reshape(batch_shape)
+            if phase == "stable":
+                return self._batched_stable_volume(temperature, pressure, x)
 
         ideal_density = pressure / (self.gas_constant * temperature)
         density_scale = torch.sum(x * self.critical_density)
@@ -1112,13 +1271,13 @@ class MultiFluidEOS(nn.Module):
                 current = current - value / derivative
             return torch.exp(-current)
 
-        # Locate a phase-specific root with detached finite-difference Newton
-        # steps. Differentiating every iteration nests reverse-mode AD through
-        # the residual Helmholtz pressure derivative and makes saturation
-        # calculations unnecessarily expensive. One exact correction at the
-        # converged root restores the implicit state and parameter gradients.
-        # The scan below remains the conservative fallback near spinodals or
-        # when the conventional seed lies in the basin of another root.
+        # Locate a phase-specific root with detached, safeguarded secant steps.
+        # One centered slope initializes the iteration; subsequent slopes reuse
+        # adjacent residual values instead of evaluating pressure twice more at
+        # every step. One exact correction at the converged root restores the
+        # implicit state and parameter gradients. The scan below remains the
+        # conservative fallback near spinodals or when the conventional seed
+        # lies in the basin of another root.
         if phase != "stable":
             density = (
                 ideal_density
@@ -1127,8 +1286,11 @@ class MultiFluidEOS(nn.Module):
             )
             log_density = torch.log(density)
             slope_offset = log_density.new_tensor(1.0e-4)
+            value = residual(log_density)
+            derivative = (
+                residual(log_density + slope_offset) - residual(log_density - slope_offset)
+            ) / (2.0 * slope_offset)
             for _ in range(20):
-                value = residual(log_density)
                 if float(value.detach().abs()) <= 1.0e-10:
                     solved_density = torch.exp(log_density)
                     phase_consistent = (
@@ -1139,13 +1301,24 @@ class MultiFluidEOS(nn.Module):
                     if bool((temperature >= reducing_temperature) | phase_consistent):
                         return volume_with_implicit_gradient(log_density)
                     break
-                derivative = (
-                    residual(log_density + slope_offset) - residual(log_density - slope_offset)
-                ) / (2.0 * slope_offset)
                 step = torch.clamp(-value / derivative, -0.5, 0.5)
                 if not bool(torch.isfinite(step)):
                     break
-                log_density = (log_density + step).detach()
+                next_log_density = (log_density + step).detach()
+                next_value = residual(next_log_density)
+                log_density_step = next_log_density - log_density
+                next_derivative = (next_value - value) / log_density_step
+                if not bool(
+                    torch.isfinite(next_derivative)
+                    & (next_derivative.abs() > torch.finfo(next_derivative.dtype).tiny)
+                ):
+                    next_derivative = (
+                        residual(next_log_density + slope_offset)
+                        - residual(next_log_density - slope_offset)
+                    ) / (2.0 * slope_offset)
+                log_density = next_log_density
+                value = next_value
+                derivative = next_derivative
 
         minimum = torch.minimum(ideal_density * 1.0e-4, density_scale * 1.0e-8)
         maximum = torch.maximum(
@@ -1194,9 +1367,17 @@ class MultiFluidEOS(nn.Module):
                     left_value = midpoint_value
 
             root = torch.exp(midpoint)
+            root_residual = residual(midpoint)
+            if not bool(torch.isfinite(root_residual) & (root_residual.abs() <= 1.0e-8)):
+                # A sign change across a discontinuity or overflow is not a
+                # density root. This occurs in very cold, dense Helmholtz
+                # states and must not enter the Gibbs-root comparison.
+                continue
             if not roots or abs(float((root / roots[-1] - 1.0).detach())) > 1.0e-8:
                 roots.append(root)
 
+        if not roots:
+            raise ConvergenceError("multifluid density solve did not find an admissible root")
         if phase == "vapor":
             density = roots[0]
         elif phase == "liquid":
@@ -1211,21 +1392,112 @@ class MultiFluidEOS(nn.Module):
             density = roots[int(torch.argmin(torch.stack(gibbs)).detach())]
         return volume_with_implicit_gradient(torch.log(density))
 
+    def _batched_stable_volume(
+        self,
+        temperature: Tensor,
+        pressure: Tensor,
+        composition: Tensor,
+    ) -> Tensor:
+        """Select the lower-Gibbs outer root for a batch of stable states."""
+        vapor_volume, vapor_converged = self._batched_phase_volume(
+            temperature,
+            pressure,
+            composition,
+            "vapor",
+            return_convergence=True,
+        )
+        liquid_volume, liquid_converged = self._batched_phase_volume(
+            temperature,
+            pressure,
+            composition,
+            "liquid",
+            return_convergence=True,
+        )
+
+        def reduced_gibbs(volume: Tensor) -> Tensor:
+            compressibility = pressure * volume / (self.gas_constant * temperature)
+            residual_helmholtz = self.residual_helmholtz_rt(
+                temperature,
+                volume,
+                composition,
+            )
+            return residual_helmholtz + compressibility - 1.0 - torch.log(compressibility)
+
+        vapor_gibbs = reduced_gibbs(vapor_volume)
+        liquid_gibbs = reduced_gibbs(liquid_volume)
+        stable_volume = torch.where(
+            liquid_converged & (~vapor_converged | (liquid_gibbs < vapor_gibbs)),
+            liquid_volume,
+            vapor_volume,
+        )
+        # The sub-reducing candidate ensemble above is used by both searches,
+        # so a lone converged outer root is admissible for a single-root state.
+        # When both exist, the Gibbs comparison selects the stable branch.
+        stable_converged = liquid_converged | vapor_converged
+        if bool(stable_converged.all()):
+            return stable_volume
+
+        flat_temperature = temperature.reshape(-1)
+        flat_pressure = pressure.reshape(-1)
+        flat_composition = composition.reshape(-1, len(self.names))
+        flat_volume = stable_volume.reshape(-1)
+        failed_indices = torch.nonzero(
+            ~stable_converged.reshape(-1),
+            as_tuple=False,
+        ).flatten()
+        fallback = torch.stack(
+            [
+                self.molar_volume(
+                    flat_temperature[index],
+                    flat_pressure[index],
+                    flat_composition[index],
+                    "stable",
+                )
+                for index in failed_indices.tolist()
+            ]
+        )
+        return flat_volume.index_copy(0, failed_indices, fallback).reshape(temperature.shape)
+
+    @overload
     def _batched_phase_volume(
         self,
         temperature: Tensor,
         pressure: Tensor,
         composition: Tensor,
         phase: Literal["liquid", "vapor"],
-    ) -> Tensor:
+        *,
+        return_convergence: Literal[False] = False,
+    ) -> Tensor: ...
+
+    @overload
+    def _batched_phase_volume(
+        self,
+        temperature: Tensor,
+        pressure: Tensor,
+        composition: Tensor,
+        phase: Literal["liquid", "vapor"],
+        *,
+        return_convergence: Literal[True],
+    ) -> tuple[Tensor, Tensor]: ...
+
+    def _batched_phase_volume(
+        self,
+        temperature: Tensor,
+        pressure: Tensor,
+        composition: Tensor,
+        phase: Literal["liquid", "vapor"],
+        *,
+        return_convergence: bool = False,
+    ) -> Tensor | tuple[Tensor, Tensor]:
         """Solve independent phase-specific states with one tensor workload.
 
         A conventional phase-specific seed is advanced for the complete batch.
-        Extra density seeds are evaluated only for the failed subset. Selecting
-        its lowest or highest converged root handles cases in which the
-        requested vapor-like branch is the sole, dense root above saturation
-        pressure. Only states for which every seed fails use the conservative
-        scalar root scan.
+        Extra density seeds are evaluated for failed states and below the
+        reducing temperature, where a conventional seed can converge to a
+        middle root. Selecting the lowest or highest converged root handles
+        multiple-root states and cases in which the requested vapor-like
+        branch is the sole, dense root above saturation pressure. Only states
+        for which every seed fails use the conservative scalar root scan.
         """
         batch_shape = temperature.shape
         flat_temperature = temperature.reshape(-1)
@@ -1278,58 +1550,45 @@ class MultiFluidEOS(nn.Module):
         )
         preliminary_converged = primary_converged
 
-        if not bool(primary_converged.all()):
-            failed_indices = torch.nonzero(
-                ~primary_converged,
+        needs_candidates = ~primary_converged | (flat_temperature < reducing_temperature)
+        if bool(needs_candidates.any()):
+            candidate_indices = torch.nonzero(
+                needs_candidates,
                 as_tuple=False,
             ).flatten()
-            failed_temperature = flat_temperature[failed_indices]
-            failed_pressure = flat_pressure[failed_indices]
-            failed_composition = flat_composition[failed_indices]
-            failed_ideal_density = ideal_density[failed_indices]
-            failed_density_scale = density_scale[failed_indices]
-            if phase == "vapor":
-                candidate_density = torch.stack(
-                    (
-                        0.2 * failed_ideal_density,
-                        failed_ideal_density,
-                        torch.maximum(
-                            2.0 * failed_ideal_density,
-                            1.5 * failed_density_scale,
-                        ),
-                    ),
-                    dim=-1,
-                )
-            else:
-                candidate_density = torch.stack(
-                    (
-                        torch.maximum(
-                            failed_ideal_density,
-                            1.5 * failed_density_scale,
-                        ),
-                        torch.maximum(
-                            failed_ideal_density,
-                            3.0 * failed_density_scale,
-                        ),
-                        torch.maximum(
-                            failed_ideal_density,
-                            10.0 * failed_density_scale,
-                        ),
-                    ),
-                    dim=-1,
-                )
+            candidate_temperature = flat_temperature[candidate_indices]
+            candidate_pressure = flat_pressure[candidate_indices]
+            candidate_composition = flat_composition[candidate_indices]
+            candidate_ideal_density = ideal_density[candidate_indices]
+            candidate_density_scale = density_scale[candidate_indices]
+            candidate_density = torch.stack(
+                (
+                    0.2 * candidate_ideal_density,
+                    candidate_ideal_density,
+                    2.0 * candidate_ideal_density,
+                    0.25 * candidate_density_scale,
+                    0.5 * candidate_density_scale,
+                    0.75 * candidate_density_scale,
+                    candidate_density_scale,
+                    1.5 * candidate_density_scale,
+                    3.0 * candidate_density_scale,
+                    10.0 * candidate_density_scale,
+                    primary_density[candidate_indices],
+                ),
+                dim=-1,
+            )
             candidate_log_density = torch.log(candidate_density)
 
             def candidate_residual(current: Tensor) -> Tensor:
                 volume = torch.exp(-current)
                 return (
                     self.pressure(
-                        failed_temperature[:, None],
+                        candidate_temperature[:, None],
                         volume,
-                        failed_composition[:, None, :],
+                        candidate_composition[:, None, :],
                     )
-                    - failed_pressure[:, None]
-                ) / failed_pressure[:, None]
+                    - candidate_pressure[:, None]
+                ) / candidate_pressure[:, None]
 
             for _ in range(10):
                 value = candidate_residual(candidate_log_density)
@@ -1378,12 +1637,12 @@ class MultiFluidEOS(nn.Module):
             ).squeeze(-1)
             log_density = log_density.index_copy(
                 0,
-                failed_indices,
+                candidate_indices,
                 selected_candidate,
             )
             preliminary_converged = primary_converged.index_copy(
                 0,
-                failed_indices,
+                candidate_indices,
                 candidate_converged.any(dim=-1),
             )
 
@@ -1418,9 +1677,12 @@ class MultiFluidEOS(nn.Module):
 
         value = residual(log_density)
         solved_density = torch.exp(log_density)
-        converged = preliminary_converged & torch.isfinite(value) & (value.abs() <= 1.0e-10)
+        converged = preliminary_converged & torch.isfinite(value) & (value.abs() <= 1.0e-9)
+        volumes = solved_density.reciprocal()
+        if return_convergence:
+            return volumes.reshape(batch_shape), converged.reshape(batch_shape)
         if bool(converged.all()):
-            return solved_density.reciprocal().reshape(batch_shape)
+            return volumes.reshape(batch_shape)
 
         # The conservative scalar scan is retained for the uncommon states
         # for which every batched seed fails. Preserve the already solved
@@ -1440,7 +1702,6 @@ class MultiFluidEOS(nn.Module):
                 for index in failed_indices.tolist()
             ]
         )
-        volumes = solved_density.reciprocal()
         return volumes.index_copy(0, failed_indices, fallback).reshape(batch_shape)
 
     def select_z(

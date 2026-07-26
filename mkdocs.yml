@@ -119,12 +119,14 @@ nav:
       - Validation reports:
           - GERG-2008 and EOS-CG: validation-reports/05-gerg-eoscg.md
           - Native EOS-CG-2021: validation-reports/08-eoscg2021.md
+          - Native GERG-2008 for H2/CH4: validation-reports/09-gerg2008-hydrogen.md
           - Thermal properties: validation-reports/15-thermal-properties.md
           - Huron-Vidal mixing: validation-reports/22-huron-vidal.md
           - Volume translation: validation-reports/24-volume-translation.md
           - Cross-co-volume interaction: validation-reports/25-covolume-interaction.md
           - Original UNIFAC: validation-reports/26-unifac.md
           - Predictive PR78: validation-reports/28-ppr78.md
+          - H2-tailored GERG (2021): validation-reports/29-hydrogen-tailored-gerg.md
   - Reference:
       - Scientific references: references.md
       - API Reference:

@@ -8,14 +8,20 @@ import torch
 
 import torch_flash.eos.named as named
 from torch_flash.database import ModelParameterSet, load_model_parameters
-from torch_flash.envelope import phase_envelope
+from torch_flash.envelope import (
+    binary_bubble_point,
+    binary_helmholtz_bubble_point,
+    phase_envelope,
+)
 from torch_flash.eos import (
     EOSCG2021_COMPONENTS,
     GERG2008_COMPONENTS,
+    GERG2008_HYDROGEN_2021_COMPONENTS,
     GaoBTerms,
     NonAnalyticTerms,
     eoscg2021,
     gerg2008,
+    gerg2008_hydrogen_2021,
 )
 
 DATA = Path(__file__).parent / "data"
@@ -43,6 +49,22 @@ def test_complete_named_model_inventories():
     assert eoscg.has_ideal_terms
     assert eoscg.ideal_lead_constant.shape == (16,)
 
+    hydrogen_gerg = gerg2008_hydrogen_2021()
+    assert hydrogen_gerg.names == GERG2008_HYDROGEN_2021_COMPONENTS
+    assert hydrogen_gerg.metadata.validated_components == GERG2008_HYDROGEN_2021_COMPONENTS
+    assert hydrogen_gerg.pure_n.shape[0] == 5
+    assert hydrogen_gerg.beta_temperature.shape == (5, 5)
+    assert torch.count_nonzero(torch.triu(hydrogen_gerg.departure_scale, diagonal=1)) == 7
+    torch.testing.assert_close(
+        hydrogen_gerg.gas_constant,
+        torch.tensor(8.314472, dtype=DTYPE),
+    )
+    assert hydrogen_gerg.has_ideal_terms
+    torch.testing.assert_close(
+        hydrogen_gerg.pure_n[-1, 11],
+        torch.tensor(0.032187, dtype=DTYPE),
+    )
+
 
 def test_named_models_aliases_order_device_and_trainability():
     model = gerg2008(("H2", "CH4"), dtype=torch.float32, device="cpu", trainable=True)
@@ -60,6 +82,276 @@ def test_named_models_aliases_order_device_and_trainability():
         "carbon_dioxide",
         "water",
         "ammonia",
+    )
+    assert gerg2008_hydrogen_2021(("H2", "CO2")).names == (
+        "hydrogen",
+        "carbon_dioxide",
+    )
+
+
+@pytest.mark.parametrize(
+    ("component", "temperature", "density", "pressure_mpa"),
+    [
+        ("methane", 250.0, 20_000.0, 54.33554554),
+        ("nitrogen", 250.0, 20_000.0, 65.60743718),
+        ("carbon_monoxide", 250.0, 20_000.0, 62.38126662),
+        ("carbon_dioxide", 350.0, 20_000.0, 69.13317365),
+    ],
+)
+def test_hydrogen_tailored_gerg_matches_paper_table12_pressure_checks(
+    component,
+    temperature,
+    density,
+    pressure_mpa,
+):
+    """Check the four Table 12 states also embedded in the authors' supplement."""
+    model = gerg2008_hydrogen_2021((component, "hydrogen"))
+    composition = torch.tensor([0.6, 0.4], dtype=DTYPE)
+    predicted = model.pressure(
+        torch.tensor(temperature, dtype=DTYPE),
+        torch.tensor(density, dtype=DTYPE).reciprocal(),
+        composition,
+    )
+    torch.testing.assert_close(
+        predicted,
+        torch.tensor(pressure_mpa * 1.0e6, dtype=DTYPE),
+        rtol=3.0e-10,
+        atol=3.0e-2,
+    )
+
+
+def test_hydrogen_tailored_gerg_co2_pair_parameters_and_autodiff():
+    model = gerg2008_hydrogen_2021(("carbon_dioxide", "hydrogen"), trainable=True)
+    torch.testing.assert_close(model.beta_temperature[0, 1], torch.tensor(0.964, dtype=DTYPE))
+    torch.testing.assert_close(model.gamma_temperature[0, 1], torch.tensor(2.014, dtype=DTYPE))
+    torch.testing.assert_close(model.beta_volume[0, 1], torch.tensor(1.200, dtype=DTYPE))
+    torch.testing.assert_close(model.gamma_volume[0, 1], torch.tensor(0.825, dtype=DTYPE))
+    temperature = torch.tensor(350.0, dtype=DTYPE)
+    density = torch.tensor(20_000.0, dtype=DTYPE)
+    composition = torch.tensor([0.6, 0.4], dtype=DTYPE)
+    pressure = model.pressure(temperature, density.reciprocal(), composition)
+    pressure.backward()
+    assert model.departure_n.grad is not None
+    assert torch.isfinite(model.departure_n.grad).all()
+
+
+def test_hydrogen_tailored_gerg_volume_bubble_continuation_matches_pressure_form():
+    model = gerg2008_hydrogen_2021(("nitrogen", "hydrogen"))
+    temperature = torch.tensor(90.8, dtype=DTYPE)
+    initial_liquid = torch.tensor([0.79, 0.21], dtype=DTYPE)
+    continued_liquid = torch.tensor([0.75, 0.25], dtype=DTYPE)
+    initial = binary_helmholtz_bubble_point(
+        model,
+        temperature,
+        initial_liquid,
+        minimum_pressure=1.0e3,
+        maximum_pressure=3.0e8,
+    )
+    volume_result = binary_helmholtz_bubble_point(
+        model,
+        temperature,
+        continued_liquid,
+        initial_point=initial,
+        minimum_pressure=1.0e3,
+        maximum_pressure=3.0e8,
+    )
+    pressure_result = binary_bubble_point(
+        model,
+        temperature,
+        continued_liquid,
+        initial_pressure=initial.pressure,
+        initial_vapor_composition=initial.vapor_composition,
+        minimum_pressure=1.0e3,
+        maximum_pressure=3.0e8,
+    )
+    assert initial.converged
+    assert volume_result.converged
+    torch.testing.assert_close(
+        volume_result.pressure,
+        pressure_result.pressure,
+        rtol=3.0e-10,
+        atol=2.0e-3,
+    )
+    torch.testing.assert_close(
+        volume_result.vapor_composition,
+        pressure_result.vapor_composition,
+        rtol=3.0e-10,
+        atol=2.0e-11,
+    )
+    temperature_step = torch.tensor(1.0e-4, dtype=DTYPE)
+
+    def continued_pressure(current_temperature):
+        return binary_helmholtz_bubble_point(
+            model,
+            current_temperature,
+            continued_liquid,
+            initial_point=initial,
+            tolerance=1.0e-10,
+        ).pressure
+
+    autodiff = torch.func.grad(continued_pressure)(temperature)
+    finite_difference = (
+        continued_pressure(temperature + temperature_step)
+        - continued_pressure(temperature - temperature_step)
+    ) / (2.0 * temperature_step)
+    torch.testing.assert_close(
+        autodiff,
+        finite_difference,
+        rtol=3.0e-8,
+        atol=2.0e-3,
+    )
+
+
+def test_eoscg_volume_bubble_continuation_matches_pressure_form():
+    model = eoscg2021(("carbon_dioxide", "hydrogen"))
+    temperature = torch.tensor(260.0, dtype=DTYPE)
+    initial = binary_helmholtz_bubble_point(
+        model,
+        temperature,
+        torch.tensor([0.98, 0.02], dtype=DTYPE),
+        minimum_pressure=1.0e3,
+        maximum_pressure=3.0e8,
+    )
+    liquid = torch.tensor([0.94, 0.06], dtype=DTYPE)
+    volume_result = binary_helmholtz_bubble_point(
+        model,
+        temperature,
+        liquid,
+        initial_point=initial,
+        minimum_pressure=1.0e3,
+        maximum_pressure=3.0e8,
+    )
+    pressure_result = binary_bubble_point(
+        model,
+        temperature,
+        liquid,
+        initial_pressure=initial.pressure,
+        initial_vapor_composition=initial.vapor_composition,
+        minimum_pressure=1.0e3,
+        maximum_pressure=3.0e8,
+    )
+    assert initial.converged and volume_result.converged
+    torch.testing.assert_close(
+        volume_result.pressure,
+        pressure_result.pressure,
+        rtol=3.0e-8,
+        atol=2.0e-2,
+    )
+    torch.testing.assert_close(
+        volume_result.vapor_composition,
+        pressure_result.vapor_composition,
+        rtol=3.0e-8,
+        atol=2.0e-9,
+    )
+
+
+def test_hydrogen_gerg_batched_stable_roots_match_scalar_and_reject_discontinuity():
+    model = gerg2008_hydrogen_2021(("methane", "hydrogen"))
+    temperature = torch.tensor([60.0, 380.0, 700.0], dtype=DTYPE)
+    pressure = torch.tensor([0.1e6, 35.05e6, 70.0e6], dtype=DTYPE)
+    composition = torch.tensor(
+        [[0.75, 0.25], [0.75, 0.25], [0.25, 0.75]],
+        dtype=DTYPE,
+    )
+    batched = model.molar_volume(
+        temperature,
+        pressure,
+        composition,
+        "stable",
+    )
+    scalar = torch.stack(
+        [
+            model.molar_volume(current_temperature, current_pressure, current_x, "stable")
+            for current_temperature, current_pressure, current_x in zip(
+                temperature,
+                pressure,
+                composition,
+                strict=True,
+            )
+        ]
+    )
+    torch.testing.assert_close(batched, scalar, rtol=2.0e-11, atol=1.0e-15)
+    pressure_residual = (model.pressure(temperature, batched, composition) - pressure) / pressure
+    assert pressure_residual.abs().max() < 1.0e-8
+    # At the cold state a pressure discontinuity changes sign near
+    # 10.9 kmol/m3; it is not a root. The admissible stable root is the
+    # lower-Gibbs liquid root near 33.6 kmol/m3.
+    torch.testing.assert_close(
+        batched[0].reciprocal(),
+        torch.tensor(33_596.7603953449, dtype=DTYPE),
+        rtol=2.0e-11,
+        atol=2.0e-7,
+    )
+
+
+@pytest.mark.parametrize("constructor", [gerg2008, gerg2008_hydrogen_2021])
+def test_gerg_batched_stable_subreducing_multiple_roots_match_scalar(constructor):
+    model = constructor(("methane", "hydrogen"))
+    temperature = torch.tensor(
+        [100.33351709028807, 61.08398971620922, 80.47340262213496, 82.23703959248205],
+        dtype=DTYPE,
+    )
+    pressure = (
+        torch.tensor(
+            [1.6402384884188868, 31.818839712354517, 50.08630196825132, 31.508474133469587],
+            dtype=DTYPE,
+        )
+        * 1.0e6
+    )
+    hydrogen = torch.tensor(
+        [0.3834694208197475, 0.5143382254152788, 0.17002802054457583, 0.17602746517778295],
+        dtype=DTYPE,
+    )
+    composition = torch.stack((1.0 - hydrogen, hydrogen), dim=-1)
+    batched = model.molar_volume(temperature, pressure, composition, "stable")
+    scalar = torch.stack(
+        [
+            model.molar_volume(current_temperature, current_pressure, current_x, "stable")
+            for current_temperature, current_pressure, current_x in zip(
+                temperature,
+                pressure,
+                composition,
+                strict=True,
+            )
+        ]
+    )
+    torch.testing.assert_close(batched, scalar, rtol=3.0e-11, atol=2.0e-15)
+    pressure_residual = (model.pressure(temperature, batched, composition) - pressure) / pressure
+    assert pressure_residual.abs().max() < 1.0e-8
+
+
+@pytest.mark.parametrize(
+    ("constructor", "names"),
+    [
+        (gerg2008_hydrogen_2021, ("carbon_dioxide", "hydrogen")),
+        (eoscg2021, ("carbon_dioxide", "water")),
+    ],
+)
+def test_multifluid_analytic_pressure_derivative_matches_autodiff(constructor, names):
+    model = constructor(names)
+    temperature = torch.tensor([310.0, 450.0], dtype=DTYPE)
+    density = torch.tensor([500.0, 12_000.0], dtype=DTYPE)
+    composition = torch.tensor([[0.8, 0.2], [0.3, 0.7]], dtype=DTYPE)
+    autodiff_derivative = torch.func.grad(
+        lambda current: model.alpha_residual(
+            temperature,
+            current,
+            composition,
+        ).sum()
+    )(density)
+    autodiff_pressure = (
+        model.gas_constant * temperature * density * (1.0 + density * autodiff_derivative)
+    )
+    analytic_pressure = model.pressure(
+        temperature,
+        density.reciprocal(),
+        composition,
+    )
+    torch.testing.assert_close(
+        analytic_pressure,
+        autodiff_pressure,
+        rtol=3.0e-13,
+        atol=2.0e-4,
     )
 
 
@@ -88,6 +380,9 @@ def test_bundled_inventory_guards(monkeypatch):
     monkeypatch.setattr(named, "_read_data", lambda filename: broken_eoscg)
     with pytest.raises(RuntimeError, match="EOS-CG-2021"):
         eoscg2021(("carbon_dioxide",))
+
+    with pytest.raises(named.ParameterDatabaseError, match="H2-tailored GERG"):
+        gerg2008_hydrogen_2021(parameter_set="multifluid.gerg-2008")
 
 
 def test_special_term_shape_validation_and_unknown_term():

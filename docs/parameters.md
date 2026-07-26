@@ -40,6 +40,7 @@ Published model sets are separate YAML documents under
 | `volume-translation.pedersen-2024` | Rackett-based SRK/PR light-component and ASTM-anchored C7+ translation coefficients |
 | `volume-translation.whitson-2000` | Whitson Tables 4.2-4.3 pure-component and heavy-family shift factors |
 | `multifluid.gerg-2008` | complete 21-component GERG-2008 inventory |
+| `multifluid.gerg-2008-hydrogen-2021` | five-component H2-tailored GERG model for CH4, N2, CO, CO2, and normal H2 |
 | `multifluid.eos-cg-2021` | complete 16-component EOS-CG-2021 inventory |
 | `standard-state.poling-2001` | ideal-gas heat-capacity polynomials |
 
@@ -52,7 +53,8 @@ The primary sources include
 [Yan et al. (2009)](https://doi.org/10.1016/j.fluid.2008.10.007),
 [Whitson and Brulé (2000)](https://books.google.com/books?id=Z4cQAQAAMAAJ),
 [Pedersen et al. (2024)](https://doi.org/10.1201/9780429457418),
-[Kunz and Wagner (2012)](https://doi.org/10.1021/je300655b), and
+[Kunz and Wagner (2012)](https://doi.org/10.1021/je300655b),
+[Beckmüller et al. (2021)](https://doi.org/10.1063/5.0040533), and
 [Neumann et al. (2023)](https://doi.org/10.1007/s10765-023-03263-6).
 Every YAML file carries its own source metadata.
 
