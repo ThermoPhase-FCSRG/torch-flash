@@ -3,6 +3,7 @@ from __future__ import annotations
 import csv
 from dataclasses import replace
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 import torch
@@ -523,6 +524,145 @@ def test_helmholtz_volume_vle_point_validates_inputs():
         )
 
 
+def test_helmholtz_volume_vle_pressure_matching_rejects_worse_density_step(
+    monkeypatch,
+    hydrogen_tailored_gerg_near_critical_initial,
+):
+    model, temperature, initial = hydrogen_tailored_gerg_near_critical_initial
+    pressure = torch.tensor(182.0e6, dtype=DTYPE)
+    density_correction_calls = 0
+
+    def rejected_density_correction(residual_function, variables, **options):
+        del options
+        nonlocal density_correction_calls
+        residual = residual_function(variables)
+        if variables.numel() == 1:
+            density_correction_calls += 1
+            residual_norm = residual.abs().max() + 1.0
+        else:
+            residual_norm = residual.abs().max()
+        return SimpleNamespace(
+            solution=variables,
+            residual=residual,
+            residual_norm=residual_norm,
+            iterations=1,
+            converged=False,
+        )
+
+    monkeypatch.setattr(envelope, "damped_newton", rejected_density_correction)
+    result = binary_helmholtz_vle_point(
+        model,
+        temperature,
+        pressure,
+        initial,
+    )
+    assert density_correction_calls == 2
+    assert not result.converged
+
+
+def test_helmholtz_volume_bubble_point_validates_inputs(
+    hydrogen_tailored_gerg_near_critical_initial,
+):
+    model, temperature, initial = hydrogen_tailored_gerg_near_critical_initial
+    liquid = initial.liquid_composition
+    with pytest.raises(TypeError, match="Helmholtz pressure method"):
+        binary_helmholtz_bubble_point(object(), temperature, liquid)
+    with pytest.raises(ValueError, match="two-component"):
+        binary_helmholtz_bubble_point(model, temperature, torch.tensor([0.2, 0.3, 0.5]))
+    with pytest.raises(ValueError, match="finite and positive"):
+        binary_helmholtz_bubble_point(model, temperature, torch.tensor([1.0, 0.0]))
+    with pytest.raises(ValueError, match="minimum binary bubble pressure"):
+        binary_helmholtz_bubble_point(
+            model,
+            temperature,
+            liquid,
+            minimum_pressure=torch.tensor([1.0e3], dtype=DTYPE),
+        )
+    with pytest.raises(ValueError, match="below maximum"):
+        binary_helmholtz_bubble_point(
+            model,
+            temperature,
+            liquid,
+            minimum_pressure=2.0e6,
+            maximum_pressure=1.0e6,
+        )
+    invalid_vapor = replace(
+        initial,
+        vapor_composition=torch.tensor([0.2, 0.3, 0.5], dtype=DTYPE),
+    )
+    with pytest.raises(ValueError, match="vapor composition"):
+        binary_helmholtz_bubble_point(
+            model,
+            temperature,
+            liquid,
+            initial_point=invalid_vapor,
+        )
+    invalid_volume = replace(
+        initial,
+        vapor_molar_volume=torch.tensor(torch.nan, dtype=DTYPE),
+    )
+    with pytest.raises(ValueError, match="molar volumes"):
+        binary_helmholtz_bubble_point(
+            model,
+            temperature,
+            liquid,
+            initial_point=invalid_volume,
+        )
+
+
+@pytest.mark.parametrize("accepted_bubble_points", [1, 2])
+def test_pressure_continuation_predictor_handles_short_or_repeated_history(
+    monkeypatch,
+    accepted_bubble_points,
+):
+    bubble_calls = 0
+    predicted_initials = []
+
+    def fake_bubble_point(model, temperature, liquid, **options):
+        del model, options
+        nonlocal bubble_calls
+        bubble_calls += 1
+        vapor = torch.stack((liquid[0] - 0.1, liquid[1] + 0.1))
+        converged = bubble_calls <= accepted_bubble_points
+        return BinaryBubblePointWithVolumes(
+            temperature,
+            liquid.new_tensor(1.0e6),
+            liquid,
+            vapor,
+            1,
+            converged,
+            liquid.new_tensor(1.0e-10 if converged else 1.0),
+            liquid.new_tensor(1.0e-4),
+            liquid.new_tensor(1.0e-3),
+        )
+
+    def fake_vle_point(model, temperature, pressure, initial_point, **options):
+        del model, options
+        predicted_initials.append(initial_point)
+        return replace(
+            initial_point,
+            temperature=temperature,
+            pressure=pressure,
+            converged=False,
+            residual_norm=pressure.new_tensor(1.0),
+        )
+
+    monkeypatch.setattr(envelope, "binary_helmholtz_bubble_point", fake_bubble_point)
+    monkeypatch.setattr(envelope, "binary_helmholtz_vle_point", fake_vle_point)
+    liquid_fraction = torch.linspace(0.2, 0.4, accepted_bubble_points + 1, dtype=DTYPE)
+    liquid = torch.stack((1.0 - liquid_fraction, liquid_fraction), dim=-1)
+    result = trace_binary_helmholtz_pxy_isotherm(
+        object(),
+        torch.tensor(100.0, dtype=DTYPE),
+        liquid,
+        maximum_pressure=2.0e6,
+        continue_in_pressure_on_failure=True,
+        pressure_continuation_points=1,
+    )
+    assert len(predicted_initials) == 1
+    assert result.converged.tolist() == [True] * accepted_bubble_points + [False, False]
+
+
 def test_high_level_pxy_isotherm_stops_on_failure_and_pressure_limit(monkeypatch):
     calls = 0
 
@@ -793,6 +933,37 @@ def test_fixed_composition_boundary_clips_midscan_pressure(monkeypatch):
     assert result.bubble_above_reporting_limit.tolist() == [True]
 
 
+def test_fixed_composition_boundary_clips_rejected_target_pressure(monkeypatch):
+    def rejected_bubble_point(model, temperature, liquid, **options):
+        del model, options
+        vapor = torch.stack((liquid[0] - 0.1, liquid[1] + 0.1))
+        return BinaryBubblePointWithVolumes(
+            temperature,
+            liquid.new_tensor(12.0e6),
+            liquid,
+            vapor,
+            1,
+            False,
+            liquid.new_tensor(1.0),
+            liquid.new_tensor(1.0e-4),
+            liquid.new_tensor(1.0e-3),
+        )
+
+    monkeypatch.setattr(envelope, "binary_helmholtz_bubble_point", rejected_bubble_point)
+    result = trace_binary_helmholtz_fixed_composition_boundary(
+        object(),
+        torch.tensor([100.0], dtype=DTYPE),
+        torch.tensor([0.5, 0.5], dtype=DTYPE),
+        reporting_pressure_limit=10.0e6,
+        maximum_pressure=15.0e6,
+        lean_scan_points=2,
+        rich_scan_points=2,
+    )
+    torch.testing.assert_close(result.bubble_pressure, torch.tensor([10.0e6], dtype=DTYPE))
+    assert result.bubble_above_reporting_limit.tolist() == [True]
+    assert result.bubble_converged.tolist() == [False]
+
+
 @pytest.mark.parametrize(
     ("temperature", "liquid", "options", "message"),
     [
@@ -915,6 +1086,12 @@ def test_trace_binary_helmholtz_pxy_isotherm_validates_high_level_inputs(
             torch.tensor([0.5, 0.5], dtype=DTYPE),
             {},
             "nonempty float vector",
+        ),
+        (
+            torch.tensor([torch.nan], dtype=DTYPE),
+            torch.tensor([0.5, 0.5], dtype=DTYPE),
+            {},
+            "finite and positive",
         ),
         (
             torch.tensor([100.0], dtype=DTYPE),
@@ -1185,6 +1362,21 @@ def test_special_term_shape_validation_and_unknown_term():
         named._append_regular_terms([], {"type": "unknown", "n": [1], "d": [1], "t": [1]})
     with pytest.raises(ValueError, match="unsupported ideal"):
         named._canonical_ideal_blocks([{"type": "unknown"}], 300.0)
+    with pytest.raises(named.ParameterDatabaseError, match="unsupported ideal Helmholtz"):
+        named._ideal_terms_gerg(
+            {
+                "gas_constant": 8.314,
+                "components": {
+                    "unsupported": {
+                        "critical_temperature": 300.0,
+                        "ideal": 3.14,
+                    }
+                },
+            },
+            ("unsupported",),
+            dtype=DTYPE,
+            device=None,
+        )
 
 
 def test_ideal_cp0_parser_covers_all_exponents():

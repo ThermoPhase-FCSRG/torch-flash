@@ -233,6 +233,26 @@ def test_multiparameter_residual_and_trainable_gradients():
     assert model.departure_n.grad is not None
 
 
+def test_multiparameter_analytic_reduced_density_derivative_matches_autodiff():
+    model = _model(residual=0.01)
+    temperature = torch.tensor(280.0, dtype=torch.float64)
+    density = torch.tensor(4_000.0, dtype=torch.float64)
+    composition = torch.tensor([0.35, 0.65], dtype=torch.float64)
+    _, reducing_density = model.reducing_functions(composition)
+    autodiff = (
+        torch.func.grad(
+            lambda current_density: model.alpha_residual(
+                temperature,
+                current_density,
+                composition,
+            )
+        )(density)
+        * reducing_density
+    )
+    analytic = model.alpha_residual_delta(temperature, density, composition)
+    torch.testing.assert_close(analytic, autodiff, rtol=2.0e-13, atol=1.0e-15)
+
+
 def test_multiparameter_gaussian_terms():
     shape = (2, 1)
     pure = HelmholtzTerms(
@@ -347,6 +367,31 @@ def test_multiparameter_batched_stable_liquid_and_scalar_fallbacks(monkeypatch):
     )
     torch.testing.assert_close(partial_fallback, expected, rtol=1.0e-10, atol=0.0)
     assert scalar_fallbacks == [320.0]
+
+
+def test_multiparameter_batched_stable_volume_falls_back_only_failed_states(monkeypatch):
+    model = _model()
+    temperatures = torch.tensor([300.0, 320.0], dtype=torch.float64)
+    pressures = torch.tensor([1.0e5, 2.0e5], dtype=torch.float64)
+    compositions = torch.tensor([[0.8, 0.2], [0.4, 0.6]], dtype=torch.float64)
+    expected = model.gas_constant * temperatures / pressures
+
+    def partial_phase_volume(
+        temperature,
+        pressure,
+        composition,
+        phase,
+        *,
+        return_convergence=False,
+    ):
+        del composition, phase
+        volumes = model.gas_constant * temperature / pressure
+        converged = torch.tensor([True, False], device=temperature.device)
+        return (volumes, converged) if return_convergence else volumes
+
+    monkeypatch.setattr(model, "_batched_phase_volume", partial_phase_volume)
+    stable = model._batched_stable_volume(temperatures, pressures, compositions)
+    torch.testing.assert_close(stable, expected, rtol=1.0e-10, atol=0.0)
 
 
 def test_multiparameter_nonfinite_scalar_newton_step_falls_back(monkeypatch):

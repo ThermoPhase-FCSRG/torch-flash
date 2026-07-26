@@ -7,6 +7,7 @@ from pathlib import Path
 import pytest
 import torch
 
+import torch_flash.envelope as envelope
 from torch_flash import (
     ChemicalState,
     batched_tangent_plane_stability,
@@ -984,6 +985,33 @@ def test_binary_bubble_temperature_recovers_isothermal_bubble_point(binary_model
     )
     assert not rejected.converged
     assert rejected.residual_norm < 1.0e-8
+
+
+def test_binary_bubble_temperature_uses_critical_weighted_wilson_fallback(
+    binary_model,
+    monkeypatch,
+):
+    composition = torch.tensor([0.5, 0.5], dtype=torch.float64)
+    reference = binary_bubble_point(
+        binary_model,
+        torch.tensor(270.0, dtype=torch.float64),
+        composition,
+    )
+    monkeypatch.setattr(
+        envelope,
+        "wilson_k_values",
+        lambda components, temperature, pressure: torch.full_like(
+            components.critical_temperature,
+            2.0,
+        ),
+    )
+    result = binary_bubble_temperature(
+        binary_model,
+        reference.pressure,
+        composition,
+        max_iterations=1,
+    )
+    assert torch.isfinite(result.temperature)
 
 
 @pytest.mark.parametrize(
