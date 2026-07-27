@@ -12,4 +12,4 @@ authors:
 repository-code: "https://github.com/ThermoPhase-FCSRG/torch-flash"
 url: "https://thermophase-fcsrg.github.io/torch-flash"
 license: LGPL-2.1-only
-version: 0.1.2
+version: 0.2.0

@@ -1,6 +1,6 @@
 [workspace]
 name = "torch-flash"
-version = "0.1.2"
+version = "0.2.0"
 description = "Differentiable phase-equilibrium flash calculations built on PyTorch"
 channels = ["conda-forge", "pytorch", "nvidia"]
 platforms = [
