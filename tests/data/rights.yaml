@@ -117,6 +117,26 @@ artifacts:
     status: not-cleared
     basis: Book Table 16.2 transcription plus generated ThermoPack columns.
     source: https://doi.org/10.1201/9780429457418
+  pedersen_2024_transport_gas_composition.csv:
+    status: not-cleared
+    basis: Book Table 10.10 transcription; reusable CSV redistribution permission not verified.
+    source: https://doi.org/10.1201/9780429457418
+  pedersen_2024_transport_gas_viscosity.csv:
+    status: not-cleared
+    basis: Book Table 10.11 transcription of the Kashefi et al. measurements; reusable CSV redistribution permission not verified.
+    source: https://doi.org/10.1016/j.petrol.2013.10.021
+  pedersen_2024_transport_heavy_oil5_composition.csv:
+    status: not-cleared
+    basis: Book Table 10.8 heavy-oil-5 transcription; reusable CSV redistribution permission not verified.
+    source: https://doi.org/10.1201/9780429457418
+  pedersen_2024_transport_heavy_oil5_viscosity.csv:
+    status: not-cleared
+    basis: Book Table 10.9 heavy-oil-5 transcription; reusable CSV redistribution permission not verified.
+    source: https://doi.org/10.1201/9780429457418
+  pedersen_2024_transport_thermal_conductivity.csv:
+    status: not-cleared
+    basis: Book Table 10.17 transcription of the Christensen and Fredenslund measurements; reusable CSV redistribution permission not verified.
+    source: https://doi.org/10.1021/je60083a034
   portier_rochelle_2005_utsira_brine_solubility.csv:
     status: not-cleared
     basis: Table 2 transcription; publisher redistribution permission not verified.

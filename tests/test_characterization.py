@@ -102,6 +102,40 @@ def test_pedersen_split_density_cubic_adapters_and_lumping():
     assert moved.carbon_numbers.dtype == torch.int64
 
 
+def test_pedersen_heavy_aromatic_c200_structured_regression(num_regression):
+    distribution = pedersen_logarithmic_split(
+        0.7934,
+        0.5302,
+        first_carbon_number=7,
+        parameter_set="pedersen-c200",
+    )
+    distribution = pedersen_density_split(
+        distribution,
+        1009.0,
+        parameter_set="pedersen-c200",
+    )
+    selected = torch.tensor([0, 73, 193])
+    srk = pedersen_cubic_properties(distribution, "SRK", "pedersen-c200")
+    pr = pedersen_cubic_properties(distribution, "PR", "pedersen-c200")
+    num_regression.check(
+        {
+            "carbon_number": distribution.carbon_numbers[selected].numpy(),
+            "mole_fraction": distribution.mole_fractions[selected].detach().numpy(),
+            "density_kg_m3": distribution.densities[selected].detach().numpy(),
+            "srk_critical_temperature_K": srk.critical_temperature[selected].detach().numpy(),
+            "srk_critical_pressure_Pa": srk.critical_pressure[selected].detach().numpy(),
+            "srk_acentric_factor": srk.acentric_factor[selected].detach().numpy(),
+            "pr_critical_temperature_K": pr.critical_temperature[selected].detach().numpy(),
+            "pr_critical_pressure_Pa": pr.critical_pressure[selected].detach().numpy(),
+            "pr_acentric_factor": pr.acentric_factor[selected].detach().numpy(),
+        },
+        basename="pedersen_heavy_aromatic_c200",
+        default_tolerance={"rtol": 1.0e-5, "atol": 0.0},
+    )
+    assert distribution.carbon_numbers[-1] == 200
+    assert pr.m[-1] < pr.m[-2]
+
+
 def test_whitson_gamma_distribution_preserves_moments_and_tail():
     distribution = whitson_gamma_split(
         0.041,
@@ -774,5 +808,31 @@ def test_pedersen_cubic_adapter_payload_errors():
                 "test",
                 "1",
                 negative_discriminant,
+            ),
+        )
+
+    heavy = load_model_parameters("pedersen-c200").as_dict()
+    bad_threshold = deepcopy(heavy)
+    bad_threshold["cubic_properties"]["PR"]["inverse_mass_m_threshold"] = -1.0
+    heavy_distribution = pedersen_density_split(
+        pedersen_logarithmic_split(
+            0.5,
+            0.53,
+            first_carbon_number=7,
+            parameter_set="pedersen-c200",
+        ),
+        1009.0,
+        parameter_set="pedersen-c200",
+    )
+    with pytest.raises(ParameterDatabaseError, match="inverse_mass_m_threshold"):
+        pedersen_cubic_properties(
+            heavy_distribution,
+            "PR",
+            ModelParameterSet(
+                "bad.threshold",
+                "characterization",
+                "test",
+                "1",
+                bad_threshold,
             ),
         )
