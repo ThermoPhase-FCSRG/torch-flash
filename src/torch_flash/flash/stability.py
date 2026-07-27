@@ -9,7 +9,7 @@ doi:10.1016/0378-3812(82)85001-2.
 
 from __future__ import annotations
 
-from typing import cast
+from typing import Literal, cast
 
 import torch
 from torch import Tensor
@@ -17,6 +17,7 @@ from torch import Tensor
 from torch_flash.components import ComponentSet
 from torch_flash.initialization import wilson_k_values
 from torch_flash.properties.state import StateModel
+from torch_flash.solvers import minimize_dense_trust_region
 from torch_flash.types import ChemicalState, PhaseKind, StabilityResult
 
 
@@ -88,6 +89,7 @@ def tangent_plane_stability(
     initial_compositions: tuple[Tensor, ...] | None = None,
     tolerance: float = 1.0e-9,
     max_iterations: int = 40,
+    minimizer: Literal["line-search-newton", "trust-region"] = "line-search-newton",
 ) -> StabilityResult:
     """Assess local phase stability by minimizing tangent-plane distance.
 
@@ -117,6 +119,11 @@ def tangent_plane_stability(
         The stability decision allows a numerical margin of ``10 * tolerance``.
     max_iterations
         Maximum Newton/globalization iterations for each starting point.
+    minimizer
+        Local TPD minimizer. ``"line-search-newton"`` preserves the default
+        damped Newton path. ``"trust-region"`` uses the exact dense
+        More-Sorensen restricted step of Petitfrere and Nichita (2014),
+        sections 3.1-3.4, doi:10.1016/j.fluid.2013.08.039.
 
     Returns
     -------
@@ -137,6 +144,8 @@ def tangent_plane_stability(
     """
     if state.composition.ndim != 1:
         raise ValueError("stability analysis currently accepts one composition vector")
+    if minimizer not in ("line-search-newton", "trust-region"):
+        raise ValueError("unknown tangent-plane local minimizer")
     z = state.composition
     log_phi_z = model.log_fugacity_coefficients(
         state.temperature, state.pressure, z, reference_phase
@@ -168,28 +177,78 @@ def tangent_plane_stability(
     best_converged = False
     for initial_composition in initial_compositions:
         trial = torch.clamp_min(initial_composition, 1.0e-16)
-        trial = trial / trial.sum()
-        coordinates = torch.log(trial[:-1]) - torch.log(trial[-1])
 
-        def objective(q: Tensor) -> Tensor:
-            w = _independent_softmax(q)
-            # Stable-root trial evaluation catches both vapor- and liquid-like minima.
-            log_phi = model.log_fugacity_coefficients(
-                state.temperature, state.pressure, w, "stable"
-            )
-            return torch.sum(
-                w * (torch.log(torch.clamp_min(w, torch.finfo(w.dtype).tiny)) + log_phi - d)
-            )
+        if minimizer == "trust-region":
+            # Petitfrere and Nichita equations (1)-(5) use positive formal
+            # mole numbers directly. Their scale is part of the modified TPD
+            # objective and must not be normalized before minimization.
+            def formal_objective(formal_moles: Tensor) -> Tensor:
+                total = formal_moles.sum()
+                w = formal_moles / total
+                log_phi = model.log_fugacity_coefficients(
+                    state.temperature,
+                    state.pressure,
+                    w,
+                    "stable",
+                )
+                return (
+                    1.0 - total + torch.sum(formal_moles * (torch.log(formal_moles) + log_phi - d))
+                )
 
-        q, value, iterations, converged = _newton_minimize(
-            objective,
-            coordinates,
-            tolerance=tolerance,
-            max_iterations=max_iterations,
-        )
+            coordinates = trial
+            initial_radius = torch.clamp(
+                torch.linalg.vector_norm(coordinates.detach()) / 10.0,
+                min=1.0e-3,
+                max=0.1,
+            )
+            trust_result = minimize_dense_trust_region(
+                formal_objective,
+                coordinates,
+                is_feasible=lambda formal_moles: bool(
+                    (
+                        torch.isfinite(formal_moles)
+                        & (formal_moles > torch.finfo(formal_moles.dtype).tiny)
+                    )
+                    .detach()
+                    .all()
+                ),
+                initial_radius=initial_radius,
+                maximum_radius=torch.maximum(
+                    10.0 * initial_radius,
+                    initial_radius.new_tensor(1.0),
+                ),
+                gradient_tolerance=tolerance,
+                max_iterations=max_iterations,
+            )
+            q = trust_result.solution
+            value = trust_result.objective
+            iterations = trust_result.iterations
+            converged = trust_result.converged
+            composition = q / q.sum()
+        else:
+            trial = trial / trial.sum()
+            coordinates = torch.log(trial[:-1]) - torch.log(trial[-1])
+
+            def composition_objective(q: Tensor) -> Tensor:
+                w = _independent_softmax(q)
+                # Stable-root trial evaluation catches both vapor- and liquid-like minima.
+                log_phi = model.log_fugacity_coefficients(
+                    state.temperature, state.pressure, w, "stable"
+                )
+                return torch.sum(
+                    w * (torch.log(torch.clamp_min(w, torch.finfo(w.dtype).tiny)) + log_phi - d)
+                )
+
+            q, value, iterations, converged = _newton_minimize(
+                composition_objective,
+                coordinates,
+                tolerance=tolerance,
+                max_iterations=max_iterations,
+            )
+            composition = _independent_softmax(q)
         if float(value) < float(best_value):
             best_value = value
-            best_composition = _independent_softmax(q)
+            best_composition = composition
             best_iterations = iterations
             best_converged = converged
 

@@ -7,6 +7,7 @@ Mollerup, *Thermodynamic Models: Fundamentals & Computational Aspects*,
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from dataclasses import dataclass, replace
 from typing import Literal, cast
 
@@ -14,12 +15,19 @@ import torch
 from torch import Tensor
 
 from torch_flash.components import ComponentSet
+from torch_flash.exceptions import InvalidStateError
+from torch_flash.flash.grid import (
+    solve_batched_binary_three_phase_invariants,
+    solve_binary_three_phase_invariant,
+)
 from torch_flash.initialization import wilson_k_values
 from torch_flash.properties.state import HelmholtzStateModel, StateModel
-from torch_flash.solvers import damped_newton
+from torch_flash.solvers import batched_damped_newton, damped_newton
 from torch_flash.types import PhaseKind, normalize_composition
 
 SaturationKind = Literal["bubble", "dew"]
+PhaseBoundaryKind = Literal["liquid-liquid", "liquid-vapor", "liquid-liquid-vapor"]
+ThreePhaseSolver = Literal["newton", "newton-trust-region"]
 
 
 @dataclass(frozen=True)
@@ -54,6 +62,180 @@ class SaturationPoint:
     iterations: int
     converged: bool
     residual_norm: Tensor
+
+
+@dataclass(frozen=True)
+class PhaseTransitionPoint:
+    """One locally solved incipient-phase pressure at specified ``T`` and feed.
+
+    Attributes
+    ----------
+    temperature
+        Specified absolute temperature in K.
+    pressure
+        Solved transition pressure in Pa.
+    parent_composition
+        Specified normalized composition of the disappearing parent phase.
+    incipient_composition
+        Solved normalized composition of the emerging phase.
+    phase_kinds
+        Algebraic EoS roots requested for the parent and incipient phases.
+    iterations
+        Number of damped-Newton iterations performed.
+    converged
+        Whether both the fugacity residual and requested phase separation
+        passed.
+    residual_norm
+        Maximum absolute dimensionless log-fugacity residual.
+    phase_separation
+        Maximum absolute component mole-fraction difference between phases.
+    """
+
+    temperature: Tensor
+    pressure: Tensor
+    parent_composition: Tensor
+    incipient_composition: Tensor
+    phase_kinds: tuple[PhaseKind, PhaseKind]
+    iterations: int
+    converged: bool
+    residual_norm: Tensor
+    phase_separation: Tensor
+
+
+@dataclass(frozen=True)
+class PhaseTransitionBatch:
+    """Independent local transition-pressure solutions in one tensor batch.
+
+    Attributes
+    ----------
+    temperature
+        Absolute temperatures with shape ``(batch,)`` in K.
+    pressure
+        Solved transition pressures with shape ``(batch,)`` in Pa.
+    parent_composition, incipient_composition
+        Normalized compositions with shape ``(batch, components)``.
+    phase_kinds
+        Common algebraic EoS roots for the parent and incipient phases.
+    iterations
+        Per-state damped-Newton iteration counts with shape ``(batch,)``.
+    solver_converged
+        Per-state fugacity-residual convergence flags.
+    converged
+        Per-state flags requiring both fugacity convergence and the requested
+        minimum phase separation.
+    residual_norm
+        Per-state maximum dimensionless log-fugacity residual.
+    phase_separation
+        Per-state maximum absolute component-composition difference.
+    """
+
+    temperature: Tensor
+    pressure: Tensor
+    parent_composition: Tensor
+    incipient_composition: Tensor
+    phase_kinds: tuple[PhaseKind, PhaseKind]
+    iterations: Tensor
+    solver_converged: Tensor
+    converged: Tensor
+    residual_norm: Tensor
+    phase_separation: Tensor
+
+
+@dataclass(frozen=True)
+class PhaseTransitionState:
+    """One reference state for a local phase-transition calculation.
+
+    Attributes
+    ----------
+    temperature
+        Scalar absolute temperature in K.
+    reference_pressure
+        Positive scalar pressure in Pa used to initialize and, when multiple
+        disconnected roots are found, identify the corresponding local branch.
+    parent_composition
+        Strictly positive parent/overall composition vector.
+    boundary_kind
+        ``"liquid-vapor"``, ``"liquid-liquid"``, or
+        ``"liquid-liquid-vapor"``.
+    minimum_pressure, maximum_pressure
+        Optional positive scalar pressure bounds in Pa. If omitted, the
+        evaluator uses one quarter and four times ``reference_pressure``,
+        clipped to 0.2 and 80 MPa.
+    initial_incipient_compositions
+        Optional two-phase incipient-composition starts. Generic Wilson,
+        uniform, and component-rich starts are used when empty.
+    initial_three_phase_compositions
+        Optional binary three-phase starts with shape ``(3, 2)``. Generic
+        separated liquid-liquid-vapor starts are used when empty.
+    """
+
+    temperature: Tensor
+    reference_pressure: Tensor
+    parent_composition: Tensor
+    boundary_kind: PhaseBoundaryKind
+    minimum_pressure: Tensor | float | None = None
+    maximum_pressure: Tensor | float | None = None
+    initial_incipient_compositions: tuple[Tensor, ...] = ()
+    initial_three_phase_compositions: tuple[Tensor, ...] = ()
+
+
+@dataclass(frozen=True)
+class PhaseTransitionEvaluation:
+    """Selected physical result for one :class:`PhaseTransitionState`.
+
+    Attributes
+    ----------
+    state
+        Reference state and branch specification.
+    pressure
+        Selected calculated transition pressure in Pa, or NaN if no candidate
+        produced a finite pressure.
+    phase_compositions
+        Selected incipient composition with shape ``(1, n)`` for a two-phase
+        boundary, or all three sorted binary compositions with shape
+        ``(3, 2)`` for a three-phase invariant.
+    residual_norm
+        Maximum absolute dimensionless log-fugacity mismatch.
+    phase_separation
+        Maximum two-phase component difference or minimum adjacent binary
+        three-phase composition difference.
+    iterations
+        Nonlinear iterations reported by the selected candidate.
+    solver_converged
+        Whether fugacity equations converged before the phase-separation gate.
+    converged
+        Whether fugacity and physical phase-separation gates both passed.
+    solver
+        Nonlinear method that produced the selected candidate.
+    """
+
+    state: PhaseTransitionState
+    pressure: Tensor
+    phase_compositions: Tensor
+    residual_norm: Tensor
+    phase_separation: Tensor
+    iterations: int
+    solver_converged: bool
+    converged: bool
+    solver: Literal["newton", "trust-region"] = "newton"
+
+
+@dataclass(frozen=True)
+class PhaseEnvelopeSet:
+    """Fixed-composition vapor-liquid and liquid-liquid phase boundaries.
+
+    Attributes
+    ----------
+    vapor_liquid
+        Bubble and dew branches on the requested vapor-liquid temperature
+        sequence. Failed points remain explicit.
+    liquid_liquid
+        Independently continued liquid-liquid branches, each ordered by
+        increasing temperature and retaining explicit failed points.
+    """
+
+    vapor_liquid: dict[SaturationKind, tuple[SaturationPoint, ...]]
+    liquid_liquid: tuple[tuple[PhaseTransitionPoint, ...], ...]
 
 
 @dataclass(frozen=True)
@@ -593,6 +775,1253 @@ def saturation_point(
     )
 
 
+def phase_transition_pressure(
+    model: StateModel,
+    temperature: Tensor,
+    parent_composition: Tensor,
+    *,
+    phase_kinds: tuple[PhaseKind, PhaseKind] = ("liquid", "vapor"),
+    initial_pressure: Tensor | None = None,
+    initial_incipient_composition: Tensor | None = None,
+    minimum_pressure: Tensor | float | None = None,
+    maximum_pressure: Tensor | float | None = None,
+    minimum_phase_separation: float = 1.0e-6,
+    tolerance: float = 1.0e-8,
+    max_iterations: int = 40,
+) -> PhaseTransitionPoint:
+    """Solve a local incipient-phase pressure at specified ``T`` and composition.
+
+    Parameters
+    ----------
+    model
+        Homogeneous-state fugacity model.
+    temperature
+        Scalar absolute temperature in K.
+    parent_composition
+        Strictly positive parent-phase mole fractions. At an incipient
+        transition this equals the specified overall composition.
+    phase_kinds
+        Algebraic EoS roots for the parent and incipient phases. Use
+        ``("liquid", "vapor")`` for an L-V boundary or
+        ``("liquid", "liquid")`` for an L-L boundary.
+    initial_pressure
+        Positive pressure estimate in Pa. It is required unless
+        ``phase_kinds`` is liquid-vapor or vapor-liquid and the model exposes
+        finite critical constants for Wilson initialization.
+    initial_incipient_composition
+        Strictly positive incipient-phase composition estimate. It is required
+        when both phases request the same root because the homogeneous
+        composition is also an algebraic solution.
+    minimum_pressure, maximum_pressure
+        Optional positive pressure bounds in Pa. Bounds are important when
+        disconnected L-L branches exist.
+    minimum_phase_separation
+        Minimum maximum-component mole-fraction difference required to accept
+        the result as two distinct phases.
+    tolerance
+        Maximum absolute dimensionless log-fugacity residual.
+    max_iterations
+        Maximum damped-Newton iterations.
+
+    Returns
+    -------
+    PhaseTransitionPoint
+        Pressure, incipient composition, roots, and explicit residual,
+        iteration, convergence, and phase-separation diagnostics.
+
+    Raises
+    ------
+    ValueError
+        If a state, root, initialization, bound, or numerical control is
+        invalid.
+
+    Notes
+    -----
+    The formulation follows the isofugacity and incipient-phase equations in
+    Michelsen and Mollerup, *Thermodynamic Models: Fundamentals &
+    Computational Aspects*, 2nd ed. (2007), chapter 12,
+    ISBN 978-87-989961-3-2. The first ``n-1`` unknowns are incipient-phase
+    composition logits and the final unknown is logarithmic pressure.
+
+    This is a local branch calculation, not a stability proof or automatic
+    phase-topology search. Initial estimates and pressure bounds select among
+    disconnected roots. A residual-converged homogeneous solution is returned
+    with ``converged=False`` when it fails ``minimum_phase_separation``.
+    """
+    if temperature.ndim != 0 or not bool(torch.isfinite(temperature) & (temperature > 0.0)):
+        raise ValueError("phase-transition temperature must be one finite positive scalar")
+    if tolerance <= 0.0 or max_iterations <= 0:
+        raise ValueError("phase-transition tolerance and max_iterations must be positive")
+    if minimum_phase_separation < 0.0:
+        raise ValueError("minimum phase separation must be nonnegative")
+    if any(kind not in ("liquid", "vapor", "stable") for kind in phase_kinds):
+        raise ValueError("phase kinds must be 'liquid', 'vapor', or 'stable'")
+
+    parent = normalize_composition(parent_composition)
+    if parent.ndim != 1 or parent.numel() < 2:
+        raise ValueError("phase transition requires one multicomponent composition vector")
+    if not bool(torch.isfinite(parent).all() & (parent > 0.0).all()):
+        raise ValueError("parent-phase composition must be finite and strictly positive")
+
+    components = _components_from_model(model)
+    reference_pressure = torch.ones((), dtype=parent.dtype, device=parent.device)
+    volatility: Tensor | None = None
+    if phase_kinds in (("liquid", "vapor"), ("vapor", "liquid")):
+        if not bool(
+            torch.isfinite(components.critical_temperature).all()
+            & torch.isfinite(components.critical_pressure).all()
+            & torch.isfinite(components.acentric_factor).all()
+        ):
+            if initial_pressure is None or initial_incipient_composition is None:
+                raise ValueError(
+                    "phase transition needs finite critical constants or explicit "
+                    "pressure and composition estimates"
+                )
+        else:
+            volatility = wilson_k_values(components, temperature, reference_pressure)
+
+    if initial_pressure is None:
+        if volatility is None:
+            raise ValueError(
+                "initial pressure is required unless Wilson liquid-vapor initialization applies"
+            )
+        initial_pressure = (
+            torch.sum(parent * volatility)
+            if phase_kinds == ("liquid", "vapor")
+            else 1.0 / torch.sum(parent / volatility)
+        )
+    initial_pressure = torch.as_tensor(
+        initial_pressure,
+        dtype=parent.dtype,
+        device=parent.device,
+    )
+    if initial_pressure.ndim != 0 or not bool(
+        torch.isfinite(initial_pressure) & (initial_pressure > 0.0)
+    ):
+        raise ValueError("initial phase-transition pressure must be one finite positive scalar")
+
+    if initial_incipient_composition is None:
+        if volatility is None:
+            raise ValueError(
+                "initial incipient composition is required for same-root phase transitions"
+            )
+        initial_incipient = normalize_composition(
+            parent * volatility if phase_kinds == ("liquid", "vapor") else parent / volatility
+        )
+    else:
+        initial_incipient = normalize_composition(
+            initial_incipient_composition.to(dtype=parent.dtype, device=parent.device)
+        )
+    if initial_incipient.shape != parent.shape or not bool(
+        torch.isfinite(initial_incipient).all() & (initial_incipient > 0.0).all()
+    ):
+        raise ValueError(
+            "initial incipient composition must match the finite positive parent composition"
+        )
+
+    def pressure_bound(value: Tensor | float | None, name: str) -> Tensor:
+        if value is None:
+            return parent.new_tensor(-torch.inf if name == "minimum" else torch.inf)
+        result = torch.as_tensor(value, dtype=parent.dtype, device=parent.device)
+        if result.ndim != 0 or not bool(torch.isfinite(result) & (result > 0.0)):
+            raise ValueError(f"{name} phase-transition pressure must be one finite positive scalar")
+        return torch.log(result)
+
+    minimum_log_pressure = pressure_bound(minimum_pressure, "minimum")
+    maximum_log_pressure = pressure_bound(maximum_pressure, "maximum")
+    if not bool(minimum_log_pressure < maximum_log_pressure):
+        raise ValueError("minimum phase-transition pressure must be below maximum pressure")
+
+    def composition_logits(composition: Tensor) -> Tensor:
+        return torch.log(composition[:-1]) - torch.log(composition[-1])
+
+    def composition_from_logits(logits: Tensor) -> Tensor:
+        return torch.softmax(torch.cat((logits, logits.new_zeros(1))), dim=0)
+
+    variables = torch.cat(
+        (
+            composition_logits(initial_incipient),
+            torch.log(initial_pressure).reshape(1),
+        )
+    )
+    lower_bound = torch.cat(
+        (
+            torch.full_like(variables[:-1], -30.0),
+            minimum_log_pressure.reshape(1),
+        )
+    )
+    upper_bound = torch.cat(
+        (
+            torch.full_like(variables[:-1], 30.0),
+            maximum_log_pressure.reshape(1),
+        )
+    )
+
+    def residual(current: Tensor) -> Tensor:
+        incipient = composition_from_logits(current[:-1])
+        pressure = torch.exp(current[-1])
+        parent_log_phi = model.log_fugacity_coefficients(
+            temperature,
+            pressure,
+            parent,
+            phase_kinds[0],
+        )
+        incipient_log_phi = model.log_fugacity_coefficients(
+            temperature,
+            pressure,
+            incipient,
+            phase_kinds[1],
+        )
+        return torch.log(parent) + parent_log_phi - torch.log(incipient) - incipient_log_phi
+
+    result = damped_newton(
+        residual,
+        variables,
+        tolerance=tolerance,
+        max_iterations=max_iterations,
+        lower_bound=lower_bound,
+        upper_bound=upper_bound,
+    )
+    incipient = composition_from_logits(result.solution[:-1])
+    separation = torch.max(torch.abs(incipient - parent))
+    return PhaseTransitionPoint(
+        temperature,
+        torch.exp(result.solution[-1]),
+        parent,
+        incipient,
+        phase_kinds,
+        result.iterations,
+        result.converged and bool(separation.detach() > minimum_phase_separation),
+        result.residual_norm,
+        separation,
+    )
+
+
+def solve_batched_phase_transition_pressures(
+    model: StateModel,
+    temperature: Tensor,
+    parent_composition: Tensor,
+    *,
+    phase_kinds: tuple[PhaseKind, PhaseKind],
+    initial_pressure: Tensor,
+    initial_incipient_composition: Tensor,
+    minimum_pressure: Tensor | float | None = None,
+    maximum_pressure: Tensor | float | None = None,
+    minimum_phase_separation: float = 1.0e-6,
+    tolerance: float = 1.0e-8,
+    max_iterations: int = 40,
+) -> PhaseTransitionBatch:
+    """Solve independent local transition pressures in one PyTorch batch.
+
+    Parameters
+    ----------
+    model
+        Homogeneous-state fugacity model shared by every state.
+    temperature
+        Absolute temperatures with shape ``(batch,)`` in K.
+    parent_composition
+        Strictly positive parent-phase mole fractions with shape
+        ``(batch, components)``.
+    phase_kinds
+        Common algebraic roots for parent and incipient phases. Batch
+        liquid-vapor and liquid-liquid states separately.
+    initial_pressure
+        Positive branch pressure estimates with shape ``(batch,)`` in Pa.
+    initial_incipient_composition
+        Strictly positive branch composition estimates with shape
+        ``(batch, components)``.
+    minimum_pressure, maximum_pressure
+        Optional positive scalar or ``(batch,)`` pressure bounds in Pa.
+    minimum_phase_separation
+        Minimum maximum-component mole-fraction difference required for a
+        physical two-phase result.
+    tolerance
+        Maximum per-state dimensionless log-fugacity residual.
+    max_iterations
+        Maximum batched damped-Newton iterations.
+
+    Returns
+    -------
+    PhaseTransitionBatch
+        Pressures, phase compositions, and explicit per-state diagnostics.
+
+    Raises
+    ------
+    ValueError
+        If tensor shapes, states, roots, bounds, or numerical controls are
+        invalid.
+
+    Notes
+    -----
+    This is the batched form of :func:`phase_transition_pressure`. It solves
+    the same local isofugacity equations and preserves gradients through every
+    state. All states execute together in one tensor batch; they do not share
+    material balance or alter one another's branch seed.
+    """
+    if temperature.ndim != 1 or temperature.numel() == 0:
+        raise ValueError("batched phase-transition temperature must have shape (batch,)")
+    if parent_composition.ndim != 2 or parent_composition.shape[0] != temperature.shape[0]:
+        raise ValueError("batched parent composition must have shape (batch, components)")
+    if parent_composition.shape[1] < 2:
+        raise ValueError("batched phase transitions require at least two components")
+    if any(kind not in ("liquid", "vapor", "stable") for kind in phase_kinds):
+        raise ValueError("phase kinds must be 'liquid', 'vapor', or 'stable'")
+    if tolerance <= 0.0 or max_iterations <= 0 or minimum_phase_separation < 0.0:
+        raise ValueError("batched phase-transition controls are invalid")
+
+    parent = normalize_composition(parent_composition)
+    initial_incipient = normalize_composition(
+        initial_incipient_composition.to(
+            dtype=parent.dtype,
+            device=parent.device,
+        )
+    )
+    temperature = temperature.to(dtype=parent.dtype, device=parent.device)
+    initial_pressure = initial_pressure.to(dtype=parent.dtype, device=parent.device)
+    if (
+        initial_incipient.shape != parent.shape
+        or initial_pressure.shape != temperature.shape
+        or not bool(
+            torch.isfinite(temperature).all()
+            & (temperature > 0.0).all()
+            & torch.isfinite(parent).all()
+            & (parent > 0.0).all()
+            & torch.isfinite(initial_incipient).all()
+            & (initial_incipient > 0.0).all()
+            & torch.isfinite(initial_pressure).all()
+            & (initial_pressure > 0.0).all()
+        )
+    ):
+        raise ValueError("batched phase-transition states must be finite and positive")
+
+    def pressure_bound(
+        value: Tensor | float | None,
+        *,
+        lower: bool,
+    ) -> Tensor:
+        if value is None:
+            fill = -torch.inf if lower else torch.inf
+            return parent.new_full(temperature.shape, fill)
+        result = torch.as_tensor(value, dtype=parent.dtype, device=parent.device)
+        try:
+            result = torch.broadcast_to(result, temperature.shape)
+        except RuntimeError as error:
+            raise ValueError("batched transition pressure bound is not broadcastable") from error
+        if not bool(torch.isfinite(result).all() & (result > 0.0).all()):
+            raise ValueError("batched transition pressure bounds must be finite and positive")
+        return torch.log(result)
+
+    minimum_log_pressure = pressure_bound(minimum_pressure, lower=True)
+    maximum_log_pressure = pressure_bound(maximum_pressure, lower=False)
+    if not bool((minimum_log_pressure < maximum_log_pressure).all()):
+        raise ValueError("minimum transition pressures must be below maximum pressures")
+
+    initial_logits = torch.log(initial_incipient[:, :-1]) - torch.log(initial_incipient[:, -1:])
+    variables = torch.cat(
+        (initial_logits, torch.log(initial_pressure).unsqueeze(-1)),
+        dim=-1,
+    )
+    lower_bound = torch.cat(
+        (
+            torch.full_like(initial_logits, -30.0),
+            minimum_log_pressure.unsqueeze(-1),
+        ),
+        dim=-1,
+    )
+    upper_bound = torch.cat(
+        (
+            torch.full_like(initial_logits, 30.0),
+            maximum_log_pressure.unsqueeze(-1),
+        ),
+        dim=-1,
+    )
+
+    def residual(
+        current: Tensor,
+        state_temperature: Tensor,
+        state_parent: Tensor,
+    ) -> Tensor:
+        incipient = torch.softmax(
+            torch.cat(
+                (
+                    current[:, :-1],
+                    current.new_zeros((current.shape[0], 1)),
+                ),
+                dim=-1,
+            ),
+            dim=-1,
+        )
+        pressure = torch.exp(current[:, -1])
+        parent_log_phi = model.log_fugacity_coefficients(
+            state_temperature,
+            pressure,
+            state_parent,
+            phase_kinds[0],
+        )
+        incipient_log_phi = model.log_fugacity_coefficients(
+            state_temperature,
+            pressure,
+            incipient,
+            phase_kinds[1],
+        )
+        return torch.log(state_parent) + parent_log_phi - torch.log(incipient) - incipient_log_phi
+
+    result = batched_damped_newton(
+        residual,
+        variables,
+        temperature,
+        parent,
+        tolerance=tolerance,
+        max_iterations=max_iterations,
+        lower_bound=lower_bound,
+        upper_bound=upper_bound,
+    )
+    incipient = torch.softmax(
+        torch.cat(
+            (
+                result.solution[:, :-1],
+                result.solution.new_zeros((result.solution.shape[0], 1)),
+            ),
+            dim=-1,
+        ),
+        dim=-1,
+    )
+    separation = torch.abs(incipient - parent).amax(dim=-1)
+    physical = result.converged & (separation > minimum_phase_separation)
+    return PhaseTransitionBatch(
+        temperature,
+        torch.exp(result.solution[:, -1]),
+        parent,
+        incipient,
+        phase_kinds,
+        result.iterations,
+        result.converged,
+        physical,
+        result.residual_norm,
+        separation,
+    )
+
+
+def _default_two_phase_starts(state: PhaseTransitionState) -> tuple[Tensor | None, ...]:
+    parent = normalize_composition(state.parent_composition)
+    starts: list[Tensor | None] = []
+    if state.initial_incipient_compositions:
+        starts.extend(state.initial_incipient_compositions)
+        return tuple(starts)
+    if state.boundary_kind == "liquid-vapor":
+        starts.append(None)
+    if state.boundary_kind == "liquid-liquid" and parent.numel() == 2:
+        starts.extend(
+            parent.new_tensor((fraction, 1.0 - fraction))
+            for fraction in (0.01, 0.20, 0.50, 0.80, 0.99)
+        )
+        return tuple(starts)
+    starts.append(torch.full_like(parent, 1.0 / parent.numel()))
+    for component_index in range(parent.numel()):
+        rich = torch.full_like(parent, 0.03 / (parent.numel() - 1))
+        rich[component_index] = 0.97
+        starts.append(rich)
+    return tuple(starts)
+
+
+def _default_three_phase_starts(state: PhaseTransitionState) -> tuple[Tensor, ...]:
+    if state.initial_three_phase_compositions:
+        return state.initial_three_phase_compositions
+    reference = state.parent_composition
+    return (
+        reference.new_tensor(((0.85, 0.15), (0.99, 0.01), (0.99999, 0.00001))),
+        reference.new_tensor(((0.82, 0.18), (0.98, 0.02), (0.9999, 0.0001))),
+        reference.new_tensor(((0.75, 0.25), (0.98, 0.02), (0.99999, 0.00001))),
+        reference.new_tensor(((0.02, 0.98), (0.70, 0.30), (0.999, 0.001))),
+        reference.new_tensor(((0.10, 0.90), (0.90, 0.10), (0.995, 0.005))),
+        reference.new_tensor(((0.25, 0.75), (0.75, 0.25), (0.999, 0.001))),
+    )
+
+
+def _trust_region_three_phase_candidates(
+    model: StateModel,
+    state: PhaseTransitionState,
+    candidates: Sequence[PhaseTransitionEvaluation],
+    *,
+    tolerance: float,
+    max_iterations: int,
+    minimum_phase_separation: float,
+) -> tuple[PhaseTransitionEvaluation, ...]:
+    """Polish or recover one binary invariant with the dense trust region."""
+    physical_newton = tuple(candidate for candidate in candidates if candidate.converged)
+    starts = (
+        (
+            min(
+                physical_newton,
+                key=lambda candidate: abs(
+                    float(torch.log(candidate.pressure.detach() / state.reference_pressure))
+                ),
+            ).phase_compositions,
+        )
+        if physical_newton
+        else _default_three_phase_starts(state)
+    )
+    recovered = []
+    for start in starts:
+        try:
+            result = solve_binary_three_phase_invariant(
+                model,
+                state.temperature,
+                state.reference_pressure,
+                start,
+                tolerance=tolerance,
+                max_iterations=max(100, max_iterations),
+                method="trust-region",
+            )
+        except (InvalidStateError, RuntimeError, torch.linalg.LinAlgError):
+            continue
+        separation = torch.diff(result.phase_compositions[:, 0]).abs().min()
+        physical = bool(
+            result.converged
+            and result.residual_norm <= tolerance
+            and separation > minimum_phase_separation
+        )
+        recovered.append(
+            PhaseTransitionEvaluation(
+                state,
+                result.pressure,
+                result.phase_compositions,
+                result.residual_norm,
+                separation,
+                result.iterations,
+                result.converged,
+                physical,
+                "trust-region",
+            )
+        )
+        if physical:
+            break
+    return tuple(recovered)
+
+
+def _batched_trust_region_three_phase_candidates(
+    model: StateModel,
+    states: Sequence[PhaseTransitionState],
+    state_indices: Sequence[int],
+    candidate_groups: Sequence[list[PhaseTransitionEvaluation]],
+    *,
+    tolerance: float,
+    max_iterations: int,
+    minimum_phase_separation: float,
+) -> None:
+    """Polish or recover binary invariants with vectorized exact Hessians."""
+    preferred_starts: dict[int, Tensor] = {}
+    for state_index in state_indices:
+        physical_newton = tuple(
+            candidate for candidate in candidate_groups[state_index] if candidate.converged
+        )
+        if physical_newton:
+            preferred_starts[state_index] = min(
+                physical_newton,
+                key=lambda candidate: abs(
+                    float(
+                        torch.log(
+                            candidate.pressure.detach() / states[state_index].reference_pressure
+                        )
+                    )
+                ),
+            ).phase_compositions
+        else:
+            preferred_starts[state_index] = _default_three_phase_starts(states[state_index])[0]
+
+    remaining = list(state_indices)
+    maximum_recovery_starts = max(
+        len(_default_three_phase_starts(states[index])) for index in state_indices
+    )
+    for recovery_index in range(maximum_recovery_starts + 1):
+        if not remaining:
+            break
+        active_indices = tuple(remaining)
+        starts = torch.stack(
+            tuple(
+                (
+                    preferred_starts[index]
+                    if recovery_index == 0
+                    else _default_three_phase_starts(states[index])[recovery_index - 1]
+                )
+                for index in active_indices
+            )
+        )
+        result = solve_batched_binary_three_phase_invariants(
+            model,
+            torch.stack(tuple(states[index].temperature for index in active_indices)),
+            torch.stack(tuple(states[index].reference_pressure for index in active_indices)),
+            starts,
+            tolerance=tolerance,
+            max_iterations=max(100, max_iterations),
+            method="trust-region",
+        )
+        separations = torch.diff(result.phase_compositions[:, :, 0], dim=-1).abs().amin(dim=-1)
+        recovered_indices = []
+        for batch_index, state_index in enumerate(active_indices):
+            physical = bool(
+                result.converged[batch_index]
+                and separations[batch_index] > minimum_phase_separation
+            )
+            candidate_groups[state_index].append(
+                PhaseTransitionEvaluation(
+                    states[state_index],
+                    result.pressure[batch_index],
+                    result.phase_compositions[batch_index],
+                    result.residual_norm[batch_index],
+                    separations[batch_index],
+                    int(result.iterations[batch_index]),
+                    bool(result.converged[batch_index]),
+                    physical,
+                    "trust-region",
+                )
+            )
+            if physical:
+                recovered_indices.append(state_index)
+        recovered_set = set(recovered_indices)
+        remaining = [index for index in remaining if index not in recovered_set]
+
+
+def evaluate_phase_transition_state(
+    model: StateModel,
+    state: PhaseTransitionState,
+    *,
+    tolerance: float = 1.0e-8,
+    max_iterations: int = 40,
+    minimum_phase_separation: float = 2.0e-3,
+    exhaustive_two_phase_starts: bool = False,
+    three_phase_solver: ThreePhaseSolver = "newton",
+) -> PhaseTransitionEvaluation:
+    """Evaluate and select a physical branch at one reference state.
+
+    Parameters
+    ----------
+    model
+        Homogeneous-state fugacity model.
+    state
+        Temperature, reference pressure, composition, transition identity,
+        optional bounds, and optional multi-start compositions.
+    tolerance
+        Maximum absolute dimensionless log-fugacity residual.
+    max_iterations
+        Maximum nonlinear iterations per candidate.
+    minimum_phase_separation
+        Minimum two-phase component difference or adjacent binary
+        three-phase composition difference.
+    exhaustive_two_phase_starts
+        Evaluate every declared liquid-vapor start before selecting the
+        closest physical pressure. By default, the ordered Wilson, uniform,
+        and component-rich starts are lazy fallbacks: the first physical
+        liquid-vapor result is returned. Liquid-liquid and three-phase
+        searches remain exhaustive.
+    three_phase_solver
+        ``"newton"`` uses the fast local invariant solver.
+        ``"newton-trust-region"`` keeps Newton as the fast path, then polishes
+        its selected physical LLV invariant or invokes an exact-Hessian dense
+        trust-region recovery when Newton produced no separated branch.
+
+    Returns
+    -------
+    PhaseTransitionEvaluation
+        First physical ordered liquid-vapor candidate unless exhaustive search
+        is requested. Exhaustive searches select the candidate closest in
+        logarithmic pressure to ``reference_pressure`` among those passing
+        residual and phase-separation gates. If none pass, the finite candidate
+        with the closest pressure and then smallest residual is returned
+        explicitly as non-converged.
+
+    Raises
+    ------
+    ValueError
+        If the boundary identity, state tensors, numerical controls, or a
+        three-phase non-binary composition are invalid.
+
+    Notes
+    -----
+    Two-phase candidates solve the incipient equations documented by
+    :func:`phase_transition_pressure`. Binary three-phase candidates use
+    :func:`torch_flash.flash.solve_binary_three_phase_invariant`. Both follow
+    the isofugacity formulation of Michelsen and Mollerup,
+    *Thermodynamic Models: Fundamentals & Computational Aspects*, 2nd ed.
+    (2007), chapter 12, ISBN 978-87-989961-3-2.
+
+    The reference pressure identifies a disconnected experimental or
+    application branch; it is not included as an equilibrium residual.
+    Candidate selection is discrete and therefore not differentiable. The
+    selected pressure and residual retain their PyTorch parameter graph.
+    """
+    if state.boundary_kind not in (
+        "liquid-liquid",
+        "liquid-vapor",
+        "liquid-liquid-vapor",
+    ):
+        raise ValueError("unknown phase-boundary kind")
+    if tolerance <= 0.0 or max_iterations <= 0 or minimum_phase_separation < 0.0:
+        raise ValueError("phase-transition evaluation controls are invalid")
+    if three_phase_solver not in ("newton", "newton-trust-region"):
+        raise ValueError("unknown three-phase phase-transition solver")
+    temperature = state.temperature
+    reference_pressure = state.reference_pressure
+    parent = normalize_composition(state.parent_composition)
+    if temperature.ndim != 0 or not bool(torch.isfinite(temperature) & (temperature > 0.0)):
+        raise ValueError("phase-transition temperature must be one finite positive scalar")
+    if reference_pressure.ndim != 0 or not bool(
+        torch.isfinite(reference_pressure) & (reference_pressure > 0.0)
+    ):
+        raise ValueError("phase-transition reference pressure must be finite and positive")
+    if (
+        parent.ndim != 1
+        or parent.numel() < 2
+        or not bool(torch.isfinite(parent).all() & (parent > 0.0).all())
+    ):
+        raise ValueError("phase-transition parent composition must be finite and positive")
+
+    minimum_pressure = (
+        max(0.2e6, 0.25 * float(reference_pressure.detach()))
+        if state.minimum_pressure is None
+        else state.minimum_pressure
+    )
+    maximum_pressure = (
+        min(80.0e6, 4.0 * float(reference_pressure.detach()))
+        if state.maximum_pressure is None
+        else state.maximum_pressure
+    )
+    candidates: list[PhaseTransitionEvaluation] = []
+
+    def failed(compositions: Tensor) -> PhaseTransitionEvaluation:
+        return PhaseTransitionEvaluation(
+            state,
+            reference_pressure.new_tensor(torch.nan),
+            compositions,
+            reference_pressure.new_tensor(torch.inf),
+            reference_pressure.new_zeros(()),
+            0,
+            False,
+            False,
+        )
+
+    if state.boundary_kind == "liquid-liquid-vapor":
+        if parent.numel() != 2:
+            raise ValueError("liquid-liquid-vapor invariant evaluation requires a binary state")
+        for three_phase_start in _default_three_phase_starts(state):
+            try:
+                invariant_result = solve_binary_three_phase_invariant(
+                    model,
+                    temperature,
+                    reference_pressure,
+                    three_phase_start,
+                    tolerance=tolerance,
+                    max_iterations=max_iterations,
+                )
+            except (InvalidStateError, RuntimeError, torch.linalg.LinAlgError):
+                candidates.append(failed(three_phase_start))
+                continue
+            separation = torch.diff(invariant_result.phase_compositions[:, 0]).abs().min()
+            physical = bool(
+                invariant_result.converged
+                and invariant_result.residual_norm <= tolerance
+                and separation > minimum_phase_separation
+            )
+            candidates.append(
+                PhaseTransitionEvaluation(
+                    state,
+                    invariant_result.pressure,
+                    invariant_result.phase_compositions,
+                    invariant_result.residual_norm,
+                    separation,
+                    invariant_result.iterations,
+                    invariant_result.converged,
+                    physical,
+                )
+            )
+    else:
+        phase_kinds: tuple[PhaseKind, PhaseKind] = (
+            ("liquid", "liquid") if state.boundary_kind == "liquid-liquid" else ("liquid", "vapor")
+        )
+        for two_phase_start in _default_two_phase_starts(state):
+            fallback_composition = parent if two_phase_start is None else two_phase_start
+            try:
+                transition_result = phase_transition_pressure(
+                    model,
+                    temperature,
+                    parent,
+                    phase_kinds=phase_kinds,
+                    initial_pressure=reference_pressure,
+                    initial_incipient_composition=two_phase_start,
+                    minimum_pressure=minimum_pressure,
+                    maximum_pressure=maximum_pressure,
+                    minimum_phase_separation=minimum_phase_separation,
+                    tolerance=tolerance,
+                    max_iterations=max_iterations,
+                )
+            except (InvalidStateError, RuntimeError, torch.linalg.LinAlgError):
+                candidates.append(failed(fallback_composition.reshape(1, -1)))
+                continue
+            physical = bool(
+                transition_result.converged
+                and transition_result.residual_norm <= tolerance
+                and transition_result.phase_separation > minimum_phase_separation
+            )
+            candidate = PhaseTransitionEvaluation(
+                state,
+                transition_result.pressure,
+                transition_result.incipient_composition.reshape(1, -1),
+                transition_result.residual_norm,
+                transition_result.phase_separation,
+                transition_result.iterations,
+                bool(transition_result.residual_norm <= tolerance),
+                physical,
+            )
+            candidates.append(candidate)
+            if (
+                physical
+                and state.boundary_kind == "liquid-vapor"
+                and not exhaustive_two_phase_starts
+            ):
+                return candidate
+
+    if state.boundary_kind == "liquid-liquid-vapor" and three_phase_solver == "newton-trust-region":
+        candidates.extend(
+            _trust_region_three_phase_candidates(
+                model,
+                state,
+                candidates,
+                tolerance=tolerance,
+                max_iterations=max_iterations,
+                minimum_phase_separation=minimum_phase_separation,
+            )
+        )
+
+    def score(candidate: PhaseTransitionEvaluation) -> tuple[int, int, float, float]:
+        branch_distance = (
+            abs(float(torch.log(candidate.pressure.detach() / reference_pressure)))
+            if bool(torch.isfinite(candidate.pressure.detach()))
+            else float("inf")
+        )
+        return (
+            0 if candidate.converged else 1,
+            (
+                0
+                if three_phase_solver == "newton-trust-region"
+                and candidate.solver == "trust-region"
+                else 1
+            ),
+            branch_distance,
+            float(candidate.residual_norm.detach()),
+        )
+
+    return min(candidates, key=score)
+
+
+def evaluate_phase_transition_states(
+    model: StateModel,
+    states: Sequence[PhaseTransitionState],
+    *,
+    tolerance: float = 1.0e-8,
+    max_iterations: int = 40,
+    minimum_phase_separation: float = 2.0e-3,
+    exhaustive_two_phase_starts: bool = False,
+    three_phase_solver: ThreePhaseSolver = "newton",
+) -> tuple[PhaseTransitionEvaluation, ...]:
+    """Evaluate independent phase-transition reference states.
+
+    Parameters
+    ----------
+    model
+        Homogeneous-state model shared by all supplied states.
+    states
+        Independent states whose composition length must match ``model``.
+    tolerance, max_iterations, minimum_phase_separation,
+    exhaustive_two_phase_starts, three_phase_solver
+        Controls passed to :func:`evaluate_phase_transition_state`.
+
+    Returns
+    -------
+    tuple
+        One explicit evaluation per input state, preserving input order.
+
+    Notes
+    -----
+    States are independent and may select disconnected branches through their
+    reference pressures. No material balance is imposed between states.
+    """
+    if tolerance <= 0.0 or max_iterations <= 0 or minimum_phase_separation < 0.0:
+        raise ValueError("phase-transition evaluation controls are invalid")
+    if three_phase_solver not in ("newton", "newton-trust-region"):
+        raise ValueError("unknown three-phase phase-transition solver")
+    if not states:
+        return ()
+
+    components = _components_from_model(model)
+    candidate_groups: list[list[PhaseTransitionEvaluation]] = [[] for _ in states]
+    selected: list[PhaseTransitionEvaluation | None] = [None for _ in states]
+
+    def pressure_bounds(
+        state: PhaseTransitionState,
+    ) -> tuple[Tensor | float, Tensor | float]:
+        minimum_pressure = (
+            max(0.2e6, 0.25 * float(state.reference_pressure.detach()))
+            if state.minimum_pressure is None
+            else state.minimum_pressure
+        )
+        maximum_pressure = (
+            min(80.0e6, 4.0 * float(state.reference_pressure.detach()))
+            if state.maximum_pressure is None
+            else state.maximum_pressure
+        )
+        return minimum_pressure, maximum_pressure
+
+    def failed(
+        state: PhaseTransitionState,
+        compositions: Tensor,
+    ) -> PhaseTransitionEvaluation:
+        return PhaseTransitionEvaluation(
+            state,
+            state.reference_pressure.new_tensor(torch.nan),
+            compositions,
+            state.reference_pressure.new_tensor(torch.inf),
+            state.reference_pressure.new_zeros(()),
+            0,
+            False,
+            False,
+        )
+
+    for boundary_kind in ("liquid-liquid", "liquid-vapor"):
+        state_indices = [
+            index for index, state in enumerate(states) if state.boundary_kind == boundary_kind
+        ]
+        if not state_indices:
+            continue
+        two_phase_starts = {
+            index: _default_two_phase_starts(states[index]) for index in state_indices
+        }
+        maximum_starts = max(len(state_starts) for state_starts in two_phase_starts.values())
+        for start_index in range(maximum_starts):
+            active_indices = [
+                index
+                for index in state_indices
+                if start_index < len(two_phase_starts[index])
+                and (
+                    boundary_kind == "liquid-liquid"
+                    or exhaustive_two_phase_starts
+                    or selected[index] is None
+                )
+            ]
+            if not active_indices:
+                continue
+
+            temperatures = torch.stack(tuple(states[index].temperature for index in active_indices))
+            parents = torch.stack(
+                tuple(states[index].parent_composition for index in active_indices)
+            )
+            reference_pressures = torch.stack(
+                tuple(states[index].reference_pressure for index in active_indices)
+            )
+            incipient_starts = []
+            minimum_pressures = []
+            maximum_pressures = []
+            for index, state_temperature, parent in zip(
+                active_indices,
+                temperatures,
+                parents,
+                strict=True,
+            ):
+                start = two_phase_starts[index][start_index]
+                if start is None:
+                    volatility = wilson_k_values(
+                        components,
+                        state_temperature,
+                        state_temperature.new_ones(()),
+                    )
+                    start = normalize_composition(parent * volatility)
+                incipient_starts.append(start)
+                lower, upper = pressure_bounds(states[index])
+                minimum_pressures.append(reference_pressures.new_tensor(lower))
+                maximum_pressures.append(reference_pressures.new_tensor(upper))
+            try:
+                two_phase_batch_result = solve_batched_phase_transition_pressures(
+                    model,
+                    temperatures,
+                    parents,
+                    phase_kinds=(
+                        ("liquid", "liquid")
+                        if boundary_kind == "liquid-liquid"
+                        else ("liquid", "vapor")
+                    ),
+                    initial_pressure=reference_pressures,
+                    initial_incipient_composition=torch.stack(tuple(incipient_starts)),
+                    minimum_pressure=torch.stack(tuple(minimum_pressures)),
+                    maximum_pressure=torch.stack(tuple(maximum_pressures)),
+                    tolerance=tolerance,
+                    max_iterations=max_iterations,
+                    minimum_phase_separation=minimum_phase_separation,
+                )
+                for batch_index, state_index in enumerate(active_indices):
+                    candidate = PhaseTransitionEvaluation(
+                        states[state_index],
+                        two_phase_batch_result.pressure[batch_index],
+                        two_phase_batch_result.incipient_composition[batch_index].reshape(1, -1),
+                        two_phase_batch_result.residual_norm[batch_index],
+                        two_phase_batch_result.phase_separation[batch_index],
+                        int(two_phase_batch_result.iterations[batch_index]),
+                        bool(two_phase_batch_result.solver_converged[batch_index]),
+                        bool(two_phase_batch_result.converged[batch_index]),
+                    )
+                    candidate_groups[state_index].append(candidate)
+                    if (
+                        boundary_kind == "liquid-vapor"
+                        and not exhaustive_two_phase_starts
+                        and candidate.converged
+                    ):
+                        selected[state_index] = candidate
+            except (InvalidStateError, RuntimeError, torch.linalg.LinAlgError):
+                for state_index, start in zip(
+                    active_indices,
+                    incipient_starts,
+                    strict=True,
+                ):
+                    candidate_groups[state_index].append(
+                        failed(states[state_index], start.reshape(1, -1))
+                    )
+
+    three_phase_indices = [
+        index for index, state in enumerate(states) if state.boundary_kind == "liquid-liquid-vapor"
+    ]
+    if three_phase_indices:
+        if any(states[index].parent_composition.numel() != 2 for index in three_phase_indices):
+            raise ValueError("liquid-liquid-vapor invariant evaluation requires binary states")
+        three_phase_starts = {
+            index: _default_three_phase_starts(states[index]) for index in three_phase_indices
+        }
+        maximum_starts = max(len(state_starts) for state_starts in three_phase_starts.values())
+        for start_index in range(maximum_starts):
+            active_indices = [
+                index
+                for index in three_phase_indices
+                if start_index < len(three_phase_starts[index])
+            ]
+            temperatures = torch.stack(tuple(states[index].temperature for index in active_indices))
+            reference_pressures = torch.stack(
+                tuple(states[index].reference_pressure for index in active_indices)
+            )
+            phase_starts = torch.stack(
+                tuple(three_phase_starts[index][start_index] for index in active_indices)
+            )
+            try:
+                three_phase_batch_result = solve_batched_binary_three_phase_invariants(
+                    model,
+                    temperatures,
+                    reference_pressures,
+                    phase_starts,
+                    tolerance=tolerance,
+                    max_iterations=max_iterations,
+                )
+                separations = (
+                    torch.diff(
+                        three_phase_batch_result.phase_compositions[:, :, 0],
+                        dim=-1,
+                    )
+                    .abs()
+                    .amin(dim=-1)
+                )
+                for batch_index, state_index in enumerate(active_indices):
+                    physical = bool(
+                        three_phase_batch_result.converged[batch_index]
+                        and separations[batch_index] > minimum_phase_separation
+                    )
+                    candidate_groups[state_index].append(
+                        PhaseTransitionEvaluation(
+                            states[state_index],
+                            three_phase_batch_result.pressure[batch_index],
+                            three_phase_batch_result.phase_compositions[batch_index],
+                            three_phase_batch_result.residual_norm[batch_index],
+                            separations[batch_index],
+                            int(three_phase_batch_result.iterations[batch_index]),
+                            bool(three_phase_batch_result.converged[batch_index]),
+                            physical,
+                        )
+                    )
+            except (InvalidStateError, RuntimeError, torch.linalg.LinAlgError):
+                for state_index, start in zip(
+                    active_indices,
+                    phase_starts,
+                    strict=True,
+                ):
+                    candidate_groups[state_index].append(failed(states[state_index], start))
+
+    unknown = [
+        state.boundary_kind
+        for state in states
+        if state.boundary_kind
+        not in (
+            "liquid-liquid",
+            "liquid-vapor",
+            "liquid-liquid-vapor",
+        )
+    ]
+    if unknown:
+        raise ValueError("unknown phase-boundary kind")
+
+    if three_phase_solver == "newton-trust-region" and three_phase_indices:
+        _batched_trust_region_three_phase_candidates(
+            model,
+            states,
+            three_phase_indices,
+            candidate_groups,
+            tolerance=tolerance,
+            max_iterations=max_iterations,
+            minimum_phase_separation=minimum_phase_separation,
+        )
+
+    def score(
+        candidate: PhaseTransitionEvaluation,
+    ) -> tuple[int, int, float, float]:
+        reference_pressure = candidate.state.reference_pressure
+        branch_distance = (
+            abs(float(torch.log(candidate.pressure.detach() / reference_pressure)))
+            if bool(torch.isfinite(candidate.pressure.detach()))
+            else float("inf")
+        )
+        return (
+            0 if candidate.converged else 1,
+            (
+                0
+                if three_phase_solver == "newton-trust-region"
+                and candidate.solver == "trust-region"
+                else 1
+            ),
+            branch_distance,
+            float(candidate.residual_norm.detach()),
+        )
+
+    return tuple(
+        (candidate if candidate is not None else min(candidate_groups[index], key=score))
+        for index, candidate in enumerate(selected)
+    )
+
+
+def continue_phase_transition_branch(
+    model: StateModel,
+    temperatures: Tensor,
+    initial_point: PhaseTransitionPoint,
+    *,
+    minimum_pressure: Tensor | float | None = None,
+    maximum_pressure: Tensor | float | None = None,
+    minimum_phase_separation: float = 1.0e-6,
+    tolerance: float = 1.0e-8,
+    max_iterations: int = 40,
+) -> tuple[PhaseTransitionPoint, ...]:
+    """Continue one incipient two-phase branch over a temperature sequence.
+
+    Parameters
+    ----------
+    model
+        Homogeneous-state fugacity model used for every continuation point.
+    temperatures
+        Nonempty one-dimensional temperature sequence in K, ordered in the
+        desired continuation direction.
+    initial_point
+        Converged branch seed supplying the parent composition, phase-root
+        pair, pressure, and incipient-phase composition.
+    minimum_pressure, maximum_pressure
+        Optional positive pressure bounds in Pa applied to every point.
+        Bounds can isolate a disconnected liquid-liquid branch.
+    minimum_phase_separation
+        Minimum maximum-component mole-fraction difference required to accept
+        two physically distinct phases.
+    tolerance
+        Maximum absolute dimensionless log-fugacity residual.
+    max_iterations
+        Maximum damped-Newton iterations per temperature.
+
+    Returns
+    -------
+    tuple
+        One :class:`PhaseTransitionPoint` per requested temperature. Failed
+        points remain present with ``converged=False`` and do not replace the
+        last converged continuation state.
+
+    Raises
+    ------
+    ValueError
+        If the temperature grid is invalid or ``initial_point`` is not a
+        converged, phase-separated seed.
+
+    Notes
+    -----
+    The local equilibrium equations are those of
+    :func:`phase_transition_pressure`, following Michelsen and Mollerup,
+    *Thermodynamic Models: Fundamentals & Computational Aspects*, 2nd ed.
+    (2007), chapter 12, ISBN 978-87-989961-3-2. Previous-point continuation is
+    a numerical branch-tracking choice made explicitly by ``torch-flash``.
+    The caller controls direction, spacing, and pressure bounds because these
+    choices can select among disconnected phase-transition branches.
+
+    Continuation initial states are detached between points. Each returned
+    solve can still carry parameter derivatives, but the discrete decision to
+    retain or reject an initializer is not differentiable.
+    """
+    if temperatures.ndim != 1 or temperatures.numel() < 1:
+        raise ValueError("phase-transition temperatures must be a nonempty vector")
+    if not temperatures.is_floating_point() or not bool(
+        torch.isfinite(temperatures).all() & (temperatures > 0.0).all()
+    ):
+        raise ValueError("phase-transition temperatures must be finite and positive")
+    if not initial_point.converged or not bool(
+        torch.isfinite(initial_point.pressure)
+        & (initial_point.pressure > 0.0)
+        & torch.isfinite(initial_point.incipient_composition).all()
+        & (initial_point.phase_separation > minimum_phase_separation)
+    ):
+        raise ValueError("initial phase-transition point must be converged and separated")
+
+    parent = initial_point.parent_composition.to(
+        dtype=temperatures.dtype,
+        device=temperatures.device,
+    )
+    previous_pressure = initial_point.pressure.to(
+        dtype=temperatures.dtype,
+        device=temperatures.device,
+    ).detach()
+    previous_incipient = initial_point.incipient_composition.to(
+        dtype=temperatures.dtype,
+        device=temperatures.device,
+    ).detach()
+    points: list[PhaseTransitionPoint] = []
+    for temperature in temperatures:
+        try:
+            point = phase_transition_pressure(
+                model,
+                temperature,
+                parent,
+                phase_kinds=initial_point.phase_kinds,
+                initial_pressure=previous_pressure,
+                initial_incipient_composition=previous_incipient,
+                minimum_pressure=minimum_pressure,
+                maximum_pressure=maximum_pressure,
+                minimum_phase_separation=minimum_phase_separation,
+                tolerance=tolerance,
+                max_iterations=max_iterations,
+            )
+        except (InvalidStateError, RuntimeError, torch.linalg.LinAlgError):
+            point = PhaseTransitionPoint(
+                temperature,
+                previous_pressure.new_tensor(torch.nan),
+                parent,
+                previous_incipient,
+                initial_point.phase_kinds,
+                0,
+                False,
+                previous_pressure.new_tensor(torch.inf),
+                torch.max(torch.abs(previous_incipient - parent)),
+            )
+        points.append(point)
+        if point.converged:
+            previous_pressure = point.pressure.detach()
+            previous_incipient = point.incipient_composition.detach()
+    return tuple(points)
+
+
 def phase_envelope(
     model: StateModel,
     temperatures: Tensor,
@@ -706,6 +2135,230 @@ def phase_envelope(
                 history = history[-2:]
         branches[kind] = tuple(points)
     return branches
+
+
+def trace_phase_envelope_set(
+    model: StateModel,
+    composition: Tensor,
+    vapor_liquid_temperatures: Tensor,
+    *,
+    liquid_liquid_seeds: Sequence[PhaseTransitionEvaluation] = (),
+    liquid_liquid_temperatures: Tensor | None = None,
+    minimum_pressure: Tensor | float | None = None,
+    maximum_pressure: Tensor | float | None = None,
+    minimum_phase_separation: float = 2.0e-3,
+    tolerance: float = 1.0e-8,
+    max_iterations: int = 40,
+    vapor_liquid_closure_points: int = 20,
+    vapor_liquid_closure_log_k: float = 1.0e-3,
+) -> PhaseEnvelopeSet:
+    """Trace a complete fixed-composition fluid phase-boundary set.
+
+    Parameters
+    ----------
+    model
+        Homogeneous-state fugacity model.
+    composition
+        Fixed overall/parent mole-fraction vector.
+    vapor_liquid_temperatures
+        Ordered temperature grid in K for both bubble and dew branches.
+    liquid_liquid_seeds
+        Residual- and separation-converged liquid-liquid reference
+        evaluations. If several observations converge to the same branch,
+        only the lowest- and highest-pressure distinct seeds are retained.
+    liquid_liquid_temperatures
+        Ordered temperature grid in K for each liquid-liquid branch. Required
+        when ``liquid_liquid_seeds`` is nonempty.
+    minimum_pressure, maximum_pressure
+        Optional liquid-liquid continuation bounds in Pa.
+    minimum_phase_separation
+        Minimum maximum-component composition difference for a physical
+        liquid-liquid point.
+    tolerance
+        Maximum absolute dimensionless log-fugacity residual.
+    max_iterations
+        Maximum nonlinear iterations per liquid-liquid continuation point.
+    vapor_liquid_closure_points
+        Number of logarithmically spaced log-K continuation points used to
+        approach each bubble/dew critical endpoint after fixed-temperature
+        tracing.
+    vapor_liquid_closure_log_k
+        Positive absolute controlled-component log-K target at the final
+        critical-closure point.
+
+    Returns
+    -------
+    PhaseEnvelopeSet
+        Bubble/dew branches and every distinct seeded liquid-liquid branch.
+        Failed continuation points remain explicit.
+
+    Raises
+    ------
+    ValueError
+        If liquid-liquid seeds do not match the supplied composition or a
+        continuation grid is missing.
+
+    Notes
+    -----
+    Bubble/dew tracing starts with :func:`phase_envelope`, then switches from
+    temperature to a selected log-K continuation coordinate through
+    :func:`continue_saturation_branch`. This passes the cricondentherm and
+    approaches the mixture critical endpoint without accepting the algebraic
+    ``K=1`` root. Fixed-temperature points after the closure seed are replaced
+    by the ordered log-K continuation; failed continuation points remain
+    explicit. Liquid-liquid tracing uses
+    :func:`continue_phase_transition_branch` in both temperature directions
+    from each selected seed. The formulation follows Michelsen and Mollerup,
+    *Thermodynamic Models: Fundamentals & Computational Aspects*, 2nd ed.
+    (2007), chapter 12, ISBN 978-87-989961-3-2.
+
+    Temperature continuation can end at a critical merge or fail at a turning
+    point. Such points are retained as non-converged; the result does not
+    silently interpolate across a missing segment.
+    """
+    if vapor_liquid_closure_points < 1 or vapor_liquid_closure_log_k <= 0.0:
+        raise ValueError("vapor-liquid closure controls must be positive")
+    parent = normalize_composition(composition)
+    fixed_temperature_vapor_liquid = phase_envelope(
+        model,
+        vapor_liquid_temperatures,
+        parent,
+        kinds=("bubble", "dew"),
+    )
+    vapor_liquid: dict[SaturationKind, tuple[SaturationPoint, ...]] = {}
+    for kind, points in fixed_temperature_vapor_liquid.items():
+        physical_indices = [
+            index
+            for index, point in enumerate(points)
+            if point.converged
+            and bool(point.residual_norm <= tolerance)
+            and bool(
+                torch.max(torch.abs(point.incipient_composition - parent))
+                > minimum_phase_separation
+            )
+        ]
+        if not physical_indices:
+            vapor_liquid[kind] = points
+            continue
+        seed_index = max(
+            physical_indices,
+            key=lambda index: float(points[index].temperature.detach()),
+        )
+        vapor_seed = points[seed_index]
+        log_k = torch.log(vapor_seed.k_values.detach())
+        controlled_component = int(torch.argmax(torch.abs(log_k)))
+        initial_coordinate = log_k[controlled_component]
+        target_magnitude = initial_coordinate.new_tensor(vapor_liquid_closure_log_k)
+        if bool(torch.abs(initial_coordinate) <= target_magnitude):
+            vapor_liquid[kind] = points[: seed_index + 1]
+            continue
+        magnitudes = torch.logspace(
+            torch.log10(0.9 * torch.abs(initial_coordinate)),
+            torch.log10(target_magnitude),
+            vapor_liquid_closure_points,
+            dtype=initial_coordinate.dtype,
+            device=initial_coordinate.device,
+        )
+        targets = torch.sign(initial_coordinate) * magnitudes
+        closure = continue_saturation_branch(
+            model,
+            parent,
+            vapor_seed,
+            targets,
+            controlled_component=controlled_component,
+            tolerance=tolerance,
+            max_iterations=max_iterations,
+        )
+        vapor_liquid[kind] = (*points[: seed_index + 1], *closure)
+
+    accepted_seeds = [
+        seed
+        for seed in liquid_liquid_seeds
+        if seed.converged and seed.state.boundary_kind == "liquid-liquid"
+    ]
+    if not accepted_seeds:
+        return PhaseEnvelopeSet(vapor_liquid, ())
+    if liquid_liquid_temperatures is None:
+        raise ValueError("liquid-liquid temperatures are required with branch seeds")
+    for accepted_seed in accepted_seeds:
+        if accepted_seed.state.parent_composition.shape != parent.shape or not bool(
+            torch.allclose(
+                normalize_composition(accepted_seed.state.parent_composition).detach(),
+                parent.detach(),
+                rtol=1.0e-10,
+                atol=1.0e-12,
+            )
+        ):
+            raise ValueError("liquid-liquid seed composition must match the envelope composition")
+
+    ordered_seeds = sorted(
+        accepted_seeds,
+        key=lambda item: float(item.pressure.detach()),
+    )
+    selected_seeds = [ordered_seeds[0]]
+    if (
+        len(ordered_seeds) > 1
+        and float(ordered_seeds[-1].pressure.detach() / ordered_seeds[0].pressure.detach()) > 1.05
+    ):
+        selected_seeds.append(ordered_seeds[-1])
+
+    liquid_liquid: list[tuple[PhaseTransitionPoint, ...]] = []
+    for evaluation in selected_seeds:
+        state = evaluation.state
+        liquid_seed = PhaseTransitionPoint(
+            state.temperature,
+            evaluation.pressure,
+            parent,
+            evaluation.phase_compositions[0],
+            ("liquid", "liquid"),
+            evaluation.iterations,
+            evaluation.converged,
+            evaluation.residual_norm,
+            evaluation.phase_separation,
+        )
+        descending_temperatures = liquid_liquid_temperatures[
+            liquid_liquid_temperatures < liquid_seed.temperature
+        ].flip(0)
+        ascending_temperatures = liquid_liquid_temperatures[
+            liquid_liquid_temperatures > liquid_seed.temperature
+        ]
+        descending = (
+            continue_phase_transition_branch(
+                model,
+                descending_temperatures,
+                liquid_seed,
+                minimum_pressure=minimum_pressure,
+                maximum_pressure=maximum_pressure,
+                minimum_phase_separation=minimum_phase_separation,
+                tolerance=tolerance,
+                max_iterations=max_iterations,
+            )
+            if descending_temperatures.numel()
+            else ()
+        )
+        ascending = (
+            continue_phase_transition_branch(
+                model,
+                ascending_temperatures,
+                liquid_seed,
+                minimum_pressure=minimum_pressure,
+                maximum_pressure=maximum_pressure,
+                minimum_phase_separation=minimum_phase_separation,
+                tolerance=tolerance,
+                max_iterations=max_iterations,
+            )
+            if ascending_temperatures.numel()
+            else ()
+        )
+        liquid_liquid.append(
+            tuple(
+                sorted(
+                    (*descending, liquid_seed, *ascending),
+                    key=lambda point: float(point.temperature.detach()),
+                )
+            )
+        )
+    return PhaseEnvelopeSet(vapor_liquid, tuple(liquid_liquid))
 
 
 def continue_saturation_branch(

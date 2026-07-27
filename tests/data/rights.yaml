@@ -121,6 +121,17 @@ artifacts:
     status: not-cleared
     basis: Table 4 transcription; publisher redistribution permission not verified.
     source: https://doi.org/10.1016/j.jct.2017.01.022
+  simoncelli_2020_co2_presalt_phase_transitions.csv:
+    status: not-cleared
+    basis: Tables 7-9 transcription; reusable CSV redistribution permission not verified.
+    source: https://doi.org/10.1016/j.fluid.2020.112574
+    rendered_plot_basis: >-
+      Independently generated figures using the numerical facts are published
+      with acknowledgement under Elsevier's permissions guidance for original
+      figures or tables created from data; this does not clear the transcribed
+      CSV for redistribution.
+    rendered_plot_source: >-
+      https://www.elsevier.com/en-au/about/policies-and-standards/copyright/permissions
   teqp_0.23.2_h2_co_vle.csv:
     status: generated
     basis: Project-generated teqp 0.23.2 numerical output.

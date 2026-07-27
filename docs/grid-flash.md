@@ -216,6 +216,7 @@ invariant = solve_binary_three_phase_invariant(
         ],
         **runtime.tensor_options,
     ),
+    method="trust-region",
 )
 if not invariant.converged:
     raise RuntimeError(
@@ -240,11 +241,27 @@ equilibrium = flash_grid(
 )
 ```
 
-The solver is local. Initial rows must correspond to the requested EoS roots
-and lie near the desired branch. A binary invariant does not uniquely fix all
-three phase fractions, so the grid API returns a positive centered
-lever-rule representative for feeds strictly inside the outer composition
-interval.
+The default `method="newton"` is the inexpensive local path.
+`method="trust-region"` minimizes half the squared equal-fugacity residual
+with exact PyTorch gradients and Hessians while limiting each step. It is
+intended for difficult separated branches where Newton merges phases or
+leaves the physical basin. Both methods report convergence against the
+original maximum equal-fugacity residual, not the scalar minimization
+objective.
+
+Use `solve_batched_binary_three_phase_invariants` when temperatures and starts
+form a compatible batch. Thermodynamic residuals, gradients, and exact Hessian
+blocks are evaluated together; only each tiny dense spectral trust-region
+subproblem remains per state. This batching is especially useful when several
+experimental temperatures share the same model and component set.
+
+Both solvers are local. Initial rows must correspond to the requested EoS
+roots and lie near the desired branch. In a CO2-rich system all three
+coexisting phases can also be CO2-rich, so a generic start with one
+near-solvent-pure phase may converge to a merged algebraic solution. A binary
+invariant does not uniquely fix all three phase fractions, so the grid API
+returns a positive centered lever-rule representative for feeds strictly
+inside the outer composition interval.
 
 ## Convergence and failure handling
 

@@ -1,10 +1,12 @@
 from __future__ import annotations
 
 from dataclasses import replace
+from types import SimpleNamespace
 
 import pytest
 import torch
 
+import torch_flash.flash.multiphase as multiphase_module
 import torch_flash.properties.phase_identification as phase_identification_module
 from torch_flash import (
     ChemicalState,
@@ -15,11 +17,15 @@ from torch_flash import (
     flash_grid_oracle,
     identify_grid_phases,
     identify_phase,
+    multiphase_trust_region_flash,
     peng_robinson_1978,
+    refine_flash_grid_phase_boundaries,
     soave_redlich_kwong,
+    solve_batched_binary_three_phase_invariants,
     solve_binary_three_phase_invariant,
 )
 from torch_flash.constants import R
+from torch_flash.exceptions import ConvergenceWarning, ExperimentalModelWarning
 from torch_flash.flash import grid as grid_module
 
 
@@ -227,6 +233,68 @@ def test_binary_invariant_autodiff_newton_and_grid_lever_rule():
         rtol=0.0,
     )
 
+    batched = solve_batched_binary_three_phase_invariants(
+        model,
+        torch.tensor([180.0, 180.0], dtype=torch.float64),
+        torch.tensor([2.73e6, 2.73e6], dtype=torch.float64),
+        torch.stack(
+            (
+                torch.tensor(
+                    [[0.199, 0.801], [0.781, 0.219], [0.958, 0.042]],
+                    dtype=torch.float64,
+                ),
+                torch.tensor(
+                    [[0.200, 0.800], [0.780, 0.220], [0.960, 0.040]],
+                    dtype=torch.float64,
+                ),
+            )
+        ),
+    )
+    assert batched.converged.tolist() == [True, True]
+    torch.testing.assert_close(
+        batched.pressure,
+        invariant.pressure.expand(2),
+        rtol=2.0e-10,
+        atol=0.0,
+    )
+    torch.testing.assert_close(
+        batched.phase_compositions[:, :, 0],
+        invariant.phase_compositions[:, 0].expand(2, -1),
+        atol=2.0e-10,
+        rtol=0.0,
+    )
+
+    trust_invariant = solve_binary_three_phase_invariant(
+        model,
+        invariant.temperature,
+        invariant.pressure,
+        invariant.phase_compositions,
+        method="trust-region",
+        max_iterations=100,
+    )
+    trust_batch = solve_batched_binary_three_phase_invariants(
+        model,
+        invariant.temperature.expand(2),
+        invariant.pressure.expand(2),
+        invariant.phase_compositions.expand(2, -1, -1),
+        method="trust-region",
+        max_iterations=100,
+    )
+    assert trust_invariant.converged
+    assert trust_batch.converged.tolist() == [True, True]
+    torch.testing.assert_close(
+        trust_invariant.pressure,
+        invariant.pressure,
+        rtol=2.0e-10,
+        atol=0.0,
+    )
+    torch.testing.assert_close(
+        trust_batch.pressure,
+        invariant.pressure.expand(2),
+        rtol=2.0e-10,
+        atol=0.0,
+    )
+
     methane_fraction = torch.tensor([0.3, 0.6, 0.9], dtype=torch.float64)
     state = ChemicalState(
         torch.full((1, 3), 180.0, dtype=torch.float64),
@@ -252,6 +320,220 @@ def test_binary_invariant_autodiff_newton_and_grid_lever_rule():
         ),
     )
     assert homogeneous.phase_counts.tolist() == [1]
+
+
+@pytest.mark.serial
+def test_multiphase_trust_region_recovers_binary_three_phase_invariant():
+    model = _binary_model()
+    invariant = solve_binary_three_phase_invariant(
+        model,
+        torch.tensor(180.0, dtype=torch.float64),
+        torch.tensor(2.73e6, dtype=torch.float64),
+        torch.tensor(
+            [[0.199, 0.801], [0.781, 0.219], [0.958, 0.042]],
+            dtype=torch.float64,
+        ),
+    )
+    expected_fractions = torch.tensor([0.3, 0.3, 0.4], dtype=torch.float64)
+    phase_order = torch.tensor([0, 2, 1])
+    expected_compositions = invariant.phase_compositions[phase_order]
+    composition = torch.einsum(
+        "p,pi->i",
+        expected_fractions,
+        expected_compositions,
+    )
+    initial_compositions = torch.tensor(
+        [[0.20, 0.80], [0.95, 0.05], [0.78, 0.22]],
+        dtype=torch.float64,
+    )
+    initial_k_values = initial_compositions[1:] / initial_compositions[0]
+
+    with pytest.warns(ExperimentalModelWarning):
+        result = multiphase_trust_region_flash(
+            model,
+            ChemicalState(invariant.temperature, invariant.pressure, composition),
+            initial_k_values=initial_k_values,
+        )
+
+    assert result.converged
+    assert result.nphases == 3
+    assert result.residual_norm <= 1.0e-8
+    assert result.diagnostics["material_balance_residual"] <= 2.0e-15
+    for actual, expected in zip(
+        result.phases,
+        expected_compositions,
+        strict=True,
+    ):
+        torch.testing.assert_close(
+            actual.composition,
+            expected,
+            rtol=2.0e-8,
+            atol=2.0e-10,
+        )
+
+    scalar_state = ChemicalState(
+        invariant.temperature,
+        invariant.pressure,
+        composition,
+    )
+    with pytest.raises(ValueError, match="composition vector"):
+        multiphase_trust_region_flash(
+            model,
+            ChemicalState(
+                invariant.temperature,
+                invariant.pressure,
+                composition[None],
+            ),
+            initial_k_values=initial_k_values,
+        )
+    with pytest.raises(ValueError, match="controls"):
+        multiphase_trust_region_flash(
+            model,
+            scalar_state,
+            initial_k_values=initial_k_values,
+            tolerance=0.0,
+        )
+    with pytest.raises(ValueError, match="K values"):
+        multiphase_trust_region_flash(
+            model,
+            scalar_state,
+            initial_k_values=initial_k_values[:, :1],
+        )
+    with pytest.raises(ValueError, match="roots"):
+        multiphase_trust_region_flash(
+            model,
+            scalar_state,
+            initial_k_values=initial_k_values,
+            phase_roots=("liquid", "vapor"),
+        )
+    with pytest.raises(RuntimeError, match="did not produce"):
+        multiphase_trust_region_flash(
+            model,
+            scalar_state,
+            initial_k_values=initial_k_values,
+            max_iterations=1,
+            raise_on_failure=True,
+        )
+
+
+def test_multiphase_trust_region_validates_balance_and_warns(
+    monkeypatch,
+):
+    model = _binary_model()
+    state = ChemicalState(
+        torch.tensor(180.0, dtype=torch.float64),
+        torch.tensor(2.73e6, dtype=torch.float64),
+        torch.tensor([0.5, 0.5], dtype=torch.float64),
+    )
+    initial_k_values = torch.tensor(
+        [[0.95 / 0.20, 0.05 / 0.80], [0.78 / 0.20, 0.22 / 0.80]],
+        dtype=torch.float64,
+    )
+    with (
+        pytest.warns(ExperimentalModelWarning),
+        pytest.raises(
+            ValueError,
+            match="strictly positive",
+        ),
+    ):
+        multiphase_trust_region_flash(
+            model,
+            ChemicalState(
+                state.temperature,
+                state.pressure,
+                torch.tensor([1.0, 0.0], dtype=torch.float64),
+            ),
+            initial_k_values=initial_k_values,
+        )
+
+    monkeypatch.setattr(
+        multiphase_module,
+        "solve_generalized_rachford_rice",
+        lambda z, k: (
+            z.new_tensor([0.3, 0.3, 0.4]),
+            z.new_tensor([[0.5, 0.5], [0.2, 0.8], [0.8, 0.2]]),
+            100,
+            False,
+        ),
+    )
+    with (
+        pytest.warns(ExperimentalModelWarning),
+        pytest.raises(
+            ValueError,
+            match="material-balance",
+        ),
+    ):
+        multiphase_trust_region_flash(
+            model,
+            state,
+            initial_k_values=initial_k_values,
+        )
+
+    monkeypatch.undo()
+    with pytest.warns((ExperimentalModelWarning, ConvergenceWarning)):
+        result = multiphase_trust_region_flash(
+            model,
+            state,
+            initial_k_values=initial_k_values,
+            max_iterations=1,
+        )
+    assert not result.converged
+
+
+def test_batched_binary_invariant_validates_batch_contract():
+    model = _binary_model()
+    temperature = torch.tensor([180.0], dtype=torch.float64)
+    pressure = torch.tensor([2.73e6], dtype=torch.float64)
+    compositions = torch.tensor(
+        [[[0.199, 0.801], [0.781, 0.219], [0.958, 0.042]]],
+        dtype=torch.float64,
+    )
+
+    with pytest.raises(ValueError, match="shape"):
+        solve_batched_binary_three_phase_invariants(
+            model,
+            temperature[0],
+            pressure,
+            compositions,
+        )
+    with pytest.raises(ValueError, match="guesses"):
+        solve_batched_binary_three_phase_invariants(
+            model,
+            temperature,
+            pressure,
+            compositions[:, :2],
+        )
+    with pytest.raises(ValueError, match="controls"):
+        solve_batched_binary_three_phase_invariants(
+            model,
+            temperature,
+            pressure,
+            compositions,
+            tolerance=0.0,
+        )
+    with pytest.raises(ValueError, match="roots"):
+        solve_batched_binary_three_phase_invariants(
+            model,
+            temperature,
+            pressure,
+            compositions,
+            phase_roots=("liquid", "liquid", "invalid"),
+        )
+    with pytest.raises(ValueError, match="finite and interior"):
+        solve_batched_binary_three_phase_invariants(
+            model,
+            temperature,
+            torch.tensor([torch.nan], dtype=torch.float64),
+            compositions,
+        )
+    with pytest.raises(ValueError, match="method"):
+        solve_batched_binary_three_phase_invariants(
+            model,
+            temperature,
+            pressure,
+            compositions,
+            method="invalid",
+        )
 
 
 def test_pure_grid_oracle_preserves_dtype_device_and_shape():
@@ -484,6 +766,122 @@ def test_grid_phase_identification_falls_back_after_batched_physical_failure(mon
     assert response.region_codes.tolist() != [[5]]
 
 
+def test_flash_grid_phase_boundary_refinement_localizes_and_connects_curves(monkeypatch):
+    model = _binary_model()
+    temperature = torch.tensor([1.0, 2.0, 3.0], dtype=torch.float64)
+    pressure = torch.tensor([1.0, 2.0, 3.0], dtype=torch.float64)
+    composition = torch.tensor([0.5, 0.5], dtype=torch.float64)
+    region_codes = torch.tensor(
+        [[0, 0, 0], [0, 2, 0], [0, 0, 0]],
+        dtype=torch.int8,
+    )
+    converged = torch.ones_like(region_codes, dtype=torch.bool)
+
+    def fake_flash(_model, state, *, options=None):
+        del options
+        state_temperature, state_pressure = torch.broadcast_tensors(
+            state.temperature,
+            state.pressure,
+        )
+        return SimpleNamespace(
+            temperatures=state_temperature.reshape(-1),
+            pressures=state_pressure.reshape(-1),
+            converged=torch.ones(state_temperature.numel(), dtype=torch.bool),
+            grid_shape=state_temperature.shape,
+        )
+
+    def fake_identification(_model, equilibrium, *, methods):
+        assert methods == ("pedersen-volume-to-covolume",)
+        inside = (
+            (equilibrium.temperatures > 1.5)
+            & (equilibrium.temperatures < 2.5)
+            & (equilibrium.pressures > 1.5)
+            & (equilibrium.pressures < 2.5)
+        )
+        codes = torch.where(
+            inside,
+            torch.tensor(2, dtype=torch.int8),
+            torch.tensor(0, dtype=torch.int8),
+        )
+        return SimpleNamespace(region_codes=codes.unsqueeze(0))
+
+    monkeypatch.setattr(grid_module, "flash_grid", fake_flash)
+    monkeypatch.setattr(grid_module, "identify_grid_phases", fake_identification)
+    boundaries = refine_flash_grid_phase_boundaries(
+        model,
+        temperature,
+        pressure,
+        composition,
+        region_codes,
+        converged,
+        refinement_iterations=3,
+    )
+
+    assert boundaries.refined_edge_count == 4
+    assert boundaries.refinement_state_count == 12
+    assert boundaries.failed_midpoint_count == 0
+    assert boundaries.ambiguous_cell_count == 0
+    assert boundaries.maximum_temperature_bracket == pytest.approx(0.125)
+    assert boundaries.maximum_pressure_bracket == pytest.approx(0.125)
+    assert len(boundaries.curves) == 1
+    curve = boundaries.curves[0]
+    assert curve.region_code == 2
+    assert curve.closed
+    assert curve.temperature.shape == curve.pressure.shape == (5,)
+    torch.testing.assert_close(curve.temperature[0], curve.temperature[-1])
+    torch.testing.assert_close(curve.pressure[0], curve.pressure[-1])
+
+    empty = refine_flash_grid_phase_boundaries(
+        model,
+        temperature,
+        pressure,
+        composition,
+        torch.zeros_like(region_codes),
+        converged,
+    )
+    assert empty.curves == ()
+    assert empty.refined_edge_count == 0
+
+    ambiguous = refine_flash_grid_phase_boundaries(
+        model,
+        temperature[:2],
+        pressure[:2],
+        composition,
+        torch.tensor([[0, 2], [2, 0]], dtype=torch.int8),
+        torch.ones((2, 2), dtype=torch.bool),
+        region_labels=("V", "LV"),
+        refinement_iterations=1,
+    )
+    assert ambiguous.ambiguous_cell_count == 2
+
+
+@pytest.mark.parametrize(
+    ("updates", "match"),
+    [
+        ({"temperature_axis": torch.tensor([1.0])}, "axes"),
+        ({"pressure_axis": torch.tensor([2.0, 1.0])}, "axes"),
+        ({"region_codes": torch.zeros((2, 2), dtype=torch.bool)}, "dtypes"),
+        ({"converged": torch.ones((2, 3), dtype=torch.bool)}, "classifications"),
+        ({"composition": torch.tensor([1.0, 0.0])}, "composition"),
+        ({"refinement_iterations": 0}, "iterations"),
+        ({"region_labels": ("unknown",)}, "labels"),
+        ({"identification_method": "unknown"}, "identification"),
+    ],
+)
+def test_flash_grid_phase_boundary_refinement_validates_inputs(updates, match):
+    arguments = {
+        "model": _binary_model(),
+        "temperature_axis": torch.tensor([1.0, 2.0], dtype=torch.float64),
+        "pressure_axis": torch.tensor([1.0, 2.0], dtype=torch.float64),
+        "composition": torch.tensor([0.5, 0.5], dtype=torch.float64),
+        "region_codes": torch.zeros((2, 2), dtype=torch.int8),
+        "converged": torch.ones((2, 2), dtype=torch.bool),
+    }
+    arguments.update(updates)
+    with pytest.raises(ValueError, match=match):
+        refine_flash_grid_phase_boundaries(**arguments)
+
+
 def test_binary_invariant_validates_inputs():
     model = _binary_model()
     temperature = torch.tensor(180.0, dtype=torch.float64)
@@ -518,6 +916,14 @@ def test_binary_invariant_validates_inputs():
             pressure,
             guesses,
             max_iterations=0,
+        )
+    with pytest.raises(ValueError, match="method"):
+        solve_binary_three_phase_invariant(
+            model,
+            temperature,
+            pressure,
+            guesses,
+            method="invalid",
         )
 
 

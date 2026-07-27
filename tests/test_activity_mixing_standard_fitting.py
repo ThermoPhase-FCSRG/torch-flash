@@ -704,6 +704,7 @@ def test_least_squares_and_parameter_fitting():
     assert result.losses
     assert result.final_loss < 1.0e-5
     assert result.iterations <= 300
+    assert result.stopping_reason == "tolerance"
     unfinished_parameter = nn.Parameter(torch.tensor(0.0))
     unfinished = fit_parameters(
         [unfinished_parameter],
@@ -712,8 +713,114 @@ def test_least_squares_and_parameter_fitting():
         tolerance=0.0,
     )
     assert not unfinished.converged
+    assert unfinished.stopping_reason == "iteration-limit"
+    stalled_parameter = nn.Parameter(torch.tensor(0.0))
+    stalled_calls = 0
+
+    def worsening_loss():
+        nonlocal stalled_calls
+        stalled_calls += 1
+        return (stalled_parameter - 2.0).square() + 100.0 * stalled_calls
+
+    stalled = fit_parameters(
+        [stalled_parameter],
+        worsening_loss,
+        learning_rate=0.2,
+        max_iterations=20,
+        tolerance=0.0,
+        no_improvement_patience=1,
+    )
+    assert stalled.stopping_reason == "patience"
     with pytest.raises(ValueError, match="at least one"):
         fit_parameters([], lambda: torch.tensor(0.0))
     bad = nn.Parameter(torch.tensor(1.0))
     with pytest.raises(ValueError, match="finite scalar"):
         fit_parameters([bad], lambda: torch.tensor([1.0]))
+    with pytest.raises(ValueError, match="patience"):
+        fit_parameters([bad], lambda: bad.square(), no_improvement_patience=0)
+    with pytest.raises(ValueError, match="fitting controls"):
+        fit_parameters([bad], lambda: bad.square(), learning_rate=0.0)
+    for optimizer, options in (
+        ("adamw", {"weight_decay": 0.0}),
+        ("sgd", {"momentum": 0.8}),
+        ("lbfgs", {}),
+    ):
+        alternative = nn.Parameter(torch.tensor(0.0))
+        alternative_result = fit_parameters(
+            [alternative],
+            lambda parameter=alternative: (parameter - 2.0).square(),
+            optimizer=optimizer,
+            learning_rate=0.1,
+            max_iterations=10,
+            tolerance=0.0,
+            **options,
+        )
+        assert alternative_result.losses[-1] < alternative_result.losses[0]
+        assert alternative_result.final_loss == min(alternative_result.losses)
+    with pytest.raises(ValueError, match="does not accept"):
+        fit_parameters(
+            [bad],
+            lambda: bad.square(),
+            optimizer="lbfgs",
+            weight_decay=0.1,
+        )
+    with pytest.raises(ValueError, match="fitting controls"):
+        fit_parameters([bad], lambda: bad.square(), optimizer="unknown")
+
+    adam_calls = 0
+    adam_parameter = nn.Parameter(torch.tensor(1.0))
+
+    def nonfinite_adam_loss():
+        nonlocal adam_calls
+        adam_calls += 1
+        return (
+            adam_parameter.square()
+            if adam_calls == 1
+            else adam_parameter * adam_parameter.new_tensor(torch.nan)
+        )
+
+    with pytest.raises(ValueError, match="finite scalar"):
+        fit_parameters(
+            [adam_parameter],
+            nonfinite_adam_loss,
+            max_iterations=1,
+        )
+
+    post_step_calls = 0
+    post_step_parameter = nn.Parameter(torch.tensor(1.0))
+
+    def nonfinite_post_step_loss():
+        nonlocal post_step_calls
+        post_step_calls += 1
+        return (
+            post_step_parameter.square()
+            if post_step_calls <= 2
+            else post_step_parameter * post_step_parameter.new_tensor(torch.nan)
+        )
+
+    with pytest.raises(ValueError, match="finite scalar"):
+        fit_parameters(
+            [post_step_parameter],
+            nonfinite_post_step_loss,
+            max_iterations=1,
+        )
+
+    lbfgs_calls = 0
+    lbfgs_parameter = nn.Parameter(torch.tensor(1.0))
+
+    def nonfinite_lbfgs_loss():
+        nonlocal lbfgs_calls
+        lbfgs_calls += 1
+        return (
+            lbfgs_parameter.square()
+            if lbfgs_calls == 1
+            else lbfgs_parameter * lbfgs_parameter.new_tensor(torch.nan)
+        )
+
+    with pytest.raises(ValueError, match="finite scalar"):
+        fit_parameters(
+            [lbfgs_parameter],
+            nonfinite_lbfgs_loss,
+            optimizer="lbfgs",
+            max_iterations=1,
+        )

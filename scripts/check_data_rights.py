@@ -12,7 +12,7 @@ import yaml
 VALID_STATUSES = frozenset({"open", "generated", "not-cleared"})
 REQUIRED_FIELDS = frozenset({"status", "basis", "source"})
 PUBLIC_FIGURE_STATUSES = frozenset({"open", "generated"})
-FIGURE_EVIDENCE_CLASSES = frozenset({"application", "validation", "verification"})
+FIGURE_EVIDENCE_CLASSES = frozenset({"application", "calibration", "validation", "verification"})
 AGGREGATE_PUBLICATION_FORM = "non-reconstructive-aggregate"
 RENDERED_PLOT_PUBLICATION_FORM = "rendered-plot"
 

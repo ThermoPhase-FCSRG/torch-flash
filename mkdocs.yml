@@ -128,6 +128,7 @@ nav:
           - H2-tailored GERG (2021): validation-reports/29-hydrogen-tailored-gerg.md
           - Hydrogen-water model comparison: validation-reports/32-hydrogen-water-all-models.md
           - E-PPR78 for CCS mixtures: validation-reports/33-eppr78-ccs-figure2.md
+          - CO2 pre-salt model comparison: validation-reports/34-co2-presalt-all-models.md
   - Reference:
       - Model scope: model-scope.md
       - Scientific references: references.md

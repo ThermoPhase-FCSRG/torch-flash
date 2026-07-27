@@ -4,12 +4,18 @@ import numpy as np
 import pytest
 import torch
 
+import torch_flash.solvers.trust_region as trust_region_module
 from torch_flash.flash.multiphase import solve_generalized_rachford_rice
 from torch_flash.material_balance.rachford_rice import (
     rachford_rice,
     rachford_rice_numpy,
 )
-from torch_flash.solvers import damped_newton
+from torch_flash.solvers import (
+    batched_damped_newton,
+    damped_newton,
+    minimize_batched_dense_trust_region,
+    minimize_dense_trust_region,
+)
 
 
 def test_rachford_rice_known_solution_and_gradient():
@@ -220,3 +226,193 @@ def test_damped_newton_solution_bounds_and_failure_paths(monkeypatch):
         max_iterations=2,
     )
     assert torch.isfinite(nonfinite.solution).all()
+
+
+def test_batched_damped_newton_preserves_solution_gradients_and_diagnostics():
+    targets = torch.tensor([2.0, 3.0], dtype=torch.float64, requires_grad=True)
+    result = batched_damped_newton(
+        lambda values, parameters: values.square() - parameters[:, None],
+        torch.ones((2, 1), dtype=torch.float64),
+        targets,
+        tolerance=1.0e-12,
+    )
+
+    assert result.converged.tolist() == [True, True]
+    assert result.iterations.tolist() == [5, 5]
+    torch.testing.assert_close(result.solution[:, 0], torch.sqrt(targets))
+    gradient = torch.autograd.grad(result.solution.sum(), targets)[0]
+    torch.testing.assert_close(gradient, 0.5 / torch.sqrt(targets))
+
+    with pytest.raises(ValueError, match="shape"):
+        batched_damped_newton(lambda values: values, torch.ones(2))
+    with pytest.raises(ValueError, match="controls"):
+        batched_damped_newton(
+            lambda values: values,
+            torch.ones((2, 1)),
+            max_iterations=0,
+        )
+    with pytest.raises(ValueError, match="leading batch"):
+        batched_damped_newton(
+            lambda values, parameters: values,
+            torch.ones((2, 1)),
+            torch.ones(3),
+        )
+    with pytest.raises(ValueError, match="not broadcastable"):
+        batched_damped_newton(
+            lambda values: values,
+            torch.ones((2, 1)),
+            lower_bound=torch.ones(3),
+        )
+    with pytest.raises(ValueError, match="residuals"):
+        batched_damped_newton(
+            lambda values: values[:, 0],
+            torch.ones((2, 1)),
+        )
+
+
+def test_dense_trust_region_handles_nonconvex_curvature_and_validation():
+    result = minimize_dense_trust_region(
+        lambda values: (values[0].square() - 1.0).square() + values[1].square(),
+        torch.zeros(2, dtype=torch.float64),
+        initial_radius=0.2,
+        maximum_radius=2.0,
+        gradient_tolerance=1.0e-10,
+        max_iterations=100,
+    )
+
+    assert result.converged
+    assert result.objective < 1.0e-16
+    assert torch.abs(torch.abs(result.solution[0]) - 1.0) < 1.0e-8
+    assert torch.abs(result.solution[1]) < 1.0e-10
+    assert result.gradient_norm < 1.0e-9
+    assert result.minimum_hessian_eigenvalue > 0.0
+    assert result.accepted_steps > 0
+
+    roundoff_limited = minimize_dense_trust_region(
+        lambda values: values.new_tensor(1.0e16) + (values - 1.0).square().sum(),
+        torch.zeros(1, dtype=torch.float64),
+        gradient_tolerance=1.0e-12,
+    )
+    assert roundoff_limited.converged
+    torch.testing.assert_close(
+        roundoff_limited.solution,
+        torch.ones(1, dtype=torch.float64),
+    )
+
+    with pytest.raises(ValueError, match="one finite vector"):
+        minimize_dense_trust_region(lambda values: values.sum(), torch.ones(2, 2))
+    with pytest.raises(ValueError, match="feasible"):
+        minimize_dense_trust_region(
+            lambda values: values.square().sum(),
+            torch.ones(2),
+            is_feasible=lambda values: bool((values < 0.0).all()),
+        )
+    with pytest.raises(ValueError, match="controls"):
+        minimize_dense_trust_region(
+            lambda values: values.square().sum(),
+            torch.ones(2),
+            acceptance_threshold=0.25,
+        )
+    with pytest.raises(ValueError, match="radii"):
+        minimize_dense_trust_region(
+            lambda values: values.square().sum(),
+            torch.ones(2),
+            initial_radius=-1.0,
+        )
+    with pytest.raises(ValueError, match="finite scalar"):
+        minimize_dense_trust_region(lambda values: values, torch.ones(2))
+
+
+def test_batched_dense_trust_region_vectorizes_independent_objectives():
+    targets = torch.tensor(
+        [[1.0, -2.0], [-0.5, 3.0], [2.0, 0.25]],
+        dtype=torch.float64,
+    )
+    initial = torch.zeros_like(targets)
+    result = minimize_batched_dense_trust_region(
+        lambda values, centers: 0.5 * (values - centers).square().sum(dim=-1),
+        initial,
+        targets,
+        gradient_tolerance=1.0e-11,
+    )
+
+    assert result.converged.tolist() == [True, True, True]
+    torch.testing.assert_close(result.solution, targets, atol=2.0e-12, rtol=0.0)
+    assert result.objective.max() <= 1.0e-22
+    assert result.accepted_steps.min() > 0
+
+    with pytest.raises(ValueError, match="shape"):
+        minimize_batched_dense_trust_region(
+            lambda values: values.square().sum(dim=-1),
+            torch.ones(2),
+        )
+    with pytest.raises(ValueError, match="leading batch"):
+        minimize_batched_dense_trust_region(
+            lambda values, _: values.square().sum(dim=-1),
+            torch.ones((2, 2)),
+            torch.ones(3),
+        )
+    with pytest.raises(ValueError, match="return shape"):
+        minimize_batched_dense_trust_region(
+            lambda values: values.sum(),
+            torch.ones((2, 2)),
+        )
+    with pytest.raises(ValueError, match="controls"):
+        minimize_batched_dense_trust_region(
+            lambda values: values.square().sum(dim=-1),
+            torch.ones((2, 2)),
+            max_iterations=0,
+        )
+    with pytest.raises(ValueError, match="not broadcastable"):
+        minimize_batched_dense_trust_region(
+            lambda values: values.square().sum(dim=-1),
+            torch.ones((2, 2)),
+            initial_radius=torch.ones(3),
+        )
+    with pytest.raises(ValueError, match="radii"):
+        minimize_batched_dense_trust_region(
+            lambda values: values.square().sum(dim=-1),
+            torch.ones((2, 2)),
+            initial_radius=-1.0,
+        )
+    with pytest.raises(ValueError, match="finite"):
+        minimize_batched_dense_trust_region(
+            lambda values: values.new_full((values.shape[0],), torch.nan),
+            torch.ones((2, 2)),
+        )
+
+    roundoff_limited = minimize_batched_dense_trust_region(
+        lambda values: (
+            values.new_full((values.shape[0],), 1.0e16) + (values - 1.0).square().sum(dim=-1)
+        ),
+        torch.zeros((2, 1), dtype=torch.float64),
+        gradient_tolerance=1.0e-12,
+    )
+    assert roundoff_limited.converged.tolist() == [True, True]
+    torch.testing.assert_close(
+        roundoff_limited.solution,
+        torch.ones((2, 1), dtype=torch.float64),
+    )
+
+
+def test_dense_trust_region_subproblem_covers_hard_and_shifted_cases():
+    radius = torch.tensor(1.0, dtype=torch.float64)
+    zero_gradient = torch.zeros(2, dtype=torch.float64)
+    negative_identity = -torch.eye(2, dtype=torch.float64)
+    hard_step = trust_region_module._dense_trust_region_step(
+        zero_gradient,
+        negative_identity,
+        radius,
+        subproblem_tolerance=1.0e-10,
+        max_subproblem_iterations=80,
+    )
+    torch.testing.assert_close(torch.linalg.vector_norm(hard_step), radius)
+
+    shifted_step = trust_region_module._dense_trust_region_step(
+        torch.tensor([0.0, 2.0], dtype=torch.float64),
+        torch.diag(torch.tensor([-1.0, 0.0], dtype=torch.float64)),
+        torch.tensor(0.25, dtype=torch.float64),
+        subproblem_tolerance=1.0e-10,
+        max_subproblem_iterations=80,
+    )
+    assert torch.linalg.vector_norm(shifted_step) <= 0.25000001

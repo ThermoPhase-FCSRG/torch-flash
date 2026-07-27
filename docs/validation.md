@@ -1,10 +1,9 @@
 # Validation reports
 
-These reports show the saved visual results of the `torch-flash` validation
-notebooks. Experimental markers, model curves, parity plots, and residual
-plots are retained so the tested systems and model behavior remain visible.
-The underlying research CSVs, numerical tables, and local-only notebook pairs
-are not published.
+These reports show validation results produced with `torch-flash`.
+Experimental markers, model curves, parity plots, residual plots, and
+aggregate metrics are included where appropriate so the tested systems and
+model behavior remain visible.
 
 The reports distinguish three kinds of evidence:
 
@@ -47,26 +46,15 @@ The reports distinguish three kinds of evidence:
 - [E-PPR78 for CCS mixtures](validation-reports/33-eppr78-ccs-figure2.md) —
   all eight panels of Xu et al. Figure 2, including N2-CH4 phase behavior and
   mixing enthalpy plus N2-CO phase behavior.
+- [CO2 pre-salt phase behavior across applicable models](validation-reports/34-co2-presalt-all-models.md)
+  — aggregate unfitted and fitted results for all 157 binary, ternary, and
+  quaternary transition observations from Simoncelli et al. Tables 7-9.
 
-## Publication and reproduction boundary
+## Report traceability
 
-The figures are selected PNG outputs copied directly from top-to-bottom
-executed notebooks. A marker visibly represents an observation coordinate,
-but the source row, machine-readable value, CSV, and notebook output table are
-not included in the public documentation. This figure-only decision does not
-change the source dataset's license or establish a general right to
-redistribute it; see [licensing and data provenance](licensing.md).
-
-The local-only notebook pairs can be synchronized, executed, and republished
-in a checkout containing the lawful research inputs:
-
-```bash
-pixi run -e benchmarks notebooks-sync
-pixi run -e benchmarks notebooks-run
-pixi run -e notebooks validation-figures
-pixi run -e default check-data-rights
-```
-
-The [figure manifest](assets/validation/manifest.yaml) records the exact
-executed-notebook checksum, source cell, evidence class, and data dependencies
-for every published plot.
+Each report records the model identity, evidence class, conditions, units,
+solver acceptance criteria, quantitative metrics, and scientific limitations
+needed to interpret its `torch-flash` results. Published validation figures
+also have an entry in the
+[figure manifest](assets/validation/manifest.yaml) with their evidence class,
+source cell, inputs, and checksum.
