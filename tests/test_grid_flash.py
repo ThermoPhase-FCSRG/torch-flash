@@ -19,6 +19,7 @@ from torch_flash import (
     identify_phase,
     multiphase_trust_region_flash,
     peng_robinson_1978,
+    polish_grid_equilibrium_with_trust_region,
     refine_flash_grid_phase_boundaries,
     soave_redlich_kwong,
     solve_batched_binary_three_phase_invariants,
@@ -320,6 +321,126 @@ def test_binary_invariant_autodiff_newton_and_grid_lever_rule():
         ),
     )
     assert homogeneous.phase_counts.tolist() == [1]
+
+
+@pytest.mark.serial
+def test_trust_region_grid_polish_audits_one_two_and_three_phase_states():
+    model = _binary_model()
+    invariant = solve_binary_three_phase_invariant(
+        model,
+        torch.tensor(180.0, dtype=torch.float64),
+        torch.tensor(2.7e6, dtype=torch.float64),
+        torch.tensor(
+            [[0.20, 0.80], [0.78, 0.22], [0.96, 0.04]],
+            dtype=torch.float64,
+        ),
+        max_iterations=24,
+    )
+    assert invariant.converged
+    state = ChemicalState(
+        torch.tensor([500.0, 220.0, 180.0], dtype=torch.float64),
+        torch.stack(
+            (
+                torch.tensor(1.0e5, dtype=torch.float64),
+                torch.tensor(2.0e6, dtype=torch.float64),
+                invariant.pressure,
+            )
+        ),
+        torch.tensor(
+            [[0.5, 0.5], [0.5, 0.5], [0.6, 0.4]],
+            dtype=torch.float64,
+        ),
+    )
+    equilibrium = flash_grid(model, state, binary_invariants=(invariant,))
+    assert equilibrium.phase_counts.tolist() == [1, 2, 3]
+
+    polished = polish_grid_equilibrium_with_trust_region(
+        model,
+        equilibrium,
+        tolerance=1.0e-8,
+        max_iterations=24,
+        chunk_size=2,
+    )
+
+    assert polished.attempted.tolist() == [True, True, True]
+    assert polished.converged.tolist() == [True, True, True]
+    assert polished.equilibrium.phase_counts.tolist() == [1, 2, 3]
+    assert polished.equilibrium.converged.tolist() == [True, True, True]
+    assert polished.equilibrium.fugacity_residual.max() <= 1.0e-8
+    assert polished.equilibrium.material_balance_residual.max() <= 5.0e-11
+    assert torch.isfinite(polished.minimum_tpd[0])
+    assert torch.isnan(polished.minimum_tpd[1:]).all()
+    assert polished.minimum_tpd[0] >= -1.0e-7
+    assert torch.isnan(polished.maximum_phase_composition_change[0])
+    assert torch.isfinite(polished.maximum_phase_composition_change[1:]).all()
+    assert polished.elapsed_seconds > 0.0
+    assert polished.equilibrium.elapsed_seconds > equilibrium.elapsed_seconds
+
+    forced_single_fractions = equilibrium.phase_fractions[1:2].new_zeros((1, 3))
+    forced_single_fractions[:, 0] = 1.0
+    forced_single_compositions = equilibrium.phase_compositions[1:2].new_full(
+        (1, 3, 2),
+        torch.nan,
+    )
+    forced_single_compositions[:, 0] = equilibrium.feeds[1]
+    forced_single = replace(
+        equilibrium,
+        temperatures=equilibrium.temperatures[1:2],
+        pressures=equilibrium.pressures[1:2],
+        feeds=equilibrium.feeds[1:2],
+        grid_shape=(1,),
+        phase_fractions=forced_single_fractions,
+        phase_compositions=forced_single_compositions,
+        phase_counts=torch.ones(1, dtype=torch.int64),
+        gibbs_reduction=torch.zeros(1, dtype=torch.float64),
+        fugacity_residual=torch.zeros(1, dtype=torch.float64),
+        material_balance_residual=torch.zeros(1, dtype=torch.float64),
+        converged=torch.ones(1, dtype=torch.bool),
+    )
+    recovered = polish_grid_equilibrium_with_trust_region(
+        model,
+        forced_single,
+        max_iterations=24,
+    )
+    assert recovered.minimum_tpd[0] < -1.0e-7
+    assert recovered.equilibrium.phase_counts.tolist() == [2]
+    assert recovered.converged.tolist() == [True]
+
+    with pytest.raises(ValueError, match="tolerances"):
+        polish_grid_equilibrium_with_trust_region(model, equilibrium, tolerance=0.0)
+    with pytest.raises(ValueError, match="iteration and chunk"):
+        polish_grid_equilibrium_with_trust_region(model, equilibrium, chunk_size=0)
+    with pytest.raises(ValueError, match="arrays are inconsistent"):
+        polish_grid_equilibrium_with_trust_region(
+            model,
+            replace(equilibrium, grid_shape=(99,)),
+        )
+    with pytest.raises(ValueError, match="between one and three"):
+        polish_grid_equilibrium_with_trust_region(
+            model,
+            replace(
+                equilibrium,
+                phase_counts=torch.tensor([4, 2, 3], dtype=torch.int64),
+            ),
+        )
+    invalid_feeds = equilibrium.feeds.clone()
+    invalid_feeds[0] = torch.tensor([0.0, 1.0], dtype=torch.float64)
+    with pytest.raises(ValueError, match="strictly positive"):
+        polish_grid_equilibrium_with_trust_region(
+            model,
+            replace(equilibrium, feeds=invalid_feeds),
+        )
+    invalid_multiphase_feeds = equilibrium.feeds.clone()
+    invalid_multiphase_feeds[1] = torch.tensor([0.0, 1.0], dtype=torch.float64)
+    with pytest.raises(ValueError, match="strictly positive"):
+        polish_grid_equilibrium_with_trust_region(
+            model,
+            replace(
+                equilibrium,
+                feeds=invalid_multiphase_feeds,
+                converged=torch.tensor([False, True, False]),
+            ),
+        )
 
 
 @pytest.mark.serial

@@ -388,6 +388,7 @@ def minimize_batched_dense_trust_region(
     objective: Callable[..., Tensor],
     initial: Tensor,
     *objective_arguments: Tensor,
+    is_feasible: Callable[[Tensor], Tensor] | None = None,
     initial_radius: float | Tensor = 0.5,
     maximum_radius: float | Tensor = 5.0,
     gradient_tolerance: float = 1.0e-9,
@@ -408,6 +409,10 @@ def minimize_batched_dense_trust_region(
         Finite initial variables with shape ``(batch, variables)``.
     *objective_arguments
         Tensors sharing the leading batch size.
+    is_feasible
+        Optional predicate returning one Boolean per batch row. Infeasible
+        trial rows are rejected without evaluating their objective. Every
+        initial row must be feasible.
     initial_radius, maximum_radius
         Positive scalars or per-state tensors with shape ``(batch,)``.
     gradient_tolerance, max_iterations, acceptance_threshold,
@@ -457,6 +462,23 @@ def minimize_batched_dense_trust_region(
 
     batch_size, variable_count = initial.shape
     variables = initial.clone()
+
+    def feasible(current: Tensor) -> Tensor:
+        if is_feasible is None:
+            return torch.ones(
+                batch_size,
+                dtype=torch.bool,
+                device=initial.device,
+            )
+        result = is_feasible(current)
+        if result.shape != (batch_size,) or result.dtype != torch.bool:
+            raise ValueError(
+                "batched trust-region feasibility predicate must return one Boolean per batch row"
+            )
+        return result
+
+    if not bool(feasible(variables).all()):
+        raise ValueError("batched trust-region initial values must be feasible")
 
     def batch_scalar(value: float | Tensor, name: str) -> Tensor:
         tensor = torch.as_tensor(value, dtype=initial.dtype, device=initial.device)
@@ -545,10 +567,21 @@ def minimize_batched_dense_trust_region(
             + 0.5 * torch.einsum("bi,bij,bj->b", step, hessian, step)
         )
         candidate = variables + step
-        candidate_value = values(candidate)
+        candidate_is_feasible = feasible(candidate)
+        safe_candidate = torch.where(
+            candidate_is_feasible.unsqueeze(-1),
+            candidate,
+            variables,
+        )
+        candidate_value = torch.where(
+            candidate_is_feasible,
+            values(safe_candidate),
+            value.new_full((), torch.inf),
+        )
         actual_reduction = value - candidate_value
         valid_prediction = (
             active
+            & candidate_is_feasible
             & torch.isfinite(candidate_value)
             & torch.isfinite(predicted_reduction)
             & (predicted_reduction > 0.0)
@@ -570,7 +603,7 @@ def minimize_batched_dense_trust_region(
             & (actual_reduction.abs() <= reduction_resolution)
         )
         if bool(roundoff_candidate.any().detach()):
-            candidate_gradient, _ = derivatives(candidate)
+            candidate_gradient, _ = derivatives(safe_candidate)
             roundoff_stationary_step = (
                 roundoff_candidate
                 & torch.isfinite(candidate_gradient).all(dim=-1)

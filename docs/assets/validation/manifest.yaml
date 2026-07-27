@@ -758,3 +758,39 @@ figures:
     executed_artifact_sha256: c5ae705193b5ed63858dded18983f1376e2bcb1471d7506500a9fd7f387be547
     machine_readable_observation_values: false
     data_tables_distributed: false
+  35_nichita_trust_region_phase_envelopes.png:
+    study_id: 35_nichita_trust_region_phase_envelopes
+    cell_index: 12
+    image_index: 0
+    evidence_class: verification
+    observation_level_markers: false
+    data_artifacts:
+    - nichita_2014_figures_3_4_digitized.csv
+    source_material:
+    - https://doi.org/10.1016/j.fluid.2013.08.039
+    - https://doi.org/10.2118/129844-PA
+    description: Trust-Region-polished phase-region maps and digitized published
+      calculation boundaries for Petitfrere-Nichita Figures 3 and 4.
+    publication_form: rendered-plot
+    observation_level_values: false
+    executed_artifact_sha256: c07a3c96b173e9544b81da976ed054a039baf1cab2e2852d9c900c7e32cdd29c
+    machine_readable_observation_values: false
+    data_tables_distributed: false
+  35_nichita_phase_identification_methods.png:
+    study_id: 35_nichita_trust_region_phase_envelopes
+    cell_index: 10
+    image_index: 0
+    evidence_class: verification
+    observation_level_markers: false
+    data_artifacts:
+    - nichita_2014_figures_3_4_digitized.csv
+    source_material:
+    - https://doi.org/10.1016/j.fluid.2013.08.039
+    - https://doi.org/10.2118/129844-PA
+    description: Comparison of all six physical phase-identification methods on
+      the same Trust-Region-polished equilibrium states.
+    publication_form: rendered-plot
+    observation_level_values: false
+    executed_artifact_sha256: c07a3c96b173e9544b81da976ed054a039baf1cab2e2852d9c900c7e32cdd29c
+    machine_readable_observation_values: false
+    data_tables_distributed: false

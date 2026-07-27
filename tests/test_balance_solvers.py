@@ -380,6 +380,35 @@ def test_batched_dense_trust_region_vectorizes_independent_objectives():
             lambda values: values.new_full((values.shape[0],), torch.nan),
             torch.ones((2, 2)),
         )
+    with pytest.raises(ValueError, match="one Boolean"):
+        minimize_batched_dense_trust_region(
+            lambda values: values.square().sum(dim=-1),
+            torch.ones((2, 2)),
+            is_feasible=lambda values: torch.ones(
+                values.shape[0],
+                dtype=values.dtype,
+            ),
+        )
+    with pytest.raises(ValueError, match="initial values must be feasible"):
+        minimize_batched_dense_trust_region(
+            lambda values: values.square().sum(dim=-1),
+            torch.ones((2, 2)),
+            is_feasible=lambda values: (values < 0.5).all(dim=-1),
+        )
+
+    bounded = minimize_batched_dense_trust_region(
+        lambda values, centers: 0.5 * (values - centers).square().sum(dim=-1),
+        torch.full((2, 1), 0.5, dtype=torch.float64),
+        torch.tensor([[2.0], [0.75]], dtype=torch.float64),
+        is_feasible=lambda values: ((values > 0.0) & (values < 1.0)).all(dim=-1),
+        max_iterations=8,
+    )
+    assert ((bounded.solution > 0.0) & (bounded.solution < 1.0)).all()
+    assert bounded.rejected_steps[0] > 0
+    torch.testing.assert_close(
+        bounded.solution[1],
+        torch.tensor([0.75], dtype=torch.float64),
+    )
 
     roundoff_limited = minimize_batched_dense_trust_region(
         lambda values: (

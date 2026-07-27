@@ -49,6 +49,9 @@ The reports distinguish three kinds of evidence:
 - [CO2 pre-salt phase behavior across applicable models](validation-reports/34-co2-presalt-all-models.md)
   — aggregate unfitted and fitted results for all 157 binary, ternary, and
   quaternary transition observations from Simoncelli et al. Tables 7-9.
+- [Trust-Region phase envelopes and phase identification](validation-reports/35-nichita-trust-region-phase-envelopes.md)
+  — verification of Petitfrere-Nichita Figures 3 and 4 plus a comparison of
+  all six physical phase-identification criteria.
 
 ## Report traceability
 

@@ -101,6 +101,10 @@ artifacts:
     status: generated
     basis: Project-generated NeqSim 3.16.0 numerical output.
     source: tests/data/README.md
+  nichita_2014_figures_3_4_digitized.csv:
+    status: not-cleared
+    basis: Approximate visual digitization of computed phase-region boundaries in Figures 3-4; publisher redistribution permission not verified.
+    source: https://doi.org/10.1016/j.fluid.2013.08.039
   nist_thermoml_h2_binary_density.csv:
     status: open
     basis: NIST-hosted ThermoML records with unrestricted public access; source DOIs retained.
