@@ -1,0 +1,136 @@
+format: torch-flash-model-parameters
+schema_version: 1
+id: transport.pedersen-2024
+model_kind: transport
+model: Pedersen transport-property correlations
+version: "2024-chapter-10-primary-source-corrections"
+description: >-
+  Published coefficients for the Chapter 10 viscosity, thermal-conductivity,
+  interfacial-tension, and n-paraffin diffusion models. The methane GT(9)
+  coefficient follows the original Hanley table.
+units:
+  temperature: K
+  pressure: Pa
+  dynamic_viscosity: Pa s
+  thermal_conductivity: W m^-1 K^-1
+  interfacial_tension: N m^-1
+  diffusion_coefficient: m^2 s^-1
+references:
+  - citation: >-
+      Pedersen et al., Phase Behavior of Petroleum Reservoir Fluids,
+      3rd ed. (2024), Chapter 10
+    doi: 10.1201/9780429457418-10
+  - citation: >-
+      Hanley, McCarty, and Haynes, Equations for the viscosity and thermal
+      conductivity coefficients of methane, Cryogenics 15 (1975) 413-417
+    doi: 10.1016/0011-2275(75)90010-7
+  - citation: >-
+      Quinones-Cisneros, Zeberg-Mikkelsen, and Stenby, One parameter friction
+      theory models for viscosity, Fluid Phase Equilibria 178 (2001) 1-16
+    doi: 10.1016/S0378-3812(00)00474-X
+  - citation: >-
+      Hayduk and Minhas, Correlations for prediction of molecular
+      diffusivities in liquids, Canadian Journal of Chemical Engineering
+      60 (1982) 295-299
+    doi: 10.1002/cjce.5450600213
+parameters:
+  methane:
+    critical_temperature: 190.564
+    critical_pressure: 4599200.0
+    molar_mass_g_mol: 16.04246
+    critical_mass_density_g_cm3: 0.16284
+    freezing_temperature: 91.0
+    viscosity_dilute:
+      [-209097.5, 264726.9, -147281.8, 47167.40, -9491.872,
+       1219.979, -96.27993, 4.274152, -0.08141531]
+    viscosity_first_density: [1.696985927, -0.133372346, 1.4, 168.0]
+    viscosity_dense:
+      [-10.3506, 17.5716, -3019.39, 188.730, 0.0429036, 145.290, 6127.68]
+    viscosity_low_temperature:
+      [-9.74602, 18.0834, -4126.66, 44.6055, 0.976544, 81.8134, 15649.9]
+    conductivity_dilute:
+      [-214762.1, 219046.1, -86180.97, 14960.99, -473.0660,
+       -233.1178, 37.78439, -2.320481, 0.05311764]
+    conductivity_first_density: [-0.25276292, 0.33432859, 1.12, 168.0]
+    conductivity_dense:
+      [-7.0403639907, 12.319512908, -885.25979933, 72.835897919,
+       0.74421462902, -2.9706914540, 2220.9758501]
+    conductivity_low_temperature:
+      [-8.55109, 12.5539, -1020.85, 238.394, 1.31563, -72.5759, 1411.60]
+    critical_enhancement:
+      x0: 0.1892
+      beta: 0.35
+      delta: 4.30
+      E1: 2.058
+      E2: 0.30
+      gamma_prime: 1.155
+  corresponding_states:
+    alpha_coefficient: 0.007378
+    alpha_density_exponent: 1.847
+    alpha_mass_exponent: 0.5173
+    thermal_alpha_coefficient: 0.0006004
+    thermal_alpha_density_exponent: 2.043
+    thermal_alpha_mass_exponent: 1.086
+  heavy_oil:
+    stabilized_log10: [-0.07995, -0.01101, -371.8, 6.215]
+    sign_switch_temperature: 564.49
+    visfac3: [0.2252, 0.9738]
+    visfac4: [0.5354, -0.1170]
+    pressure_coefficient: 0.00384
+    pressure_exponent: 0.8226
+  lbc:
+    coefficients: [0.10230, 0.023364, 0.058533, -0.040758, 0.0093324]
+  lee_gas:
+    density_scale_lb_ft3: 62.4
+    x: [3.5, 986.0, 0.01]
+    y: [2.4, -0.2]
+    k: [9.4, 0.02, 209.0, 19.0]
+  friction_theory:
+    epsilon: 0.30
+    critical_viscosity: [0.597556, 0.601652]
+    SRK:
+      critical: [-0.165302, 0.00699574, 0.00126358]
+      attractive:
+        [-0.114804, 0.246622, -0.000115648, -0.0394638,
+         0.0000418863, -0.00000000591999]
+      repulsive:
+        [-0.315903, 0.566713, -0.000100860, -0.0729995,
+         0.0000517459, -0.00000000568708]
+      quadratic_repulsive: 0.0000000135994
+    PR:
+      critical: [-0.140464, 0.0119902, 0.000855115]
+      attractive:
+        [-0.0489197, 0.270572, -0.000110473, -0.0448111,
+         0.0000408972, -0.00000000579765]
+      repulsive:
+        [-0.357875, 0.637572, -0.0000602128, -0.079024,
+         0.0000372408, -0.00000000565610]
+      quadratic_repulsive: 0.0000000137290
+  interfacial_tension:
+    parachor:
+      nitrogen: 41.0
+      carbon_dioxide: 78.0
+      hydrogen_sulfide: 80.1
+      methane: 77.3
+      ethane: 108.9
+      propane: 151.9
+      isobutane: 181.5
+      n_butane: 191.7
+      isopentane: 225.0
+      n_pentane: 233.9
+      n_hexane: 271.0
+    lee_chien_b:
+      nitrogen: 3.505
+      carbon_dioxide: 3.414
+      methane: 3.403
+      ethane: 3.591
+      propane: 3.602
+      n_butane: 3.652
+      n_pentane: 3.690
+      n_hexane: 3.726
+  diffusion:
+    prefactor: 1.33e-11
+    temperature_exponent: 1.47
+    volume_exponent: 0.71
+    viscosity_volume_coefficient: 10.2
+    viscosity_exponent_offset: 0.791

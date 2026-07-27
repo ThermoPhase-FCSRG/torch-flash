@@ -1,0 +1,46 @@
+format: torch-flash-model-parameters
+schema_version: 1
+id: characterization.pedersen-heavy-aromatic-2004
+model_kind: characterization
+model: Pedersen heavy-aromatic C200 characterization
+version: "SPE-88364-PA-2004"
+description: >-
+  C200 logarithmic heavy-end split, density relation, and EOS-specific
+  critical-property correlations for highly aromatic and HT/HP petroleum
+  fluids. For molecular weights above 1000 g/mol, the published inverse-mass
+  continuation is applied to the cubic alpha-function parameter.
+units:
+  molecular_weight_slope: g mol^-1 carbon-number^-1
+  molecular_weight_intercept: g mol^-1
+  critical_temperature: K
+  critical_pressure: atm
+  density: g cm^-3
+  alpha_parameter_mass_threshold: g mol^-1
+references:
+  - citation: >-
+      Pedersen, Milter, and Sorensen, Cubic Equations of State Applied to
+      HT/HP and Highly Aromatic Fluids, SPE Journal 9 (2004), 186-192,
+      Eqs. 1-14 and Table 4
+    doi: 10.2118/88364-PA
+parameters:
+  plus_split:
+    default_max_carbon_number: 200
+    molecular_weight: {slope: 14.0, intercept: -4.0}
+    density_log_carbon_number: true
+    default_anchor_density_ratio: 0.86
+  cubic_properties:
+    SRK:
+      critical_temperature: [304.143, 48.4052, 0.710774, 3800.73]
+      log_critical_pressure: [3.05081, -0.903352, 233.768, -12715.4, 0.25]
+      m: [0.496902, 0.00558442, 0.0101564, -5.24300e-6]
+      m_to_acentric_factor: [0.480, 1.574, -0.176]
+      inverse_mass_m_threshold: 1000.0
+    PR:
+      critical_temperature: [326.725, 52.3447, 0.577248, 1774.98]
+      log_critical_pressure: [2.68058, -0.532274, 204.507, -9454.34, 0.25]
+      m: [0.189723, 0.00742901, 0.0328795, -7.36151e-6]
+      m_to_acentric_factor: [0.37464, 1.5422, -0.26992]
+      inverse_mass_m_threshold: 1000.0
+  lumping:
+    basis: weight
+    property_average_basis: weight

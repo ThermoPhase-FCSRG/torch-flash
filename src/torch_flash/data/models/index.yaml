@@ -47,6 +47,11 @@ parameter_sets:
     aliases:
       - pedersen-characterization
       - pedersen-c7-plus
+  characterization.pedersen-heavy-aromatic-2004:
+    path: characterization/pedersen-heavy-aromatic-2004.yaml
+    aliases:
+      - pedersen-heavy-aromatic
+      - pedersen-c200
   characterization.whitson-2000:
     path: characterization/whitson-2000.yaml
     aliases:
@@ -130,6 +135,8 @@ parameter_sets:
       - normal-hydrogen
   standard-state.poling-2001:
     path: standard_state/poling-2001.yaml
+  transport.pedersen-2024:
+    path: transport/pedersen-2024.yaml
     aliases:
       - poling
       - poling-ideal-gas
