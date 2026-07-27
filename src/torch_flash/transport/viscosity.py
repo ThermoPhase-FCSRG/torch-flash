@@ -13,6 +13,7 @@ Behavior*, SPE Monograph 20 (2000), Appendix B, Problem 7.
 
 from __future__ import annotations
 
+import math
 from collections.abc import Mapping
 from typing import Literal, cast
 
@@ -32,6 +33,7 @@ _METHANE_MOLAR_MASS_G = 16.04246
 _METHANE_CRITICAL_MASS_DENSITY = 0.16266  # kg/L = g/cm3
 _R_L_ATM = 0.08205616
 _GAMMA = 0.0096
+_METHANE_BWR_DENSITY_SCAN_LOG10_MAX = math.log10(50.0)
 
 _N = (
     -1.8439486666e-2,
@@ -196,7 +198,7 @@ def methane_bwr_density(
     pressure_atm = broadcast_pressure / 101_325.0
     grid_values = torch.logspace(
         -10.0,
-        torch.log10(pressure.new_tensor(50.0)).item(),
+        _METHANE_BWR_DENSITY_SCAN_LOG10_MAX,
         240,
         dtype=temperature.dtype,
         device=temperature.device,
@@ -217,9 +219,12 @@ def methane_bwr_density(
     left = torch.gather(grid, -1, index[..., None]).squeeze(-1)
     right = torch.gather(grid, -1, (index + 1)[..., None]).squeeze(-1)
     left_value = methane_bwr_pressure(broadcast_temperature, left) - pressure_atm
-    for _ in range(80):
+    residual_tolerance = 1.0e-11 * torch.clamp_min(pressure_atm.detach().abs(), 1.0)
+    for iteration in range(80):
         density = 0.5 * (left + right)
         value = methane_bwr_pressure(broadcast_temperature, density) - pressure_atm
+        if (iteration + 1) % 8 == 0 and bool((value.detach().abs() <= residual_tolerance).all()):
+            break
         changes_left = torch.signbit(left_value) != torch.signbit(value)
         right = torch.where(changes_left, density, right)
         left = torch.where(changes_left, left, density)

@@ -1139,14 +1139,28 @@ def test_methane_reference_against_frozen_independent_values(
     assert float(viscosity) == pytest.approx(expected, rel=2.0e-12)
 
 
-def test_methane_density_liquid_branch_and_autodiff():
+def test_methane_density_liquid_branch_autodiff_and_early_stop(monkeypatch):
     temperature = torch.tensor(150.0, dtype=DTYPE, requires_grad=True)
-    pressure = torch.tensor(5.0e6, dtype=DTYPE)
+    pressure = torch.tensor(5.0e6, dtype=DTYPE, requires_grad=True)
+    calls = 0
+    original_pressure = viscosity_module.methane_bwr_pressure
+
+    def counting_pressure(current_temperature, density):
+        nonlocal calls
+        calls += 1
+        return original_pressure(current_temperature, density)
+
+    monkeypatch.setattr(viscosity_module, "methane_bwr_pressure", counting_pressure)
     density = methane_bwr_density(temperature, pressure, phase="liquid")
     assert density > 10.0
+    assert calls < 86
     viscosity = methane_viscosity(temperature, density)
-    gradient = torch.autograd.grad(viscosity, temperature)[0]
-    assert torch.isfinite(gradient)
+    temperature_gradient, pressure_gradient = torch.autograd.grad(
+        viscosity,
+        (temperature, pressure),
+    )
+    assert torch.isfinite(temperature_gradient)
+    assert torch.isfinite(pressure_gradient)
 
 
 def test_corresponding_states_pure_methane_identity_and_mixture():

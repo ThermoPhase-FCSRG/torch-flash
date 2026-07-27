@@ -88,6 +88,16 @@ def test_pedersen_binary_interaction_accepts_explicit_characterized_cuts():
             components,
             aggregate_hydrocarbons=("nitrogen",),
         )
+    with pytest.raises(ValueError, match="not a string"):
+        pedersen_binary_interaction(
+            components,
+            aggregate_hydrocarbons="C7-C20",
+        )
+    with pytest.raises(ValueError, match="only strings"):
+        pedersen_binary_interaction(
+            components,
+            aggregate_hydrocarbons=("C7-C20", 7),
+        )
 
 
 @pytest.mark.parametrize("function", [whitson_binary_interaction, pedersen_binary_interaction])

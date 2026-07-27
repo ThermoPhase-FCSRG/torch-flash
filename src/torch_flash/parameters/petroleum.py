@@ -57,7 +57,9 @@ def binary_interaction(
     Raises
     ------
     ValueError
-        If ``eos`` is unsupported.
+        If ``eos`` is unsupported or ``aggregate_hydrocarbons`` is a string
+        instead of an iterable of strings, contains non-string items, or
+        declares a nonhydrocarbon.
     KeyError
         If a requested component is outside the parameter inventory.
     ParameterDatabaseError
@@ -73,7 +75,14 @@ def binary_interaction(
     parameters = loaded.parameters
     hydrocarbons = _string_tuple(parameters.get("hydrocarbons"), "hydrocarbons")
     nonhydrocarbons = _string_tuple(parameters.get("nonhydrocarbons"), "nonhydrocarbons")
-    aggregate = frozenset(aggregate_hydrocarbons)
+    if isinstance(aggregate_hydrocarbons, str):
+        raise ValueError(
+            "aggregate_hydrocarbons must be an iterable of component-name strings, not a string"
+        )
+    aggregate_items = tuple(aggregate_hydrocarbons)
+    if any(not isinstance(name, str) for name in aggregate_items):
+        raise ValueError("aggregate_hydrocarbons must contain only strings")
+    aggregate = frozenset(aggregate_items)
     if not aggregate.issubset(components.names):
         missing = ", ".join(sorted(aggregate - set(components.names)))
         raise KeyError(f"aggregate hydrocarbon names are absent from components: {missing}")
