@@ -794,3 +794,99 @@ figures:
     executed_artifact_sha256: c07a3c96b173e9544b81da976ed054a039baf1cab2e2852d9c900c7e32cdd29c
     machine_readable_observation_values: false
     data_tables_distributed: false
+  36_transport_gas_viscosity_validation.png:
+    study_id: 36_pedersen_transport_properties
+    notebook: notebooks/local-only/validation/36_pedersen_transport_properties.ipynb
+    cell_index: 4
+    image_index: 0
+    evidence_class: validation
+    observation_level_markers: true
+    data_artifacts:
+    - pedersen_2024_transport_gas_composition.csv
+    - pedersen_2024_transport_gas_viscosity.csv
+    source_material:
+    - https://doi.org/10.1201/9780429457418
+    - https://doi.org/10.1016/j.petrol.2013.10.021
+    description: Predictive reservoir-gas viscosity curves from four transport models
+      against all 28 experimental observations.
+    publication_form: rendered-plot
+    observation_level_values: false
+    executed_artifact_sha256: f0c02ce2472c05c09039c7b5ed296d4bfe74190a5ee6422cf406c3fd4612068c
+    machine_readable_observation_values: false
+    data_tables_distributed: false
+  36_transport_heavy_oil_viscosity_validation.png:
+    study_id: 36_pedersen_transport_properties
+    notebook: notebooks/local-only/validation/36_pedersen_transport_properties.ipynb
+    cell_index: 6
+    image_index: 0
+    evidence_class: calibration
+    observation_level_markers: true
+    data_artifacts:
+    - pedersen_2024_transport_heavy_oil5_composition.csv
+    - pedersen_2024_transport_heavy_oil5_viscosity.csv
+    source_material:
+    - https://doi.org/10.1201/9780429457418
+    - https://doi.org/10.2118/88364-PA
+    description: PR78 phase-aware Heavy Oil 5 corresponding-states viscosity
+      with source-factor and simultaneous two-factor calibrated curves against
+      all 21 experimental observations.
+    publication_form: rendered-plot
+    observation_level_values: false
+    executed_artifact_sha256: f0c02ce2472c05c09039c7b5ed296d4bfe74190a5ee6422cf406c3fd4612068c
+    machine_readable_observation_values: false
+    data_tables_distributed: false
+  36_transport_thermal_conductivity_validation.png:
+    study_id: 36_pedersen_transport_properties
+    notebook: notebooks/local-only/validation/36_pedersen_transport_properties.ipynb
+    cell_index: 8
+    image_index: 0
+    evidence_class: validation
+    observation_level_markers: true
+    data_artifacts:
+    - pedersen_2024_transport_thermal_conductivity.csv
+    source_material:
+    - https://doi.org/10.1201/9780429457418
+    - https://doi.org/10.1021/je60083a034
+    description: CO2-methane corresponding-states thermal-conductivity parity and
+      pure-methane reference-model profiles.
+    publication_form: rendered-plot
+    observation_level_values: false
+    executed_artifact_sha256: f0c02ce2472c05c09039c7b5ed296d4bfe74190a5ee6422cf406c3fd4612068c
+    machine_readable_observation_values: false
+    data_tables_distributed: false
+  36_transport_interfacial_tension_application.png:
+    study_id: 36_pedersen_transport_properties
+    notebook: notebooks/local-only/validation/36_pedersen_transport_properties.ipynb
+    cell_index: 10
+    image_index: 0
+    evidence_class: application
+    observation_level_markers: false
+    data_artifacts: []
+    source_material:
+    - https://doi.org/10.1201/9780429457418
+    - https://doi.org/10.1002/aic.690010208
+    description: PR76 methane-n-butane P-x-y states coupled to Weinaug-Katz and
+      Lee-Chien interfacial tension, plus Brock-Bird n-butane surface tension.
+    publication_form: rendered-plot
+    observation_level_values: false
+    executed_artifact_sha256: f0c02ce2472c05c09039c7b5ed296d4bfe74190a5ee6422cf406c3fd4612068c
+    machine_readable_observation_values: false
+    data_tables_distributed: false
+  36_transport_diffusion_application.png:
+    study_id: 36_pedersen_transport_properties
+    notebook: notebooks/local-only/validation/36_pedersen_transport_properties.ipynb
+    cell_index: 12
+    image_index: 0
+    evidence_class: application
+    observation_level_markers: false
+    data_artifacts: []
+    source_material:
+    - https://doi.org/10.1201/9780429457418
+    - https://doi.org/10.1002/cjce.5450600213
+    description: PR78-LBC n-decane liquid viscosity coupled to the SI kinematic
+      definition and Hayduk-Minhas infinite-dilution n-paraffin diffusion.
+    publication_form: rendered-plot
+    observation_level_values: false
+    executed_artifact_sha256: f0c02ce2472c05c09039c7b5ed296d4bfe74190a5ee6422cf406c3fd4612068c
+    machine_readable_observation_values: false
+    data_tables_distributed: false

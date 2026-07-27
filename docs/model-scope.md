@@ -462,6 +462,25 @@ predictive heavy-oil model. Built-in petroleum critical volumes are from
 Whitson and Brulé Table A-1B; pseudo-components require their own
 characterization.
 
+The Lindeloff heavy-oil branch blends with conventional corresponding states
+over the published 65-75 K methane-reference interval.
+`evaluate_heavy_oil_corresponding_states_profile` resolves one bubble point
+per unique temperature and batches the sub-bubble flashes before evaluating
+liquid viscosity. `fit_heavy_oil_csp_factors` calibrates the two explicit
+positive factors against all supplied states simultaneously and reports
+optimizer convergence plus sensitivity rank and conditioning. The Heavy Oil
+5 study uses the published C200 heavy-aromatic characterization with PR78;
+its fitted factors are calibration results for that oil, not bundled
+predictive constants.
+
+The transport module also implements the Lee gas and one-parameter
+friction-theory viscosity correlations; Hanley methane and
+Christensen-Fredenslund mixture thermal conductivity; Brock-Bird,
+Weinaug-Katz/Danesh, and Lee-Chien surface/interfacial tension; the SI
+kinematic-viscosity definition; and Hayduk-Minhas n-paraffin diffusion. These
+functions consume a specified homogeneous state or already coexisting phases.
+They do not infer phase stability or select an EoS root.
+
 For complete bibliographic metadata and the distinction between model,
 experimental-data, and software-baseline sources, see
 [Scientific references and data provenance](references.md).
