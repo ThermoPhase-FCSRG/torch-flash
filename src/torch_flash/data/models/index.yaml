@@ -135,11 +135,14 @@ parameter_sets:
       - normal-hydrogen
   standard-state.poling-2001:
     path: standard_state/poling-2001.yaml
-  transport.pedersen-2024:
-    path: transport/pedersen-2024.yaml
     aliases:
       - poling
       - poling-ideal-gas
+  transport.pedersen-2024:
+    path: transport/pedersen-2024.yaml
+    aliases:
+      - pedersen-transport
+      - pedersen-2024-transport
   volume-translation.pedersen-2024:
     path: volume_translation/pedersen-2024.yaml
     aliases:

@@ -149,12 +149,31 @@ def published_parachors(
 ) -> Tensor:
     """Return the Pedersen Table 10.19 parachors for supported components.
 
+    Parameters
+    ----------
+    names
+        Canonical component names in the desired output order.
+    like
+        Tensor supplying output dtype and device.
+
+    Returns
+    -------
+    Tensor
+        One published component parachor per name, in conventional
+        ``(dyn/cm)**0.25 cm3/mol`` units.
+
     Raises
     ------
     KeyError
         If any component is outside the published table. Callers may instead
         provide explicit parachors or use :func:`parachor_from_molar_mass` for
         characterized C7+ fractions.
+
+    Notes
+    -----
+    Values are reproduced from Pedersen, Christensen, and Shaikh, *Phase
+    Behavior of Petroleum Reservoir Fluids*, 3rd ed. (2024), Table 10.19,
+    doi:10.1201/9780429457418.
     """
     values = cast(Mapping[str, float], _INTERFACIAL["parachor"])
     missing = [name for name in names if name not in values]
@@ -170,11 +189,30 @@ def published_lee_chien_b(
 ) -> Tensor:
     """Return Lee-Chien ``B`` values reproduced in Pedersen Table 10.20.
 
+    Parameters
+    ----------
+    names
+        Canonical component names in the desired output order.
+    like
+        Tensor supplying output dtype and device.
+
+    Returns
+    -------
+    Tensor
+        One dimensionless Lee-Chien ``B`` coefficient per name.
+
     Raises
     ------
     KeyError
         If a component lies outside the eight-component published table.
         Explicit user-supplied values are required for additional compounds.
+
+    Notes
+    -----
+    The coefficients are reproduced from Pedersen, Christensen, and Shaikh,
+    *Phase Behavior of Petroleum Reservoir Fluids*, 3rd ed. (2024),
+    Table 10.20, doi:10.1201/9780429457418. The defining correlation is Lee
+    and Chien, SPE-12643-MS (1984), doi:10.2118/12643-MS.
     """
     values = cast(Mapping[str, float], _INTERFACIAL["lee_chien_b"])
     missing = [name for name in names if name not in values]

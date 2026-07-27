@@ -836,3 +836,61 @@ def test_pedersen_cubic_adapter_payload_errors():
                 bad_threshold,
             ),
         )
+
+    light_only = SCNDistribution(
+        heavy_distribution.carbon_numbers[:2],
+        heavy_distribution.mole_fractions[:2],
+        heavy_distribution.molar_masses[:2],
+        heavy_distribution.densities[:2],
+    )
+    assert torch.isfinite(
+        pedersen_cubic_properties(light_only, "PR", "pedersen-c200").acentric_factor
+    ).all()
+
+    single_heavy_cut = SCNDistribution(
+        torch.tensor([200]),
+        torch.tensor([1.0], dtype=DTYPE),
+        torch.tensor([1.2], dtype=DTYPE),
+        torch.tensor([1100.0], dtype=DTYPE),
+    )
+    with pytest.raises(ValueError, match="at least two"):
+        pedersen_cubic_properties(single_heavy_cut, "PR", "pedersen-c200")
+
+    invalid_log_span = SCNDistribution(
+        torch.tensor([0, 200]),
+        torch.tensor([0.5, 0.5], dtype=DTYPE),
+        torch.tensor([1.1, 1.2], dtype=DTYPE),
+        torch.tensor([1050.0, 1100.0], dtype=DTYPE),
+    )
+    with pytest.raises(ValueError, match="distinct carbon-number cuts"):
+        pedersen_cubic_properties(invalid_log_span, "PR", "pedersen-c200")
+
+    missing_relation = deepcopy(heavy)
+    missing_relation.pop("plus_split")
+    with pytest.raises(ParameterDatabaseError, match=r"plus_split\.molecular_weight"):
+        pedersen_cubic_properties(
+            heavy_distribution,
+            "PR",
+            ModelParameterSet(
+                "bad.relation",
+                "characterization",
+                "test",
+                "1",
+                missing_relation,
+            ),
+        )
+
+    nonnumeric_relation = deepcopy(heavy)
+    nonnumeric_relation["plus_split"]["molecular_weight"]["slope"] = "fourteen"
+    with pytest.raises(ParameterDatabaseError, match="must be numeric"):
+        pedersen_cubic_properties(
+            heavy_distribution,
+            "PR",
+            ModelParameterSet(
+                "bad.numeric-relation",
+                "characterization",
+                "test",
+                "1",
+                nonnumeric_relation,
+            ),
+        )

@@ -2,11 +2,13 @@
 
 from __future__ import annotations
 
+from types import SimpleNamespace
 from unittest.mock import Mock
 
 import pytest
 import torch
 
+import torch_flash.transport.heavy_oil as heavy_oil_module
 import torch_flash.transport.thermal_conductivity as thermal_module
 import torch_flash.transport.viscosity as viscosity_module
 from torch_flash import (
@@ -40,7 +42,7 @@ from torch_flash import (
     stabilized_heavy_oil_viscosity,
     weinaug_katz_interfacial_tension,
 )
-from torch_flash.exceptions import InvalidStateError
+from torch_flash.exceptions import ConvergenceError, InvalidStateError
 from torch_flash.transport.viscosity import (
     methane_bwr_density,
     methane_bwr_pressure,
@@ -408,6 +410,40 @@ def test_phase_aware_heavy_oil_profile_and_fit_validate_inputs():
             composition[0],
             components,
         )
+    with pytest.raises(ValueError, match="feed composition"):
+        evaluate_heavy_oil_corresponding_states_profile(
+            model,
+            temperature,
+            pressure,
+            torch.ones(2, dtype=DTYPE),
+            components,
+        )
+    ethane_model = peng_robinson_1976(component_set(("ethane",), dtype=DTYPE))
+    with pytest.raises(ValueError, match="component order"):
+        evaluate_heavy_oil_corresponding_states_profile(
+            ethane_model,
+            temperature,
+            pressure,
+            composition[0],
+            components,
+        )
+    with pytest.raises(ValueError, match="iteration controls"):
+        evaluate_heavy_oil_corresponding_states_profile(
+            model,
+            temperature,
+            pressure,
+            composition[0],
+            components,
+            tolerance=0.0,
+        )
+    with pytest.raises(InvalidStateError, match="feed fractions"):
+        evaluate_heavy_oil_corresponding_states_profile(
+            model,
+            temperature,
+            pressure,
+            torch.zeros(1, dtype=DTYPE),
+            components,
+        )
     with pytest.raises(ValueError, match="initial bubble pressure"):
         evaluate_heavy_oil_corresponding_states_profile(
             model,
@@ -416,6 +452,15 @@ def test_phase_aware_heavy_oil_profile_and_fit_validate_inputs():
             composition[0],
             components,
             initial_bubble_pressure=-1.0,
+        )
+    with pytest.raises(ValueError, match="initial bubble pressure"):
+        evaluate_heavy_oil_corresponding_states_profile(
+            model,
+            temperature,
+            pressure,
+            composition[0],
+            components,
+            initial_bubble_pressure=torch.ones(2, dtype=DTYPE),
         )
     with pytest.raises(ValueError, match="shapes differ"):
         fit_heavy_oil_csp_factors(
@@ -441,6 +486,63 @@ def test_phase_aware_heavy_oil_profile_and_fit_validate_inputs():
             components,
             torch.ones(1, dtype=DTYPE),
             initial_factors=(0.1, 1.0),
+        )
+
+
+def test_phase_aware_heavy_oil_profile_boundary_failure_and_no_flash(monkeypatch):
+    components = component_set(("methane",), dtype=DTYPE)
+    model = peng_robinson_1976(components)
+    temperature = torch.tensor([300.0], dtype=DTYPE)
+    pressure = torch.tensor([3.0e6], dtype=DTYPE)
+    feed = torch.ones(1, dtype=DTYPE)
+
+    def boundary(converged):
+        return SimpleNamespace(
+            pressure=torch.tensor(2.0e6, dtype=DTYPE),
+            converged=converged,
+            residual_norm=torch.tensor(2.0e-4, dtype=DTYPE),
+            k_values=torch.ones(1, dtype=DTYPE),
+        )
+
+    monkeypatch.setattr(
+        heavy_oil_module,
+        "saturation_point",
+        lambda *args, **kwargs: boundary(True),
+    )
+    homogeneous = evaluate_heavy_oil_corresponding_states_profile(
+        model,
+        temperature,
+        pressure,
+        feed,
+        components,
+    )
+    assert bool(homogeneous.converged.all())
+    assert homogeneous.vapor_fraction.item() == 0.0
+    torch.testing.assert_close(homogeneous.liquid_composition, feed.reshape(1, 1))
+
+    monkeypatch.setattr(
+        heavy_oil_module,
+        "saturation_point",
+        lambda *args, **kwargs: boundary(False),
+    )
+    failed = evaluate_heavy_oil_corresponding_states_profile(
+        model,
+        temperature,
+        pressure,
+        feed,
+        components,
+        raise_on_failure=False,
+    )
+    assert not bool(failed.converged.any())
+    assert torch.isnan(failed.viscosity).all()
+    torch.testing.assert_close(failed.residual_norm, torch.tensor([2.0e-4], dtype=DTYPE))
+    with pytest.raises(ConvergenceError, match="state indices"):
+        evaluate_heavy_oil_corresponding_states_profile(
+            model,
+            temperature,
+            pressure,
+            feed,
+            components,
         )
 
 
