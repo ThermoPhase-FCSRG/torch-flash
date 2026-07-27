@@ -41,6 +41,7 @@ _MODEL_KINDS = frozenset(
         "multiparameter",
         "pure_helmholtz",
         "standard_state",
+        "transport",
         "volume_translation",
     }
 )
