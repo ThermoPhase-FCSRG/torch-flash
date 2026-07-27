@@ -5,6 +5,7 @@ import torch
 
 from torch_flash import (
     ChemicalState,
+    ComponentSet,
     component_set,
     enhanced_predictive_peng_robinson_1978,
     molar_enthalpy_of_mixing,
@@ -58,6 +59,45 @@ def test_whitson_and_pedersen_binary_interaction_tables():
     assert pedersen_srk[0, 1] == pytest.approx(-0.0315)
     assert torch.equal(torch.diagonal(whitson_pr), torch.zeros(5, dtype=torch.float64))
     torch.testing.assert_close(pedersen_pr, pedersen_pr.mT)
+
+
+def test_pedersen_binary_interaction_accepts_explicit_characterized_cuts():
+    light = component_set(("nitrogen", "carbon_dioxide", "methane"))
+    components = ComponentSet(
+        (*light.names, "C7-C20"),
+        torch.cat((light.critical_temperature, torch.tensor([700.0]))),
+        torch.cat((light.critical_pressure, torch.tensor([1.5e6]))),
+        torch.cat((light.acentric_factor, torch.tensor([0.8]))),
+        torch.cat((light.molar_mass, torch.tensor([0.25]))),
+    )
+    matrix = pedersen_binary_interaction(
+        components,
+        "PR",
+        aggregate_hydrocarbons=("C7-C20",),
+    )
+    assert matrix[0, 3] == pytest.approx(0.0800)
+    assert matrix[1, 3] == pytest.approx(0.0100)
+    assert matrix[2, 3] == 0.0
+    with pytest.raises(KeyError, match="absent"):
+        pedersen_binary_interaction(
+            components,
+            aggregate_hydrocarbons=("missing",),
+        )
+    with pytest.raises(ValueError, match="nonhydrocarbons"):
+        pedersen_binary_interaction(
+            components,
+            aggregate_hydrocarbons=("nitrogen",),
+        )
+    with pytest.raises(ValueError, match="not a string"):
+        pedersen_binary_interaction(
+            components,
+            aggregate_hydrocarbons="C7-C20",
+        )
+    with pytest.raises(ValueError, match="only strings"):
+        pedersen_binary_interaction(
+            components,
+            aggregate_hydrocarbons=("C7-C20", 7),
+        )
 
 
 @pytest.mark.parametrize("function", [whitson_binary_interaction, pedersen_binary_interaction])

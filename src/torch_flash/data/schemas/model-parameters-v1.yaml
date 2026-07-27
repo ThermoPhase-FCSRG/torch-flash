@@ -26,6 +26,7 @@ properties:
     enum:
       - activity
       - binary_interaction
+      - characterization
       - cpa
       - cubic
       - group_contribution
@@ -33,6 +34,7 @@ properties:
       - multiparameter
       - pure_helmholtz
       - standard_state
+      - transport
       - volume_translation
   model:
     type: string

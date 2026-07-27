@@ -229,8 +229,15 @@ Requirements:
 - Normal tests must not import ThermoPack, teqp, or NeqSim. Generate frozen,
   versioned baselines separately and record generator, version, complete model
   inputs, units, and residuals.
-- Use `pytest-regressions` where structured numerical output is more
-  reviewable than hand-written assertions.
+- Every new or materially changed numerical model, solver, property, or
+  reference bank must include at least one `pytest-regressions` snapshot of a
+  representative structured result bank. Keep equation, physics, tolerance,
+  convergence, and derivative assertions as well; the snapshot complements
+  rather than replaces them. Prefer `num_regression` for floating result
+  arrays so behavioral changes produce a reviewable numerical diff. Use
+  ``rtol=1e-5`` as the default snapshot tolerance; increase it only when a
+  documented conditioning or cross-platform nonportability study justifies
+  the wider regression envelope.
 - A few hand-picked points are not sufficient for a validation study when a
   fuller table or curve is available.
 - Match pure-component constants, alpha functions, mixing conventions,

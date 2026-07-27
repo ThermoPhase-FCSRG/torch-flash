@@ -5,12 +5,15 @@ Experimental markers, model curves, parity plots, residual plots, and
 aggregate metrics are included where appropriate so the tested systems and
 model behavior remain visible.
 
-The reports distinguish three kinds of evidence:
+The reports distinguish four kinds of evidence:
 
 - **validation** compares a selected model and parameter set with experimental
   observations;
 - **verification** checks equations against a published calculation or
   independently generated software reference; and
+- **calibration** estimates model parameters from the displayed observations
+  and does not count agreement with those same observations as independent
+  validation; and
 - **application** demonstrates a computed property, sensitivity, or model
   surface without claiming experimental agreement.
 
@@ -52,6 +55,10 @@ The reports distinguish three kinds of evidence:
 - [Trust-Region phase envelopes and phase identification](validation-reports/35-nichita-trust-region-phase-envelopes.md)
   — verification of Petitfrere-Nichita Figures 3 and 4 plus a comparison of
   all six physical phase-identification criteria.
+- [Transport properties](validation-reports/36-transport-properties.md) —
+  experimental viscosity and thermal-conductivity validation, source-factor
+  and jointly calibrated Heavy Oil 5 curves, and
+  surface/interfacial-tension and n-paraffin-diffusion applications.
 
 ## Report traceability
 

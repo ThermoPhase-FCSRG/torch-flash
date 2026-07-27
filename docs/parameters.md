@@ -201,7 +201,7 @@ Every model document has the following required fields:
 | `format` | exactly `torch-flash-model-parameters` |
 | `schema_version` | integer `1`; changes only for an incompatible document format |
 | `id` | stable lowercase identifier, conventionally `<kind>.<source-version>` |
-| `model_kind` | `cubic`, `cpa`, `activity`, `binary_interaction`, `group_contribution`, `characterization`, `volume_translation`, `multiparameter`, or `standard_state` |
+| `model_kind` | `cubic`, `cpa`, `activity`, `binary_interaction`, `group_contribution`, `characterization`, `volume_translation`, `multiparameter`, `standard_state`, or `transport` |
 | `model` | scientific model/family name, independent of the file name |
 | `version` | publication or fit version; changing coefficients requires a new version |
 | `units` | explicit unit for every dimensional parameter family |
@@ -549,6 +549,11 @@ different published methods:
   \(M_N=14CN-4\) g/mol relation, the logarithmic density rule and anchor
   default, EoS-specific `cubic_properties` tables for SRK and PR, and the
   weight-based lumping convention.
+- `characterization.pedersen-heavy-aromatic-2004` extends the logarithmic
+  split through C200 and contains the separately published SRK and PR
+  critical-property correlations for highly aromatic and HT/HP fluids. Above
+  1000 g/mol, the cubic alpha parameter follows the source's inverse-mass
+  continuation.
 - `characterization.whitson-2000` contains the shifted-gamma shape default and
   range, the recommended \(\eta(\alpha)\) relation, the 0.014 kg/mol
   molecular-weight boundary increment used by GAMSPL, and grouping defaults.
@@ -870,11 +875,20 @@ fit range and is metadata rather than an automatic clipping rule. Reference
 enthalpy and entropy default to zero, and a constructor argument may choose a
 different positive reference temperature.
 
-Transport correlations are not a model-database kind in schema version 1.
-Their current fit-ready quantities remain explicit arguments, such as
-`lbc_viscosity(..., coefficients=...)`. This avoids suggesting that a generic
-transport payload is supported before its model-specific units and
-constructor contract have been standardized.
+## Transport payload
+
+`model_kind: transport` stores correlation constants with their
+model-specific units. The bundled `transport.pedersen-2024` document contains
+the chapter 10 methane-reference, viscosity, thermal-conductivity,
+surface/interfacial-tension, and n-paraffin-diffusion constants used by the
+public transport functions.
+
+Fit-ready quantities remain explicit function arguments. For example,
+`lbc_viscosity(..., coefficients=...)` accepts the five LBC coefficients, and
+`fit_heavy_oil_csp_factors()` returns the calibrated third and fourth CSP
+factors without rewriting the immutable source parameter document. Persisting
+a calibration requires a distinct identifier and the dataset, objective,
+bounds, split, and fit diagnostics.
 
 ## Caching and custom-database lifecycle
 

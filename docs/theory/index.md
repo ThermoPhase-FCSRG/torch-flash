@@ -34,6 +34,7 @@ tables remain in their cited parameter sources.
 | How is liquid nonideality represented? | [Activity Models](activity-models.md) | `activity_model` |
 | How does an EoS provide equilibrium fugacity? | [Fugacity Models](fugacity-models.md) | `log_fugacity_coefficients` |
 | How are unresolved heavy fractions represented? | [Characterization and Pseudo-Components](characterization-pseudocomponents.md) | characterization and lumping APIs |
+| How are viscosity, conductivity, interfacial tension, and diffusion evaluated? | [Transport Properties](transport-properties.md) | `corresponding_states_viscosity`, `evaluate_heavy_oil_corresponding_states_profile`, and other transport APIs |
 
 ## Common notation
 
@@ -59,6 +60,8 @@ For a first calculation, read the [Getting Started](../getting-started.md)
 guide, then Chemical Equilibrium, Fugacity Models, and the relevant flash
 page. Read Activity Models before selecting an excess-Gibbs or Huron-Vidal
 model, and read Characterization before creating heavy pseudo-components.
+Read Transport Properties after the phase state or coexisting phases have
+been resolved.
 
 Numerical convergence and physical validity are separate questions throughout
 this section. A small algebraic residual does not establish global stability,

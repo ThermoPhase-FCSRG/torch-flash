@@ -108,6 +108,7 @@ nav:
       - Activity Models: theory/activity-models.md
       - Fugacity Models: theory/fugacity-models.md
       - Characterization and Pseudo-Components: theory/characterization-pseudocomponents.md
+      - Transport Properties: theory/transport-properties.md
   - Guides:
       - Runtime configuration: runtime.md
       - Parameter databases: parameters.md
@@ -130,6 +131,7 @@ nav:
           - E-PPR78 for CCS mixtures: validation-reports/33-eppr78-ccs-figure2.md
           - CO2 pre-salt model comparison: validation-reports/34-co2-presalt-all-models.md
           - Trust-Region phase envelopes: validation-reports/35-nichita-trust-region-phase-envelopes.md
+          - Transport properties: validation-reports/36-transport-properties.md
   - Reference:
       - Model scope: model-scope.md
       - Scientific references: references.md

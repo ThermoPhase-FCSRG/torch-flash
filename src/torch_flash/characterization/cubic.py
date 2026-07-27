@@ -63,9 +63,13 @@ def pedersen_cubic_properties(
 ) -> CubicFractionProperties:
     """Map characterized SCN cuts to SRK or PR properties.
 
-    Implements Pedersen et al. (2024), Eqs. 5.1-5.5 and Table 5.3.
-    The correlation coefficients are EoS-specific; the input distribution and
-    density split remain model-neutral.
+    The default implements Pedersen et al. (2024), Eqs. 5.1-5.5 and
+    Table 5.3. The C200 heavy-aromatic parameter set implements Pedersen,
+    Milter, and Sorensen, *SPE Journal* 9 (2004), Eqs. 7-14 and Table 4,
+    doi:10.2118/88364-PA. Its alpha parameter follows the published
+    inverse-molar-mass continuation above 1000 g/mol. The correlation
+    coefficients are EoS-specific; the input distribution and density split
+    remain model-neutral.
 
     Parameters
     ----------
@@ -114,6 +118,54 @@ def pedersen_cubic_properties(
     log_pressure_atm = d1 + d2 * density**d5 + d3 / molar_mass + d4 / molar_mass.square()
     critical_pressure = 101_325.0 * torch.exp(log_pressure_atm)
     m = e1 + e2 * molar_mass + e3 * density + e4 * molar_mass.square()
+    threshold_value = record.get("inverse_mass_m_threshold")
+    if threshold_value is not None:
+        if (
+            not isinstance(threshold_value, int | float)
+            or threshold_value <= 0.0
+            or not torch.isfinite(molar_mass.new_tensor(float(threshold_value)))
+        ):
+            raise ParameterDatabaseError(
+                f"{loaded.identifier!r} inverse_mass_m_threshold must be positive and finite"
+            )
+        threshold = molar_mass.new_tensor(float(threshold_value))
+        above_threshold = molar_mass > threshold
+        if bool(above_threshold.any()):
+            if distribution.carbon_numbers.numel() < 2:
+                raise ValueError(
+                    "inverse-mass alpha continuation requires at least two logarithmic-density cuts"
+                )
+            split = loaded.parameters.get("plus_split")
+            relation = split.get("molecular_weight") if isinstance(split, Mapping) else None
+            if not isinstance(relation, Mapping):
+                raise ParameterDatabaseError(
+                    f"{loaded.identifier!r} requires plus_split.molecular_weight"
+                )
+            slope_value = relation.get("slope")
+            intercept_value = relation.get("intercept")
+            if not isinstance(slope_value, int | float) or not isinstance(
+                intercept_value, int | float
+            ):
+                raise ParameterDatabaseError(
+                    f"{loaded.identifier!r} molecular-weight relation must be numeric"
+                )
+            threshold_carbon_number = (threshold - float(intercept_value)) / float(slope_value)
+            carbon_number = distribution.carbon_numbers.to(density)
+            log_span = torch.log(carbon_number[-1]) - torch.log(carbon_number[0])
+            if not bool(torch.isfinite(log_span) & (torch.abs(log_span) > 0.0)):
+                raise ValueError(
+                    "inverse-mass alpha continuation requires distinct carbon-number cuts"
+                )
+            density_slope = (density[-1] - density[0]) / log_span
+            threshold_density = density[0] + density_slope * (
+                torch.log(threshold_carbon_number) - torch.log(carbon_number[0])
+            )
+            threshold_m = e1 + e2 * threshold + e3 * threshold_density + e4 * threshold.square()
+            m = torch.where(
+                above_threshold,
+                threshold * threshold_m / molar_mass,
+                m,
+            )
     discriminant = w1 * w1 - 4.0 * w2 * (w0 - m)
     if bool((discriminant < 0.0).any()):
         raise ValueError("Pedersen cubic correlation produced no real acentric factor")

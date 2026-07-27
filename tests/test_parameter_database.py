@@ -633,6 +633,10 @@ def test_cubic_interaction_typed_container_validation():
 
 
 def test_standard_state_database_and_custom_reference_values():
+    assert load_model_parameters("poling").identifier == "standard-state.poling-2001"
+    transport = load_model_parameters("pedersen-transport")
+    assert transport.identifier == "transport.pedersen-2024"
+    assert transport.model_kind == "transport"
     model = ideal_gas_polynomial(("co2",), "poling")
     torch.testing.assert_close(
         model.heat_capacity(torch.tensor(300.0, dtype=DTYPE)),
