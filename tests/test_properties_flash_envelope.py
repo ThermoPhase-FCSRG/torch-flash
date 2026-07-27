@@ -8,25 +8,38 @@ import pytest
 import torch
 
 import torch_flash.envelope as envelope
+import torch_flash.fitting as fitting_module
 from torch_flash import (
+    BinaryThreePhaseInvariantBatch,
     ChemicalState,
+    CubicInteractionFitSystem,
     batched_tangent_plane_stability,
     binary_bubble_point,
     binary_bubble_temperature,
     binary_phase_equilibrium_point,
+    build_cubic_interaction_models,
     component_set,
+    continue_phase_transition_branch,
+    evaluate_phase_transition_state,
+    evaluate_phase_transition_states,
+    fit_cubic_phase_transition_interactions,
     fixed_vapor_ratio_vle_point,
     peng_robinson_1978,
     phase_properties,
+    phase_transition_pressure,
+    solve_batched_phase_transition_pressures,
     state_derivatives,
     tangent_plane_stability,
     trace_binary_pxy_isotherm,
     trace_binary_txy_isobar,
+    trace_phase_envelope_set,
     two_phase_flash,
+    two_phase_trust_region_flash,
 )
 from torch_flash.constants import STANDARD_PRESSURE, R
 from torch_flash.envelope import phase_envelope, saturation_point
 from torch_flash.exceptions import ConvergenceWarning, ExperimentalModelWarning
+from torch_flash.flash.grid import BinaryThreePhaseInvariant
 from torch_flash.flash.multiphase import _default_multiphase_k, multiphase_flash
 from torch_flash.flash.stability import _newton_minimize
 from torch_flash.standard_state import IdealGasPolynomial
@@ -59,6 +72,15 @@ def test_fixed_vapor_ratio_vle_matches_binary_equilibrium():
     assert result.residual_norm <= 1.0e-8
     torch.testing.assert_close(result.liquid_composition, reference.phase1_composition)
     torch.testing.assert_close(result.vapor_composition, reference.phase2_composition)
+    with pytest.raises(ValueError, match="phase kinds"):
+        binary_phase_equilibrium_point(
+            model,
+            temperature,
+            pressure,
+            result.liquid_composition,
+            result.vapor_composition,
+            phase_kinds=("liquid", "invalid"),
+        )
 
 
 def test_fixed_vapor_ratio_vle_preserves_ternary_dry_gas_ratio():
@@ -649,6 +671,21 @@ def test_tangent_plane_stability_stable_and_unstable(binary_model, two_phase_sta
         initial_compositions=(stable_state.composition,),
     )
     assert stable.stable
+    trust_region = tangent_plane_stability(
+        binary_model,
+        two_phase_state,
+        minimizer="trust-region",
+        max_iterations=80,
+    )
+    assert not trust_region.stable
+    assert trust_region.converged
+    assert trust_region.minimum_tpd < 0.0
+    with pytest.raises(ValueError, match="local minimizer"):
+        tangent_plane_stability(
+            binary_model,
+            stable_state,
+            minimizer="unknown",
+        )
     with pytest.raises(ValueError, match="composition vector"):
         tangent_plane_stability(
             binary_model,
@@ -658,6 +695,28 @@ def test_tangent_plane_stability_stable_and_unstable(binary_model, two_phase_sta
                 torch.tensor([[0.5, 0.5]]),
             ),
         )
+
+
+def test_stability_newton_uses_gradient_fallback_after_rejected_line_search():
+    initial = torch.tensor([1.0], dtype=torch.float64)
+
+    def objective(coordinates):
+        return torch.where(
+            coordinates[0] == initial[0],
+            coordinates[0],
+            coordinates.new_tensor(torch.nan),
+        )
+
+    coordinates, value, iterations, converged = _newton_minimize(
+        objective,
+        initial,
+        tolerance=1.0e-12,
+        max_iterations=1,
+    )
+    assert iterations == 1
+    assert not converged
+    assert coordinates[0] < initial[0]
+    assert torch.isnan(value)
 
 
 def test_batched_tangent_plane_stability_matches_scalar_classification(
@@ -941,6 +1000,1335 @@ def test_saturation_points_and_envelope(binary_model):
             composition,
             "bubble",
             initial_pressure=torch.tensor(-1.0, dtype=torch.float64),
+        )
+
+
+def test_phase_transition_pressure_matches_binary_bubble_point(binary_model):
+    composition = torch.tensor([0.5, 0.5], dtype=torch.float64)
+    temperature = torch.tensor(270.0, dtype=torch.float64)
+    reference = binary_bubble_point(binary_model, temperature, composition)
+    result = phase_transition_pressure(
+        binary_model,
+        temperature,
+        composition,
+        initial_pressure=reference.pressure * 0.9,
+        initial_incipient_composition=reference.vapor_composition,
+        minimum_pressure=reference.pressure * 0.5,
+        maximum_pressure=reference.pressure * 1.5,
+    )
+
+    assert result.converged
+    assert result.phase_kinds == ("liquid", "vapor")
+    assert result.phase_separation > 0.4
+    assert result.residual_norm <= 1.0e-8
+    torch.testing.assert_close(result.pressure, reference.pressure, rtol=2.0e-9, atol=0.0)
+    torch.testing.assert_close(
+        result.incipient_composition,
+        reference.vapor_composition,
+        rtol=1.0e-8,
+        atol=1.0e-10,
+    )
+
+
+def test_two_phase_trust_region_flash_matches_standard_split(
+    binary_model,
+    two_phase_state,
+):
+    reference = two_phase_flash(
+        binary_model,
+        two_phase_state,
+        check_stability=False,
+    )
+    result = two_phase_trust_region_flash(
+        binary_model,
+        two_phase_state,
+        check_stability=False,
+        max_iterations=100,
+    )
+
+    assert result.converged
+    assert result.residual_norm <= 1.0e-8
+    torch.testing.assert_close(
+        result.phase_fractions,
+        reference.phase_fractions,
+        rtol=2.0e-6,
+        atol=2.0e-8,
+    )
+    for actual, expected in zip(result.phases, reference.phases, strict=True):
+        torch.testing.assert_close(
+            actual.composition,
+            expected.composition,
+            rtol=2.0e-6,
+            atol=2.0e-8,
+        )
+
+
+def test_two_phase_trust_region_flash_validates_and_reports_failure(
+    binary_model,
+    two_phase_state,
+):
+    with pytest.raises(ValueError, match="composition vector"):
+        two_phase_trust_region_flash(
+            binary_model,
+            ChemicalState(
+                two_phase_state.temperature,
+                two_phase_state.pressure,
+                two_phase_state.composition[None],
+            ),
+        )
+    with pytest.raises(ValueError, match="phase_roots"):
+        two_phase_trust_region_flash(
+            binary_model,
+            two_phase_state,
+            phase_roots=("liquid", "invalid"),
+        )
+    with pytest.raises(ValueError, match="controls"):
+        two_phase_trust_region_flash(
+            binary_model,
+            two_phase_state,
+            tolerance=0.0,
+        )
+    with pytest.raises(ValueError, match="strictly positive"):
+        two_phase_trust_region_flash(
+            binary_model,
+            ChemicalState(
+                two_phase_state.temperature,
+                two_phase_state.pressure,
+                torch.tensor([1.0, 0.0], dtype=torch.float64),
+            ),
+        )
+    with pytest.raises(ValueError, match="initial K values"):
+        two_phase_trust_region_flash(
+            binary_model,
+            two_phase_state,
+            initial_k_values=torch.tensor([1.0], dtype=torch.float64),
+        )
+
+    stable_state = ChemicalState(
+        torch.tensor(450.0, dtype=torch.float64),
+        torch.tensor(1.0e5, dtype=torch.float64),
+        torch.tensor([0.5, 0.5], dtype=torch.float64),
+    )
+    stable = two_phase_trust_region_flash(binary_model, stable_state)
+    assert stable.converged
+    assert stable.nphases == 1
+    assert stable.diagnostics["trust_region_stability"]
+
+    with pytest.raises(RuntimeError, match="did not produce"):
+        two_phase_trust_region_flash(
+            binary_model,
+            two_phase_state,
+            check_stability=False,
+            max_iterations=1,
+            raise_on_failure=True,
+        )
+    with pytest.warns(ConvergenceWarning):
+        failed = two_phase_trust_region_flash(
+            binary_model,
+            two_phase_state,
+            check_stability=False,
+            max_iterations=1,
+        )
+    assert not failed.converged
+
+
+def test_batched_phase_transition_pressures_match_scalar_and_preserve_gradients(
+    binary_components,
+):
+    interaction = torch.tensor(0.02, dtype=torch.float64, requires_grad=True)
+    kij = interaction * torch.tensor(
+        [[0.0, 1.0], [1.0, 0.0]],
+        dtype=torch.float64,
+    )
+    model = peng_robinson_1978(binary_components, kij=kij)
+    composition = torch.tensor([0.5, 0.5], dtype=torch.float64)
+    temperatures = torch.tensor([265.0, 270.0], dtype=torch.float64)
+    references = tuple(
+        binary_bubble_point(model, temperature, composition) for temperature in temperatures
+    )
+    reference_pressures = torch.stack(tuple(reference.pressure for reference in references))
+    reference_compositions = torch.stack(
+        tuple(reference.vapor_composition for reference in references)
+    )
+
+    result = solve_batched_phase_transition_pressures(
+        model,
+        temperatures,
+        composition.expand(2, -1),
+        phase_kinds=("liquid", "vapor"),
+        initial_pressure=0.9 * reference_pressures,
+        initial_incipient_composition=reference_compositions,
+        minimum_pressure=0.5 * reference_pressures,
+        maximum_pressure=1.5 * reference_pressures,
+    )
+
+    assert result.converged.tolist() == [True, True]
+    assert bool(result.solver_converged.all())
+    torch.testing.assert_close(
+        result.pressure,
+        reference_pressures,
+        rtol=3.0e-9,
+        atol=0.0,
+    )
+    assert torch.isfinite(torch.autograd.grad(result.pressure.sum(), interaction)[0])
+
+
+def test_batched_phase_transition_pressures_validate_batch_contract(binary_model):
+    temperature = torch.tensor([270.0], dtype=torch.float64)
+    parent = torch.tensor([[0.5, 0.5]], dtype=torch.float64)
+    reference = binary_bubble_point(binary_model, temperature[0], parent[0])
+    pressure = reference.pressure.reshape(1)
+    incipient = reference.vapor_composition.reshape(1, 2)
+
+    def solve(**overrides):
+        arguments = {
+            "phase_kinds": ("liquid", "vapor"),
+            "initial_pressure": pressure,
+            "initial_incipient_composition": incipient,
+        }
+        arguments.update(overrides)
+        return solve_batched_phase_transition_pressures(
+            binary_model,
+            temperature,
+            parent,
+            **arguments,
+        )
+
+    with pytest.raises(ValueError, match="temperature"):
+        solve_batched_phase_transition_pressures(
+            binary_model,
+            temperature[0],
+            parent,
+            phase_kinds=("liquid", "vapor"),
+            initial_pressure=pressure,
+            initial_incipient_composition=incipient,
+        )
+    with pytest.raises(ValueError, match="parent composition"):
+        solve_batched_phase_transition_pressures(
+            binary_model,
+            temperature,
+            parent[0],
+            phase_kinds=("liquid", "vapor"),
+            initial_pressure=pressure,
+            initial_incipient_composition=incipient,
+        )
+    with pytest.raises(ValueError, match="at least two"):
+        solve_batched_phase_transition_pressures(
+            binary_model,
+            temperature,
+            parent[:, :1],
+            phase_kinds=("liquid", "vapor"),
+            initial_pressure=pressure,
+            initial_incipient_composition=parent[:, :1],
+        )
+    with pytest.raises(ValueError, match="phase kinds"):
+        solve(phase_kinds=("liquid", "invalid"))
+    with pytest.raises(ValueError, match="controls"):
+        solve(tolerance=0.0)
+    with pytest.raises(ValueError, match="finite and positive"):
+        solve(initial_pressure=torch.tensor([torch.nan], dtype=torch.float64))
+    with pytest.raises(ValueError, match="not broadcastable"):
+        solve(minimum_pressure=torch.ones(2, dtype=torch.float64))
+    with pytest.raises(ValueError, match="finite and positive"):
+        solve(minimum_pressure=-1.0)
+    with pytest.raises(ValueError, match="below maximum"):
+        solve(minimum_pressure=3.0e6, maximum_pressure=2.0e6)
+
+    result = solve()
+    assert result.converged.tolist() == [True]
+
+
+def test_phase_transition_pressure_rejects_homogeneous_same_root(binary_model):
+    composition = torch.tensor([0.4, 0.6], dtype=torch.float64)
+    result = phase_transition_pressure(
+        binary_model,
+        torch.tensor(270.0, dtype=torch.float64),
+        composition,
+        phase_kinds=("liquid", "liquid"),
+        initial_pressure=torch.tensor(3.0e6, dtype=torch.float64),
+        initial_incipient_composition=composition,
+        minimum_pressure=2.0e6,
+        maximum_pressure=4.0e6,
+    )
+
+    assert not result.converged
+    assert result.residual_norm <= 1.0e-8
+    assert result.phase_separation <= 1.0e-6
+
+
+def test_continue_phase_transition_branch_matches_phase_envelope(binary_model):
+    composition = torch.tensor([0.5, 0.5], dtype=torch.float64)
+    temperatures = torch.tensor([270.0, 271.0], dtype=torch.float64)
+    reference = phase_envelope(
+        binary_model,
+        temperatures,
+        composition,
+        kinds=("bubble",),
+        accelerated=False,
+    )["bubble"]
+    initial = phase_transition_pressure(
+        binary_model,
+        temperatures[0],
+        composition,
+        initial_pressure=reference[0].pressure,
+        initial_incipient_composition=reference[0].incipient_composition,
+    )
+
+    continued = continue_phase_transition_branch(
+        binary_model,
+        temperatures,
+        initial,
+    )
+
+    assert all(point.converged for point in continued)
+    assert all(point.phase_kinds == ("liquid", "vapor") for point in continued)
+    torch.testing.assert_close(
+        torch.stack(tuple(point.pressure for point in continued)),
+        torch.stack(tuple(point.pressure for point in reference)),
+        rtol=2.0e-8,
+        atol=0.0,
+    )
+
+
+@pytest.mark.parametrize(
+    ("temperatures", "converged", "match"),
+    [
+        (torch.tensor([], dtype=torch.float64), True, "nonempty vector"),
+        (torch.tensor([-1.0], dtype=torch.float64), True, "finite and positive"),
+        (torch.tensor([270.0], dtype=torch.float64), False, "converged and separated"),
+    ],
+)
+def test_continue_phase_transition_branch_validates_seed_and_grid(
+    binary_model,
+    temperatures,
+    converged,
+    match,
+):
+    composition = torch.tensor([0.5, 0.5], dtype=torch.float64)
+    reference = binary_bubble_point(
+        binary_model,
+        torch.tensor(270.0, dtype=torch.float64),
+        composition,
+    )
+    initial = envelope.PhaseTransitionPoint(
+        torch.tensor(270.0, dtype=torch.float64),
+        reference.pressure,
+        composition,
+        reference.vapor_composition,
+        ("liquid", "vapor"),
+        reference.iterations,
+        converged,
+        reference.residual_norm,
+        torch.max(torch.abs(composition - reference.vapor_composition)),
+    )
+
+    with pytest.raises(ValueError, match=match):
+        continue_phase_transition_branch(binary_model, temperatures, initial)
+
+
+def test_continue_phase_transition_branch_records_model_failure(binary_model, monkeypatch):
+    composition = torch.tensor([0.5, 0.5], dtype=torch.float64)
+    reference = binary_bubble_point(
+        binary_model,
+        torch.tensor(270.0, dtype=torch.float64),
+        composition,
+    )
+    initial = envelope.PhaseTransitionPoint(
+        torch.tensor(270.0, dtype=torch.float64),
+        reference.pressure,
+        composition,
+        reference.vapor_composition,
+        ("liquid", "vapor"),
+        reference.iterations,
+        True,
+        reference.residual_norm,
+        torch.max(torch.abs(composition - reference.vapor_composition)),
+    )
+
+    def fail_transition(*args, **kwargs):
+        raise RuntimeError("trial state failed")
+
+    monkeypatch.setattr(envelope, "phase_transition_pressure", fail_transition)
+    result = continue_phase_transition_branch(
+        binary_model,
+        torch.tensor([271.0], dtype=torch.float64),
+        initial,
+    )
+
+    assert len(result) == 1
+    assert not result[0].converged
+    assert torch.isnan(result[0].pressure)
+    assert torch.isinf(result[0].residual_norm)
+
+
+def test_phase_transition_state_evaluation_and_envelope_set(binary_model):
+    composition = torch.tensor([0.5, 0.5], dtype=torch.float64)
+    temperature = torch.tensor(270.0, dtype=torch.float64)
+    reference = binary_bubble_point(binary_model, temperature, composition)
+    state = envelope.PhaseTransitionState(
+        temperature,
+        reference.pressure,
+        composition,
+        "liquid-vapor",
+    )
+
+    evaluation = evaluate_phase_transition_state(binary_model, state)
+    evaluations = evaluate_phase_transition_states(binary_model, (state, state))
+    phase_boundaries = trace_phase_envelope_set(
+        binary_model,
+        composition,
+        torch.tensor([269.0, 270.0], dtype=torch.float64),
+    )
+
+    assert evaluation.converged
+    assert evaluation.phase_compositions.shape == (1, 2)
+    assert len(evaluations) == 2
+    assert set(phase_boundaries.vapor_liquid) == {"bubble", "dew"}
+    assert not phase_boundaries.liquid_liquid
+    torch.testing.assert_close(evaluation.pressure, reference.pressure, rtol=2.0e-9, atol=0.0)
+
+
+@pytest.mark.parametrize(
+    ("state_updates", "options", "match"),
+    [
+        ({"boundary_kind": "solid-liquid"}, {}, "unknown phase-boundary"),
+        ({}, {"tolerance": 0.0}, "controls"),
+        ({"temperature": torch.tensor([-1.0], dtype=torch.float64)}, {}, "temperature"),
+        ({"reference_pressure": torch.tensor(-1.0, dtype=torch.float64)}, {}, "pressure"),
+        (
+            {"parent_composition": torch.tensor([1.0, 0.0], dtype=torch.float64)},
+            {},
+            "composition",
+        ),
+    ],
+)
+def test_phase_transition_state_evaluation_validates_inputs(
+    binary_model,
+    state_updates,
+    options,
+    match,
+):
+    values = {
+        "temperature": torch.tensor(270.0, dtype=torch.float64),
+        "reference_pressure": torch.tensor(2.0e6, dtype=torch.float64),
+        "parent_composition": torch.tensor([0.5, 0.5], dtype=torch.float64),
+        "boundary_kind": "liquid-vapor",
+    }
+    values.update(state_updates)
+    state = envelope.PhaseTransitionState(**values)
+
+    with pytest.raises(ValueError, match=match):
+        evaluate_phase_transition_state(binary_model, state, **options)
+
+
+def test_phase_transition_state_evaluation_handles_three_phase_and_solver_failures(
+    binary_model,
+    monkeypatch,
+):
+    composition = torch.tensor([0.5, 0.5], dtype=torch.float64)
+    temperature = torch.tensor(270.0, dtype=torch.float64)
+    pressure = torch.tensor(2.0e6, dtype=torch.float64)
+    starts = (
+        torch.tensor([[0.02, 0.98], [0.70, 0.30], [0.99, 0.01]], dtype=torch.float64),
+        torch.tensor([[0.10, 0.90], [0.80, 0.20], [0.995, 0.005]], dtype=torch.float64),
+    )
+    state = envelope.PhaseTransitionState(
+        temperature,
+        pressure,
+        composition,
+        "liquid-liquid-vapor",
+        initial_three_phase_compositions=starts,
+    )
+    calls = 0
+
+    def invariant_result(*args, **kwargs):
+        nonlocal calls
+        calls += 1
+        if calls == 1:
+            raise RuntimeError("trial state failed")
+        return BinaryThreePhaseInvariant(
+            temperature,
+            pressure * 1.1,
+            starts[1],
+            pressure.new_tensor(1.0e-10),
+            3,
+            True,
+        )
+
+    monkeypatch.setattr(envelope, "solve_binary_three_phase_invariant", invariant_result)
+    result = evaluate_phase_transition_state(binary_model, state)
+
+    assert result.converged
+    assert result.phase_compositions.shape == (3, 2)
+    assert result.phase_separation > 0.1
+    trust_result = evaluate_phase_transition_state(
+        binary_model,
+        state,
+        three_phase_solver="newton-trust-region",
+    )
+    assert trust_result.converged
+    assert trust_result.solver == "trust-region"
+
+    ternary_state = envelope.PhaseTransitionState(
+        temperature,
+        pressure,
+        torch.tensor([0.3, 0.3, 0.4], dtype=torch.float64),
+        "liquid-liquid-vapor",
+    )
+    with pytest.raises(ValueError, match="binary"):
+        evaluate_phase_transition_state(binary_model, ternary_state)
+
+    two_phase_state = envelope.PhaseTransitionState(
+        temperature,
+        pressure,
+        composition,
+        "liquid-liquid",
+        initial_incipient_compositions=(torch.tensor([0.1, 0.9], dtype=torch.float64),),
+    )
+    monkeypatch.setattr(
+        envelope,
+        "phase_transition_pressure",
+        lambda *args, **kwargs: (_ for _ in ()).throw(RuntimeError("trial state failed")),
+    )
+    failed = evaluate_phase_transition_state(binary_model, two_phase_state)
+    assert not failed.converged
+    assert torch.isnan(failed.pressure)
+
+
+def test_phase_transition_state_batch_validates_and_reports_failed_candidates(
+    binary_model,
+    monkeypatch,
+):
+    temperature = torch.tensor(270.0, dtype=torch.float64)
+    pressure = torch.tensor(2.0e6, dtype=torch.float64)
+    composition = torch.tensor([0.5, 0.5], dtype=torch.float64)
+    liquid_state = envelope.PhaseTransitionState(
+        temperature,
+        pressure,
+        composition,
+        "liquid-liquid",
+    )
+    starts = envelope._default_two_phase_starts(liquid_state)
+    assert len(starts) == 5
+    torch.testing.assert_close(starts[0], torch.tensor([0.01, 0.99], dtype=torch.float64))
+    torch.testing.assert_close(starts[-1], torch.tensor([0.99, 0.01], dtype=torch.float64))
+
+    with pytest.raises(ValueError, match="controls"):
+        evaluate_phase_transition_states(binary_model, (liquid_state,), tolerance=0.0)
+    with pytest.raises(ValueError, match="three-phase"):
+        evaluate_phase_transition_states(
+            binary_model,
+            (liquid_state,),
+            three_phase_solver="invalid",
+        )
+
+    ternary_state = envelope.PhaseTransitionState(
+        temperature,
+        pressure,
+        torch.tensor([0.3, 0.3, 0.4], dtype=torch.float64),
+        "liquid-liquid-vapor",
+    )
+    with pytest.raises(ValueError, match="binary"):
+        evaluate_phase_transition_states(binary_model, (ternary_state,))
+
+    unknown_state = envelope.PhaseTransitionState(
+        temperature,
+        pressure,
+        composition,
+        "solid-liquid",
+    )
+    with pytest.raises(ValueError, match="unknown"):
+        evaluate_phase_transition_states(binary_model, (unknown_state,))
+
+    vapor_state = envelope.PhaseTransitionState(
+        temperature,
+        pressure,
+        composition,
+        "liquid-vapor",
+        initial_incipient_compositions=(torch.tensor([0.1, 0.9], dtype=torch.float64),),
+    )
+    monkeypatch.setattr(
+        envelope,
+        "solve_batched_phase_transition_pressures",
+        lambda *args, **kwargs: (_ for _ in ()).throw(RuntimeError("trial state failed")),
+    )
+    failed = evaluate_phase_transition_states(binary_model, (vapor_state,))
+    assert len(failed) == 1
+    assert not failed[0].converged
+    assert torch.isnan(failed[0].pressure)
+
+
+def test_batched_three_phase_trust_region_recovers_remaining_starts(
+    binary_model,
+    monkeypatch,
+):
+    temperature = torch.tensor(270.0, dtype=torch.float64)
+    pressure = torch.tensor(2.0e6, dtype=torch.float64)
+    composition = torch.tensor([0.5, 0.5], dtype=torch.float64)
+    states = tuple(
+        envelope.PhaseTransitionState(
+            temperature + index,
+            pressure,
+            composition,
+            "liquid-liquid-vapor",
+        )
+        for index in range(2)
+    )
+    separated = torch.tensor(
+        [[0.10, 0.90], [0.80, 0.20], [0.99, 0.01]],
+        dtype=torch.float64,
+    )
+    newton_candidate = envelope.PhaseTransitionEvaluation(
+        states[0],
+        pressure,
+        separated,
+        pressure.new_tensor(1.0e-10),
+        pressure.new_tensor(0.19),
+        3,
+        True,
+        True,
+    )
+    candidate_groups = [[newton_candidate], []]
+    calls = 0
+
+    def batched_invariant(
+        model,
+        temperatures,
+        initial_pressures,
+        initial_compositions,
+        **kwargs,
+    ):
+        nonlocal calls
+        del model, initial_compositions, kwargs
+        calls += 1
+        count = temperatures.shape[0]
+        phase_compositions = separated.expand(count, -1, -1).clone()
+        converged = torch.ones(count, dtype=torch.bool)
+        if calls == 1:
+            phase_compositions[1] = torch.tensor(
+                [[0.50, 0.50], [0.50, 0.50], [0.50, 0.50]],
+                dtype=torch.float64,
+            )
+            converged[1] = False
+        return BinaryThreePhaseInvariantBatch(
+            temperatures,
+            initial_pressures,
+            phase_compositions,
+            temperatures.new_full((count,), 1.0e-10),
+            torch.ones(count, dtype=torch.int64),
+            converged,
+        )
+
+    monkeypatch.setattr(
+        envelope,
+        "solve_batched_binary_three_phase_invariants",
+        batched_invariant,
+    )
+    envelope._batched_trust_region_three_phase_candidates(
+        binary_model,
+        states,
+        (0, 1),
+        candidate_groups,
+        tolerance=1.0e-8,
+        max_iterations=20,
+        minimum_phase_separation=2.0e-3,
+    )
+
+    assert calls == 2
+    assert candidate_groups[0][-1].solver == "trust-region"
+    assert candidate_groups[0][-1].converged
+    assert not candidate_groups[1][0].converged
+    assert candidate_groups[1][-1].converged
+
+
+def test_scalar_three_phase_trust_region_reports_recovery_failure(
+    binary_model,
+    monkeypatch,
+):
+    state = envelope.PhaseTransitionState(
+        torch.tensor(270.0, dtype=torch.float64),
+        torch.tensor(2.0e6, dtype=torch.float64),
+        torch.tensor([0.5, 0.5], dtype=torch.float64),
+        "liquid-liquid-vapor",
+    )
+    monkeypatch.setattr(
+        envelope,
+        "solve_binary_three_phase_invariant",
+        lambda *args, **kwargs: (_ for _ in ()).throw(RuntimeError("failed")),
+    )
+    assert (
+        envelope._trust_region_three_phase_candidates(
+            binary_model,
+            state,
+            (),
+            tolerance=1.0e-8,
+            max_iterations=20,
+            minimum_phase_separation=2.0e-3,
+        )
+        == ()
+    )
+
+
+def test_phase_transition_state_evaluation_uses_lazy_vapor_fallback(
+    binary_model,
+    monkeypatch,
+):
+    composition = torch.tensor([0.5, 0.5], dtype=torch.float64)
+    pressure = torch.tensor(2.0e6, dtype=torch.float64)
+    starts = (
+        torch.tensor([0.1, 0.9], dtype=torch.float64),
+        torch.tensor([0.2, 0.8], dtype=torch.float64),
+    )
+    state = envelope.PhaseTransitionState(
+        torch.tensor(270.0, dtype=torch.float64),
+        pressure,
+        composition,
+        "liquid-vapor",
+        initial_incipient_compositions=starts,
+    )
+    calls = 0
+
+    def transition(*args, **kwargs):
+        nonlocal calls
+        index = calls
+        calls += 1
+        return envelope.PhaseTransitionPoint(
+            state.temperature,
+            pressure * (1.5 if index == 0 else 1.05),
+            composition,
+            starts[index],
+            ("liquid", "vapor"),
+            2,
+            True,
+            pressure.new_tensor(1.0e-10),
+            pressure.new_tensor(0.4),
+        )
+
+    monkeypatch.setattr(envelope, "phase_transition_pressure", transition)
+    lazy = evaluate_phase_transition_state(binary_model, state)
+    assert calls == 1
+    torch.testing.assert_close(lazy.pressure, pressure * 1.5)
+
+    calls = 0
+    exhaustive = evaluate_phase_transition_state(
+        binary_model,
+        state,
+        exhaustive_two_phase_starts=True,
+    )
+    assert calls == 2
+    torch.testing.assert_close(exhaustive.pressure, pressure * 1.05)
+
+
+def test_trace_phase_envelope_set_orchestrates_distinct_liquid_branches(
+    binary_model,
+    monkeypatch,
+):
+    composition = torch.tensor([0.5, 0.5], dtype=torch.float64)
+    temperatures = torch.tensor([269.0, 270.0, 271.0], dtype=torch.float64)
+    state = envelope.PhaseTransitionState(
+        temperatures[1],
+        torch.tensor(2.0e6, dtype=torch.float64),
+        composition,
+        "liquid-liquid",
+    )
+
+    def evaluation(pressure):
+        return envelope.PhaseTransitionEvaluation(
+            state,
+            torch.tensor(pressure, dtype=torch.float64),
+            torch.tensor([[0.1, 0.9]], dtype=torch.float64),
+            torch.tensor(1.0e-10, dtype=torch.float64),
+            torch.tensor(0.4, dtype=torch.float64),
+            3,
+            True,
+            True,
+        )
+
+    low_seed = evaluation(2.0e6)
+    high_seed = evaluation(3.0e6)
+    fake_vle = {"bubble": (), "dew": ()}
+    monkeypatch.setattr(envelope, "phase_envelope", lambda *args, **kwargs: fake_vle)
+
+    def continuation(model, requested_temperatures, initial_point, **kwargs):
+        return tuple(
+            envelope.PhaseTransitionPoint(
+                temperature,
+                initial_point.pressure,
+                initial_point.parent_composition,
+                initial_point.incipient_composition,
+                initial_point.phase_kinds,
+                1,
+                True,
+                initial_point.residual_norm,
+                initial_point.phase_separation,
+            )
+            for temperature in requested_temperatures
+        )
+
+    monkeypatch.setattr(envelope, "continue_phase_transition_branch", continuation)
+    result = trace_phase_envelope_set(
+        binary_model,
+        composition,
+        temperatures,
+        liquid_liquid_seeds=(high_seed, low_seed),
+        liquid_liquid_temperatures=temperatures,
+    )
+
+    assert result.vapor_liquid == fake_vle
+    assert len(result.liquid_liquid) == 2
+    assert all(len(branch) == 3 for branch in result.liquid_liquid)
+
+    with pytest.raises(ValueError, match="temperatures"):
+        trace_phase_envelope_set(
+            binary_model,
+            composition,
+            temperatures,
+            liquid_liquid_seeds=(low_seed,),
+        )
+
+    mismatched_state = envelope.PhaseTransitionState(
+        temperatures[1],
+        torch.tensor(2.0e6, dtype=torch.float64),
+        torch.tensor([0.4, 0.6], dtype=torch.float64),
+        "liquid-liquid",
+    )
+    mismatched = envelope.PhaseTransitionEvaluation(
+        mismatched_state,
+        low_seed.pressure,
+        low_seed.phase_compositions,
+        low_seed.residual_norm,
+        low_seed.phase_separation,
+        3,
+        True,
+        True,
+    )
+    with pytest.raises(ValueError, match="must match"):
+        trace_phase_envelope_set(
+            binary_model,
+            composition,
+            temperatures,
+            liquid_liquid_seeds=(mismatched,),
+            liquid_liquid_temperatures=temperatures,
+        )
+
+
+def test_trace_phase_envelope_set_closes_vapor_liquid_branches(
+    binary_model,
+    monkeypatch,
+):
+    composition = torch.tensor([0.5, 0.5], dtype=torch.float64)
+    temperature = torch.tensor(270.0, dtype=torch.float64)
+    bubble = saturation_point(binary_model, temperature, composition, "bubble")
+    dew = saturation_point(binary_model, temperature, composition, "dew")
+    monkeypatch.setattr(
+        envelope,
+        "phase_envelope",
+        lambda *args, **kwargs: {"bubble": (bubble,), "dew": (dew,)},
+    )
+    calls = []
+
+    def closure(model, parent, seed, targets, **kwargs):
+        calls.append((seed.kind, targets))
+        return (
+            envelope.SaturationPoint(
+                seed.temperature + 1.0,
+                seed.pressure,
+                seed.incipient_composition,
+                seed.k_values,
+                seed.kind,
+                1,
+                True,
+                seed.residual_norm,
+            ),
+        )
+
+    monkeypatch.setattr(envelope, "continue_saturation_branch", closure)
+    result = trace_phase_envelope_set(
+        binary_model,
+        composition,
+        torch.tensor([270.0], dtype=torch.float64),
+        vapor_liquid_closure_points=3,
+    )
+
+    assert len(calls) == 2
+    assert all(targets.numel() == 3 for _, targets in calls)
+    assert all(len(points) == 2 for points in result.vapor_liquid.values())
+
+    with pytest.raises(ValueError, match="closure controls"):
+        trace_phase_envelope_set(
+            binary_model,
+            composition,
+            torch.tensor([270.0], dtype=torch.float64),
+            vapor_liquid_closure_points=0,
+        )
+
+
+def test_cubic_phase_transition_fit_uses_public_high_level_api(binary_components):
+    model = peng_robinson_1978(binary_components)
+    composition = torch.tensor([0.5, 0.5], dtype=torch.float64)
+    temperature = torch.tensor(270.0, dtype=torch.float64)
+    reference = binary_bubble_point(model, temperature, composition)
+    state = envelope.PhaseTransitionState(
+        temperature,
+        reference.pressure,
+        composition,
+        "liquid-vapor",
+    )
+    system = CubicInteractionFitSystem(binary_components, (0, 1), (state,))
+
+    result = fit_cubic_phase_transition_interactions(
+        peng_robinson_1978,
+        (system,),
+        torch.tensor([0.01], dtype=torch.float64),
+        torch.tensor([-0.2], dtype=torch.float64),
+        torch.tensor([0.2], dtype=torch.float64),
+        kij_pairs=((0, 1),),
+        learning_rate=1.0e-3,
+        max_iterations=2,
+    )
+
+    assert result.parameters.shape == (1,)
+    assert len(result.parameter_history) == 3
+    assert result.selected_iteration in (0, 1, 2)
+    assert result.optimizer_stopping_reason == "iteration-limit"
+    assert result.sensitivity_matrix.shape == (1, 1)
+    assert result.sensitivity_rank == 1
+    assert torch.isfinite(result.parameters).all()
+
+
+def test_cubic_phase_transition_fit_can_optimize_observed_states_simultaneously(
+    binary_components,
+):
+    model = peng_robinson_1978(binary_components)
+    composition = torch.tensor([0.5, 0.5], dtype=torch.float64)
+    temperature = torch.tensor(270.0, dtype=torch.float64)
+    reference = binary_bubble_point(model, temperature, composition)
+    state = envelope.PhaseTransitionState(
+        temperature,
+        reference.pressure,
+        composition,
+        "liquid-vapor",
+    )
+    system = CubicInteractionFitSystem(binary_components, (0, 1), (state,))
+
+    result = fit_cubic_phase_transition_interactions(
+        peng_robinson_1978,
+        (system,),
+        torch.tensor([0.01], dtype=torch.float64),
+        torch.tensor([-0.2], dtype=torch.float64),
+        torch.tensor([0.2], dtype=torch.float64),
+        kij_pairs=((0, 1),),
+        objective="observed-state-fugacity",
+        learning_rate=1.0e-2,
+        max_iterations=4,
+        no_improvement_patience=None,
+        parameter_prior_weight=1.0,
+    )
+
+    fitted_state = result.fitted_states[0][0]
+    fitted_composition = fitted_state.initial_incipient_compositions[0]
+    assert result.calibration_objective == "observed-state-fugacity"
+    assert result.optimizer == "adam"
+    assert result.sensitivity_kind == "observed-state-fugacity"
+    assert result.selected_loss <= result.parameter_history[0]
+    assert torch.max(torch.abs(fitted_composition - composition)) > 2.0e-3
+    assert result.sensitivity_matrix.shape == (2, 1)
+    assert torch.isfinite(result.sensitivity_matrix).all()
+
+    def residual(parameter):
+        fitted_model = build_cubic_interaction_models(
+            peng_robinson_1978,
+            (system,),
+            parameter,
+            kij_pairs=((0, 1),),
+        )[0]
+        return (
+            torch.log(composition)
+            + fitted_model.log_fugacity_coefficients(
+                temperature,
+                reference.pressure,
+                composition,
+                "liquid",
+            )
+            - torch.log(fitted_composition)
+            - fitted_model.log_fugacity_coefficients(
+                temperature,
+                reference.pressure,
+                fitted_composition,
+                "vapor",
+            )
+        ) / 2.0**0.5
+
+    step = torch.tensor([1.0e-5], dtype=torch.float64)
+    finite_difference = (
+        residual(result.parameters + step) - residual(result.parameters - step)
+    ) / (2.0 * step)
+    torch.testing.assert_close(
+        result.sensitivity_matrix[:, 0],
+        finite_difference,
+        rtol=2.0e-5,
+        atol=2.0e-7,
+    )
+
+
+def test_cubic_observed_state_seed_and_residual_helpers_cover_fallbacks(
+    binary_components,
+):
+    state = envelope.PhaseTransitionState(
+        torch.tensor(270.0, dtype=torch.float64),
+        torch.tensor(2.0e6, dtype=torch.float64),
+        torch.tensor([0.8, 0.2], dtype=torch.float64),
+        "liquid-vapor",
+        initial_incipient_compositions=(torch.tensor([0.8, 0.2], dtype=torch.float64),),
+    )
+    failed_evaluation = envelope.PhaseTransitionEvaluation(
+        state,
+        state.reference_pressure,
+        state.parent_composition[None],
+        state.reference_pressure.new_tensor(torch.inf),
+        state.reference_pressure.new_tensor(0.0),
+        1,
+        False,
+        False,
+    )
+    seed = fitting_module._separated_two_phase_seed(
+        state,
+        failed_evaluation,
+        minimum_phase_separation=2.0e-3,
+    )
+    assert torch.max(torch.abs(seed - state.parent_composition)) > 2.0e-3
+    torch.testing.assert_close(seed.sum(), seed.new_tensor(1.0))
+
+    ternary_components = component_set(
+        ("methane", "carbon_dioxide", "n_butane"),
+        dtype=torch.float64,
+    )
+    ternary_state = envelope.PhaseTransitionState(
+        state.temperature,
+        state.reference_pressure,
+        torch.tensor([0.4, 0.3, 0.3], dtype=torch.float64),
+        "liquid-vapor",
+        initial_incipient_compositions=(torch.tensor([0.1, 0.6, 0.3], dtype=torch.float64),),
+    )
+    ternary_system = CubicInteractionFitSystem(
+        ternary_components,
+        (0, 1, 2),
+        (ternary_state,),
+    )
+    batch = fitting_module._build_cubic_observed_state_batches(
+        (ternary_system,),
+        minimum_phase_separation=2.0e-3,
+    )[0]
+    encoded = fitting_module._encode_separated_composition(
+        batch,
+        minimum_phase_separation=2.0e-3,
+    )
+    decoded = fitting_module._decode_separated_composition(
+        batch,
+        encoded,
+        minimum_phase_separation=2.0e-3,
+    )
+    torch.testing.assert_close(decoded, batch.initial_incipient_composition)
+
+    with pytest.raises(ValueError, match="at least one two-phase"):
+        fitting_module._cubic_observed_state_fugacity_loss(
+            peng_robinson_1978,
+            (CubicInteractionFitSystem(binary_components, (0, 1), ()),),
+            (),
+            torch.zeros(1, dtype=torch.float64),
+            (),
+            kij_pairs=((0, 1),),
+            lij_pairs=(),
+            minimum_phase_separation=2.0e-3,
+        )
+
+
+def test_cubic_fit_batches_three_phase_invariants_and_reports_solver_failure(
+    binary_components,
+    monkeypatch,
+):
+    temperature = torch.tensor(270.0, dtype=torch.float64)
+    pressure = torch.tensor(2.0e6, dtype=torch.float64)
+    phase_compositions = torch.tensor(
+        [[0.1, 0.9], [0.5, 0.5], [0.9, 0.1]],
+        dtype=torch.float64,
+    )
+    state = envelope.PhaseTransitionState(
+        temperature,
+        pressure,
+        torch.tensor([0.5, 0.5], dtype=torch.float64),
+        "liquid-liquid-vapor",
+        initial_three_phase_compositions=(phase_compositions,),
+    )
+    system = CubicInteractionFitSystem(binary_components, (0, 1), (state,))
+    batches = fitting_module._build_cubic_transition_batches((system,))
+    model = peng_robinson_1978(binary_components)
+
+    def solved_invariants(
+        model,
+        temperatures,
+        initial_pressures,
+        initial_compositions,
+        **kwargs,
+    ):
+        count = temperatures.shape[0]
+        return BinaryThreePhaseInvariantBatch(
+            temperatures,
+            initial_pressures,
+            initial_compositions,
+            temperatures.new_full((count,), 1.0e-10),
+            torch.ones(count, dtype=torch.int64),
+            torch.ones(count, dtype=torch.bool),
+        )
+
+    monkeypatch.setattr(
+        fitting_module,
+        "solve_batched_binary_three_phase_invariants",
+        solved_invariants,
+    )
+    evaluation = fitting_module._evaluate_cubic_transition_batches(
+        (model,),
+        batches,
+        tolerance=1.0e-8,
+        max_iterations=20,
+        minimum_phase_separation=2.0e-3,
+    )[0]
+    assert evaluation.converged.tolist() == [True]
+    torch.testing.assert_close(
+        evaluation.phase_separation,
+        torch.tensor([0.4], dtype=torch.float64),
+    )
+
+    monkeypatch.setattr(
+        fitting_module,
+        "solve_batched_binary_three_phase_invariants",
+        lambda *args, **kwargs: (_ for _ in ()).throw(RuntimeError("trial state failed")),
+    )
+    failed = fitting_module._evaluate_cubic_transition_batches(
+        (model,),
+        batches,
+        tolerance=1.0e-8,
+        max_iterations=20,
+        minimum_phase_separation=2.0e-3,
+    )[0]
+    assert failed.converged.tolist() == [False]
+    assert torch.isnan(failed.pressure).all()
+    assert torch.isinf(failed.residual_norm).all()
+
+
+def test_cubic_interaction_model_and_fit_validate_inputs(binary_components):
+    state = envelope.PhaseTransitionState(
+        torch.tensor(270.0, dtype=torch.float64),
+        torch.tensor(2.0e6, dtype=torch.float64),
+        torch.tensor([0.5, 0.5], dtype=torch.float64),
+        "liquid-vapor",
+    )
+    system = CubicInteractionFitSystem(binary_components, (0, 1), (state,))
+    parameters = torch.tensor([0.01], dtype=torch.float64)
+
+    invalid_builds = (
+        ((system,), torch.tensor([0.01, 0.02]), ((0, 1),), (), "vector"),
+        ((), parameters, ((0, 1),), (), "at least one"),
+        ((system,), parameters, ((0, 2),), (), "indices"),
+        (
+            (system,),
+            torch.tensor([0.01, 0.02]),
+            ((0, 1), (0, 1)),
+            (),
+            "unique",
+        ),
+        (
+            (CubicInteractionFitSystem(binary_components, (0, 0), (state,)),),
+            torch.empty(0, dtype=torch.float64),
+            (),
+            (),
+            "uniquely match",
+        ),
+    )
+    for systems, values, kij_pairs, lij_pairs, match in invalid_builds:
+        with pytest.raises(ValueError, match=match):
+            build_cubic_interaction_models(
+                peng_robinson_1978,
+                systems,
+                values,
+                kij_pairs=kij_pairs,
+                lij_pairs=lij_pairs,
+            )
+
+    simultaneous = build_cubic_interaction_models(
+        peng_robinson_1978,
+        (system,),
+        torch.tensor([0.01, 0.02], dtype=torch.float64),
+        kij_pairs=((0, 1),),
+        lij_pairs=((0, 1),),
+    )
+    assert len(simultaneous) == 1
+
+    common = {
+        "constructor": peng_robinson_1978,
+        "systems": (system,),
+        "initial_parameters": parameters,
+        "lower_bounds": torch.tensor([-0.2], dtype=torch.float64),
+        "upper_bounds": torch.tensor([0.2], dtype=torch.float64),
+        "kij_pairs": ((0, 1),),
+        "max_iterations": 1,
+    }
+    invalid_fits = (
+        ({"upper_bounds": torch.tensor([0.2, 0.3], dtype=torch.float64)}, "equally shaped"),
+        ({"initial_parameters": torch.tensor([0.3], dtype=torch.float64)}, "strictly inside"),
+        (
+            {
+                "systems": (
+                    CubicInteractionFitSystem(
+                        binary_components,
+                        (0, 1),
+                        (
+                            envelope.PhaseTransitionState(
+                                state.temperature,
+                                state.reference_pressure,
+                                state.parent_composition,
+                                "liquid-liquid-vapor",
+                            ),
+                        ),
+                    ),
+                )
+            },
+            "three-phase fit states require",
+        ),
+        ({"learning_rate": 0.0}, "controls"),
+        ({"no_improvement_patience": 0}, "controls"),
+        ({"parameter_prior_weight": -1.0}, "controls"),
+        ({"objective": "unknown"}, "objective"),
+        ({"optimizer": "unknown"}, "optimizer"),
+    )
+    for updates, match in invalid_fits:
+        arguments = {**common, **updates}
+        with pytest.raises(ValueError, match=match):
+            fit_cubic_phase_transition_interactions(**arguments)
+
+    empty_system = CubicInteractionFitSystem(binary_components, (0, 1), ())
+    with pytest.raises(ValueError, match="at least one phase-transition"):
+        fit_cubic_phase_transition_interactions(
+            peng_robinson_1978,
+            (empty_system,),
+            parameters,
+            common["lower_bounds"],
+            common["upper_bounds"],
+            kij_pairs=((0, 1),),
+            max_iterations=1,
+        )
+
+    three_phase_with_start = envelope.PhaseTransitionState(
+        state.temperature,
+        state.reference_pressure,
+        state.parent_composition,
+        "liquid-liquid-vapor",
+        initial_three_phase_compositions=(
+            torch.tensor(
+                [[0.1, 0.9], [0.5, 0.5], [0.9, 0.1]],
+                dtype=torch.float64,
+            ),
+        ),
+    )
+    with pytest.raises(ValueError, match="only two-phase"):
+        fit_cubic_phase_transition_interactions(
+            peng_robinson_1978,
+            (
+                CubicInteractionFitSystem(
+                    binary_components,
+                    (0, 1),
+                    (three_phase_with_start,),
+                ),
+            ),
+            parameters,
+            common["lower_bounds"],
+            common["upper_bounds"],
+            kij_pairs=((0, 1),),
+            objective="observed-state-fugacity",
+            max_iterations=1,
+        )
+
+
+@pytest.mark.parametrize(
+    ("kwargs", "match"),
+    [
+        ({"phase_kinds": ("liquid", "solid")}, "phase kinds"),
+        (
+            {
+                "phase_kinds": ("liquid", "liquid"),
+                "initial_pressure": torch.tensor(1.0e6, dtype=torch.float64),
+            },
+            "initial incipient composition",
+        ),
+        (
+            {"phase_kinds": ("liquid", "liquid")},
+            "initial pressure",
+        ),
+        (
+            {
+                "minimum_pressure": 2.0e6,
+                "maximum_pressure": 1.0e6,
+            },
+            "minimum phase-transition pressure",
+        ),
+        ({"minimum_phase_separation": -1.0}, "minimum phase separation"),
+        ({"temperature": torch.tensor([-1.0], dtype=torch.float64)}, "temperature"),
+        ({"tolerance": 0.0}, "tolerance"),
+        (
+            {"parent_composition": torch.tensor([1.0], dtype=torch.float64)},
+            "multicomponent",
+        ),
+        (
+            {"parent_composition": torch.tensor([1.0, 0.0], dtype=torch.float64)},
+            "strictly positive",
+        ),
+        (
+            {"initial_pressure": torch.tensor(-1.0, dtype=torch.float64)},
+            "initial phase-transition pressure",
+        ),
+        (
+            {"initial_incipient_composition": torch.tensor([1.0], dtype=torch.float64)},
+            "initial incipient composition",
+        ),
+        ({"minimum_pressure": -1.0}, "minimum phase-transition pressure"),
+    ],
+)
+def test_phase_transition_pressure_validates_inputs(
+    binary_model,
+    kwargs,
+    match,
+):
+    temperature = kwargs.pop(
+        "temperature",
+        torch.tensor(270.0, dtype=torch.float64),
+    )
+    parent_composition = kwargs.pop(
+        "parent_composition",
+        torch.tensor([0.5, 0.5], dtype=torch.float64),
+    )
+    with pytest.raises(ValueError, match=match):
+        phase_transition_pressure(
+            binary_model,
+            temperature,
+            parent_composition,
+            **kwargs,
+        )
+
+
+def test_phase_transition_pressure_requires_explicit_guesses_without_constants(
+    binary_model,
+    monkeypatch,
+):
+    monkeypatch.setattr(
+        binary_model,
+        "critical_temperature",
+        torch.full_like(binary_model.critical_temperature, torch.nan),
+    )
+    with pytest.raises(ValueError, match="critical constants"):
+        phase_transition_pressure(
+            binary_model,
+            torch.tensor(270.0, dtype=torch.float64),
+            torch.tensor([0.5, 0.5], dtype=torch.float64),
         )
 
 

@@ -36,6 +36,8 @@ class FigureSpec:
     data_artifacts: tuple[str, ...]
     source_material: tuple[str, ...]
     description: str
+    publication_form: str = "rendered-plot"
+    observation_level_values: bool = False
 
 
 FIGURES = (
@@ -547,6 +549,71 @@ FIGURES = (
         "Temperature, pressure, and enthalpy-of-mixing parity for the "
         "visually recovered Xu et al. Figure 2 markers.",
     ),
+    FigureSpec(
+        filename="34_co2_presalt_unfitted_phase_envelopes.png",
+        study_id="34_co2_presalt_all_models",
+        notebook="notebooks/local-only/validation/34_co2_presalt_all_models.ipynb",
+        cell_index=12,
+        image_index=0,
+        evidence_class="validation",
+        observation_level_markers=True,
+        data_artifacts=("simoncelli_2020_co2_presalt_phase_transitions.csv",),
+        source_material=(
+            "https://doi.org/10.1016/j.fluid.2020.112574",
+            "https://doi.org/10.1016/j.fluid.2022.113456",
+        ),
+        description=(
+            "Complete fixed-composition phase envelopes and all 157 Simoncelli "
+            "et al. transition markers before conventional-cubic calibration."
+        ),
+    ),
+    FigureSpec(
+        filename="34_co2_presalt_fitted_phase_envelopes.png",
+        study_id="34_co2_presalt_all_models",
+        notebook="notebooks/local-only/validation/34_co2_presalt_all_models.ipynb",
+        cell_index=18,
+        image_index=0,
+        evidence_class="validation",
+        observation_level_markers=True,
+        data_artifacts=("simoncelli_2020_co2_presalt_phase_transitions.csv",),
+        source_material=(
+            "https://doi.org/10.1016/j.fluid.2020.112574",
+            "https://doi.org/10.1016/j.fluid.2022.113456",
+        ),
+        description=(
+            "Complete fixed-composition phase envelopes and all 157 Simoncelli "
+            "et al. transition markers after joint conventional-cubic calibration."
+        ),
+    ),
+    FigureSpec(
+        filename="34_co2_presalt_fit_summary.png",
+        study_id="34_co2_presalt_all_models",
+        notebook="notebooks/local-only/validation/34_co2_presalt_all_models.ipynb",
+        cell_index=22,
+        image_index=0,
+        evidence_class="calibration",
+        observation_level_markers=False,
+        data_artifacts=("simoncelli_2020_co2_presalt_phase_transitions.csv",),
+        source_material=("https://doi.org/10.1016/j.fluid.2020.112574",),
+        description=("Joint full-batch calibration histories and selected interaction parameters."),
+        publication_form="non-reconstructive-aggregate",
+    ),
+    FigureSpec(
+        filename="34_co2_presalt_aggregate_metrics.png",
+        study_id="34_co2_presalt_all_models",
+        notebook="notebooks/local-only/validation/34_co2_presalt_all_models.ipynb",
+        cell_index=24,
+        image_index=0,
+        evidence_class="validation",
+        observation_level_markers=False,
+        data_artifacts=("simoncelli_2020_co2_presalt_phase_transitions.csv",),
+        source_material=("https://doi.org/10.1016/j.fluid.2020.112574",),
+        description=(
+            "Non-reconstructive aggregate transition-pressure coverage and "
+            "AARD before and after calibration."
+        ),
+        publication_form="non-reconstructive-aggregate",
+    ),
 )
 
 
@@ -592,7 +659,6 @@ def _extract(spec: FigureSpec) -> tuple[str, dict[str, Any]]:
     record = asdict(spec)
     record.pop("filename")
     record["executed_artifact_sha256"] = _sha256(notebook_path)
-    record["publication_form"] = "rendered-plot"
     record["machine_readable_observation_values"] = False
     record["data_tables_distributed"] = False
     return spec.filename, record

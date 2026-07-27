@@ -20,7 +20,8 @@ from torch_flash.initialization import wilson_k_values
 from torch_flash.material_balance import rachford_rice
 from torch_flash.properties import identify_flash_phases, phase_properties
 from torch_flash.properties.state import StateModel
-from torch_flash.types import ChemicalState, FlashResult
+from torch_flash.solvers import minimize_dense_trust_region
+from torch_flash.types import ChemicalState, FlashResult, PhaseKind
 
 from .stability import tangent_plane_stability
 
@@ -213,4 +214,245 @@ def two_phase_flash(
         residual_norm,
         converged,
         {"rachford_rice_iterations": rr.iterations},
+    )
+
+
+def two_phase_trust_region_flash(
+    model: StateModel,
+    state: ChemicalState,
+    *,
+    initial_k_values: Tensor | None = None,
+    phase_roots: tuple[PhaseKind, PhaseKind] = ("liquid", "vapor"),
+    check_stability: bool = True,
+    tolerance: float = 1.0e-8,
+    max_iterations: int = 100,
+    raise_on_failure: bool = False,
+) -> FlashResult:
+    """Minimize two-phase Gibbs energy with an exact dense trust region.
+
+    The formulation follows M. Petitfrere and D. V. Nichita, "Robust and
+    efficient Trust-Region based stability analysis and multiphase flash
+    calculations", *Fluid Phase Equilibria* 362 (2014), 51-68, equations
+    (8)-(15) and sections 3.1-3.4,
+    doi:10.1016/j.fluid.2013.08.039. Direct component mole amounts in the
+    initially smaller phase are independent variables; the corresponding
+    amounts in the reference phase are dependent, so component material
+    balance is exact at every accepted step. PyTorch autodiff supplies the
+    exact gradient and Hessian.
+
+    Parameters
+    ----------
+    model
+        Homogeneous-state fugacity model.
+    state
+        Scalar temperature in K, pressure in Pa, and one feed-composition
+        vector.
+    initial_k_values
+        Optional positive vapor-to-liquid ratios. Wilson values are used when
+        omitted.
+    phase_roots
+        Root requests for the two candidate phases.
+    check_stability
+        Run trust-region tangent-plane stability first. A stable feed returns
+        one homogeneous phase without minimizing a split.
+    tolerance
+        Maximum dimensionless log-fugacity residual and trust-region gradient
+        tolerance.
+    max_iterations
+        Maximum trust-region iterations.
+    raise_on_failure
+        Raise ``RuntimeError`` rather than emitting ``ConvergenceWarning`` for
+        a non-converged or phase-collapsed result.
+
+    Returns
+    -------
+    FlashResult
+        Phase fractions, properties, convergence flag, fugacity residual, and
+        trust-region diagnostics.
+
+    Raises
+    ------
+    ValueError
+        If state shapes, phase roots, iteration controls, or initial ratios
+        are invalid.
+    RuntimeError
+        If the split fails and ``raise_on_failure`` is true.
+
+    Warns
+    -----
+    ConvergenceWarning
+        If the trust-region stationary point does not also pass fugacity and
+        phase-fraction gates.
+
+    Notes
+    -----
+    This is a local two-phase minimization. It does not replace multistart
+    stability analysis or prove that no third phase has lower Gibbs energy.
+    The default :func:`two_phase_flash` remains preferable for ordinary
+    well-conditioned vapor-liquid states unless matched benchmarks establish
+    a trust-region advantage.
+    """
+    if state.composition.ndim != 1:
+        raise ValueError("two-phase trust-region flash accepts one composition vector")
+    if len(phase_roots) != 2 or any(
+        phase not in ("liquid", "vapor", "stable") for phase in phase_roots
+    ):
+        raise ValueError("phase_roots must contain two valid phase-root requests")
+    if tolerance <= 0.0 or max_iterations <= 0:
+        raise ValueError("two-phase trust-region controls must be positive")
+    z = state.composition / state.composition.sum()
+    if not bool(torch.isfinite(z).all() & (z > 0.0).all()):
+        raise ValueError(
+            "two-phase trust-region flash requires finite strictly positive feed fractions"
+        )
+    if check_stability:
+        stability = tangent_plane_stability(
+            model,
+            state,
+            minimizer="trust-region",
+            tolerance=min(tolerance, 1.0e-9),
+            max_iterations=max_iterations,
+        )
+        if stability.stable and stability.converged:
+            phase = phase_properties(model, state, "stable")
+            return FlashResult(
+                torch.ones(1, dtype=z.dtype, device=z.device),
+                (phase,),
+                True,
+                stability.iterations,
+                torch.clamp_min(stability.minimum_tpd, 0.0),
+                True,
+                {
+                    "minimum_tpd": float(stability.minimum_tpd),
+                    "trust_region_stability": True,
+                },
+            )
+
+    if initial_k_values is None:
+        initial_k_values = wilson_k_values(
+            _model_components(model),
+            state.temperature,
+            state.pressure,
+        )
+    if initial_k_values.shape != z.shape or not bool(
+        torch.isfinite(initial_k_values).all() & (initial_k_values > 0.0).all()
+    ):
+        raise ValueError("initial K values must be a finite positive component vector")
+    log_k = torch.log(initial_k_values)
+    log_k = log_k - torch.sum(z * log_k)
+    split = rachford_rice(z, torch.exp(log_k), tolerance=1.0e-13)
+    first_initial_moles = split.liquid_fraction * split.liquid_composition
+    second_initial_moles = split.vapor_fraction * split.vapor_composition
+    independent_is_first = first_initial_moles <= second_initial_moles
+    initial = torch.where(
+        independent_is_first,
+        first_initial_moles,
+        second_initial_moles,
+    )
+    mole_floor = 16.0 * torch.finfo(z.dtype).eps * z
+    initial = torch.minimum(
+        torch.maximum(initial, mole_floor),
+        z - mole_floor,
+    )
+
+    def quantities(independent_moles: Tensor) -> tuple[Tensor, Tensor, Tensor]:
+        first_moles = torch.where(
+            independent_is_first,
+            independent_moles,
+            z - independent_moles,
+        )
+        second_moles = z - first_moles
+        phase_moles = torch.stack((first_moles, second_moles))
+        fractions = phase_moles.sum(dim=-1)
+        compositions = phase_moles / fractions[:, None]
+        log_phi = torch.stack(
+            tuple(
+                model.log_fugacity_coefficients(
+                    state.temperature,
+                    state.pressure,
+                    composition,
+                    phase_kind,
+                )
+                for composition, phase_kind in zip(
+                    compositions,
+                    phase_roots,
+                    strict=True,
+                )
+            )
+        )
+        chemical_potential = torch.log(compositions) + log_phi
+        gibbs = torch.sum(phase_moles * chemical_potential)
+        return gibbs, fractions, compositions
+
+    result = minimize_dense_trust_region(
+        lambda independent_moles: quantities(independent_moles)[0],
+        initial,
+        is_feasible=lambda independent_moles: bool(
+            (
+                torch.isfinite(independent_moles)
+                & (independent_moles > mole_floor)
+                & (independent_moles < z - mole_floor)
+            )
+            .detach()
+            .all()
+        ),
+        gradient_tolerance=tolerance,
+        max_iterations=max_iterations,
+    )
+    _, fractions, compositions = quantities(result.solution)
+    log_phi = torch.stack(
+        tuple(
+            model.log_fugacity_coefficients(
+                state.temperature,
+                state.pressure,
+                composition,
+                phase_kind,
+            )
+            for composition, phase_kind in zip(
+                compositions,
+                phase_roots,
+                strict=True,
+            )
+        )
+    )
+    chemical_potential = torch.log(compositions) + log_phi
+    residual_norm = (chemical_potential[1] - chemical_potential[0]).abs().max()
+    phase_fraction_tolerance = max(10.0 * tolerance, 1.0e-10)
+    physical = bool((fractions.detach() > phase_fraction_tolerance).all())
+    converged = result.converged and physical and bool(residual_norm.detach() <= tolerance)
+    phases = tuple(
+        phase_properties(
+            model,
+            ChemicalState(state.temperature, state.pressure, composition),
+            phase_kind,
+            caloric=False,
+        )
+        for composition, phase_kind in zip(
+            compositions,
+            phase_roots,
+            strict=True,
+        )
+    )
+    if not converged:
+        message = (
+            "two-phase trust-region flash did not produce a physical "
+            f"residual-converged split in {result.iterations} iterations "
+            f"(log-fugacity residual {float(residual_norm):.3e})"
+        )
+        if raise_on_failure:
+            raise RuntimeError(message)
+        warnings.warn(message, ConvergenceWarning, stacklevel=2)
+    return FlashResult(
+        fractions,
+        identify_flash_phases(phases),
+        converged,
+        result.iterations,
+        residual_norm,
+        converged,
+        {
+            "trust_region_accepted_steps": result.accepted_steps,
+            "trust_region_rejected_steps": result.rejected_steps,
+            "trust_region_gradient_norm": float(result.gradient_norm),
+            "trust_region_minimum_hessian_eigenvalue": float(result.minimum_hessian_eigenvalue),
+        },
     )

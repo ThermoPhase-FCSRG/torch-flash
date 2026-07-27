@@ -347,9 +347,20 @@ smoke-friendly settings and an explicit full-study path.
   belong in release notes, not model or performance guides.
 - Put detailed verification, validation, benchmark conditions, notebook
   studies, and scientific caveats in `docs/`.
+- User-facing documentation and reports must mention only tracked repository
+  artifacts and behavior shipped by `torch-flash`. Do not describe local-only,
+  ignored, private, or untracked data paths, notebooks, figures, or execution
+  artifacts as part of the published project.
 - Cite claims near the relevant text. Prefer primary references and persistent
   DOIs. Distinguish equation source, parameter source, experimental source,
   and external-software baseline.
+- Public user-facing documentation must describe only artifacts,
+  capabilities, results, and workflows that are tracked in this repository or
+  shipped by `torch-flash`. Do not discuss private, ignored, or local-only
+  paths, source-clearance workflows, or internal publication boundaries in
+  model guides or validation reports. Keep necessary legal and data-governance
+  facts in the licensing documentation and machine-readable data-rights
+  ledger.
 - Do not mention private workstation paths or untracked reference locations in
   source, notebooks intended for release, documentation, logs, or package
   artifacts.

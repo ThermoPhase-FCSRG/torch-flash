@@ -13,6 +13,7 @@ from torch_flash.exceptions import ConvergenceWarning, ExperimentalModelWarning
 from torch_flash.initialization import wilson_k_values
 from torch_flash.properties import identify_flash_phases, phase_properties
 from torch_flash.properties.state import StateModel
+from torch_flash.solvers import minimize_dense_trust_region
 from torch_flash.types import ChemicalState, FlashResult, PhaseKind
 
 
@@ -317,5 +318,270 @@ def multiphase_flash(
         {
             "generalized_rachford_rice_iterations": rr_iterations,
             "autodiff_newton_steps": newton_steps,
+        },
+    )
+
+
+def multiphase_trust_region_flash(
+    model: StateModel,
+    state: ChemicalState,
+    *,
+    initial_k_values: Tensor | None = None,
+    phase_roots: tuple[PhaseKind, ...] | None = None,
+    tolerance: float = 1.0e-8,
+    max_iterations: int = 100,
+    raise_on_failure: bool = False,
+) -> FlashResult:
+    """Minimize fixed-count multiphase Gibbs energy by a dense trust region.
+
+    This implements the improved mole-number (NLVM) formulation of
+    M. Petitfrere and D. V. Nichita, "Robust and efficient Trust-Region based
+    stability analysis and multiphase flash calculations", *Fluid Phase
+    Equilibria* 362 (2014), 51-68, equations (8)-(15) and sections 3.1-3.4,
+    doi:10.1016/j.fluid.2013.08.039. For every component, the phase containing
+    the largest initial amount is the dependent reference phase. All other
+    phase amounts are independent, and component material balance is exact at
+    every accepted step.
+
+    Parameters
+    ----------
+    model
+        Homogeneous-state model providing fugacity coefficients and phase
+        properties.
+    state
+        Scalar temperature in K, pressure in Pa, and one strictly positive
+        feed-composition vector.
+    initial_k_values
+        Positive ratios to the first phase, shaped
+        ``(nphases - 1, ncomponents)``. Omitting them requests the package
+        three-phase Wilson/reciprocal heuristic.
+    phase_roots
+        EoS root request for each fixed phase. When omitted, the first phase is
+        liquid, the second vapor, and later phases liquid.
+    tolerance
+        Maximum dimensionless chemical-potential residual and trust-region
+        gradient norm.
+    max_iterations
+        Maximum accepted-or-rejected trust-region iterations.
+    raise_on_failure
+        Raise ``RuntimeError`` instead of emitting ``ConvergenceWarning`` when
+        a physical residual-converged split is not obtained.
+
+    Returns
+    -------
+    FlashResult
+        Fixed-count phase fractions and properties, convergence status,
+        chemical-potential residual, and trust-region diagnostics.
+
+    Raises
+    ------
+    ValueError
+        If state shapes, feed fractions, K values, phase roots, or numerical
+        controls are invalid.
+    RuntimeError
+        If convergence fails and ``raise_on_failure`` is true.
+
+    Warns
+    -----
+    ExperimentalModelWarning
+        On every call because this operation does not discover the globally
+        stable phase count.
+    ConvergenceWarning
+        If the local minimum fails the physical or residual gates.
+
+    Notes
+    -----
+    This is a local fixed-phase-count minimization. Multiple stability starts
+    remain necessary, and a converged stationary point does not prove global
+    stability. Exact autodiff Hessians are appropriate for small dense phase
+    systems; their cost can dominate ordinary two-phase states.
+    """
+    warnings.warn(
+        "trust-region multiphase flash uses a fixed phase count; inspect "
+        "stability and material-balance diagnostics",
+        ExperimentalModelWarning,
+        stacklevel=2,
+    )
+    if state.composition.ndim != 1:
+        raise ValueError("multiphase trust-region flash accepts one composition vector")
+    if tolerance <= 0.0 or max_iterations <= 0:
+        raise ValueError("multiphase trust-region controls must be positive")
+    z = state.composition / state.composition.sum()
+    if not bool(torch.isfinite(z).all() & (z > 0.0).all()):
+        raise ValueError(
+            "multiphase trust-region flash requires finite strictly positive feed fractions"
+        )
+    k_values = _default_multiphase_k(model, state) if initial_k_values is None else initial_k_values
+    if (
+        k_values.ndim != 2
+        or k_values.shape[1] != z.numel()
+        or not bool(torch.isfinite(k_values).all() & (k_values > 0.0).all())
+    ):
+        raise ValueError(
+            "multiphase trust-region K values must be a finite positive "
+            "(nphases - 1, ncomponents) matrix"
+        )
+    phase_count = k_values.shape[0] + 1
+    selected_phase_roots: tuple[PhaseKind, ...]
+    if phase_roots is None:
+        selected_phase_roots = tuple(
+            "vapor" if phase_index == 1 else "liquid" for phase_index in range(phase_count)
+        )
+    else:
+        selected_phase_roots = phase_roots
+    if len(selected_phase_roots) != phase_count or any(
+        phase not in ("liquid", "vapor", "stable") for phase in selected_phase_roots
+    ):
+        raise ValueError("multiphase trust-region roots must match the fixed phase count")
+
+    (
+        initial_fractions,
+        initial_compositions,
+        material_balance_iterations,
+        material_balance_converged,
+    ) = solve_generalized_rachford_rice(z, k_values)
+    if not material_balance_converged:
+        raise ValueError("initial generalized material-balance split did not converge")
+    initial_phase_moles = initial_fractions[:, None] * initial_compositions
+    reference_phase = torch.argmax(initial_phase_moles, dim=0)
+    independent_phase = torch.stack(
+        tuple(
+            torch.tensor(
+                tuple(
+                    phase_index
+                    for phase_index in range(phase_count)
+                    if phase_index != int(reference_phase[component_index])
+                ),
+                dtype=torch.int64,
+                device=z.device,
+            )
+            for component_index in range(z.numel())
+        )
+    )
+    initial = torch.gather(
+        initial_phase_moles.mT,
+        1,
+        independent_phase,
+    )
+    mole_floor = 16.0 * torch.finfo(z.dtype).eps * z
+    initial = torch.maximum(initial, mole_floor[:, None])
+    total_independent = initial.sum(dim=1)
+    rescale = torch.minimum(
+        torch.ones_like(z),
+        (z - 2.0 * mole_floor) / total_independent,
+    )
+    initial = initial * rescale[:, None]
+    independent_selector = torch.nn.functional.one_hot(
+        independent_phase,
+        num_classes=phase_count,
+    ).to(dtype=z.dtype)
+    reference_selector = torch.nn.functional.one_hot(
+        reference_phase,
+        num_classes=phase_count,
+    ).mT.to(dtype=z.dtype)
+
+    def quantities(independent_moles: Tensor) -> tuple[Tensor, Tensor, Tensor, Tensor]:
+        independent_by_phase = torch.einsum(
+            "ci,cip->pc",
+            independent_moles,
+            independent_selector,
+        )
+        reference_moles = z - independent_moles.sum(dim=1)
+        phase_moles = independent_by_phase + reference_selector * reference_moles
+        fractions = phase_moles.sum(dim=1)
+        compositions = phase_moles / fractions[:, None]
+        log_phi = torch.stack(
+            tuple(
+                model.log_fugacity_coefficients(
+                    state.temperature,
+                    state.pressure,
+                    composition,
+                    phase_root,
+                )
+                for composition, phase_root in zip(
+                    compositions,
+                    selected_phase_roots,
+                    strict=True,
+                )
+            )
+        )
+        chemical_potential = torch.log(compositions) + log_phi
+        gibbs = torch.sum(phase_moles * chemical_potential)
+        return gibbs, fractions, compositions, chemical_potential
+
+    flattened_initial = initial.reshape(-1)
+
+    def reshape_independent(flattened: Tensor) -> Tensor:
+        return flattened.reshape(z.numel(), phase_count - 1)
+
+    result = minimize_dense_trust_region(
+        lambda flattened: quantities(reshape_independent(flattened))[0],
+        flattened_initial,
+        is_feasible=lambda flattened: bool(
+            (
+                torch.isfinite(reshape_independent(flattened))
+                & (reshape_independent(flattened) > mole_floor[:, None])
+            )
+            .detach()
+            .all()
+            and (reshape_independent(flattened).sum(dim=1) < z - mole_floor).detach().all()
+        ),
+        gradient_tolerance=tolerance,
+        max_iterations=max_iterations,
+    )
+    independent_moles = reshape_independent(result.solution)
+    _, fractions, compositions, chemical_potential = quantities(independent_moles)
+    reference_potential = torch.gather(
+        chemical_potential,
+        0,
+        reference_phase[None, :],
+    ).squeeze(0)
+    independent_potential = torch.gather(
+        chemical_potential.mT,
+        1,
+        independent_phase,
+    )
+    residual_norm = (independent_potential - reference_potential[:, None]).abs().max()
+    phase_fraction_tolerance = max(10.0 * tolerance, 1.0e-10)
+    physical = bool((fractions.detach() > phase_fraction_tolerance).all())
+    converged = result.converged and physical and bool(residual_norm.detach() <= tolerance)
+    phases = tuple(
+        phase_properties(
+            model,
+            ChemicalState(state.temperature, state.pressure, composition),
+            phase_root,
+            caloric=False,
+        )
+        for composition, phase_root in zip(
+            compositions,
+            selected_phase_roots,
+            strict=True,
+        )
+    )
+    if not converged:
+        message = (
+            "multiphase trust-region flash did not produce a physical "
+            f"residual-converged split in {result.iterations} iterations "
+            f"(chemical-potential residual {float(residual_norm):.3e})"
+        )
+        if raise_on_failure:
+            raise RuntimeError(message)
+        warnings.warn(message, ConvergenceWarning, stacklevel=2)
+    reconstructed = torch.einsum("p,pi->i", fractions, compositions)
+    material_balance_residual = torch.max(torch.abs(reconstructed - z))
+    return FlashResult(
+        fractions,
+        identify_flash_phases(phases),
+        converged,
+        result.iterations,
+        residual_norm,
+        converged,
+        {
+            "generalized_rachford_rice_iterations": material_balance_iterations,
+            "material_balance_residual": float(material_balance_residual),
+            "trust_region_accepted_steps": result.accepted_steps,
+            "trust_region_rejected_steps": result.rejected_steps,
+            "trust_region_gradient_norm": float(result.gradient_norm),
+            "trust_region_minimum_hessian_eigenvalue": float(result.minimum_hessian_eigenvalue),
         },
     )

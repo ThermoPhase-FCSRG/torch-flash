@@ -11,7 +11,7 @@ import math
 import time
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
-from typing import cast
+from typing import Literal, cast
 
 import torch
 from torch import Tensor
@@ -23,6 +23,11 @@ from torch_flash.flash.batched import (
 )
 from torch_flash.initialization import wilson_k_values
 from torch_flash.properties.state import StateModel
+from torch_flash.solvers import (
+    batched_damped_newton,
+    minimize_batched_dense_trust_region,
+    minimize_dense_trust_region,
+)
 from torch_flash.types import (
     BatchedStabilityResult,
     BatchedTwoPhaseFlashResult,
@@ -209,6 +214,33 @@ class BinaryThreePhaseInvariant:
 
 
 @dataclass(frozen=True)
+class BinaryThreePhaseInvariantBatch:
+    """Independent binary three-phase invariants solved in one tensor batch.
+
+    Attributes
+    ----------
+    temperature, pressure
+        State temperatures in K and solved pressures in Pa with shape
+        ``(batch,)``.
+    phase_compositions
+        Sorted binary phase compositions with shape ``(batch, 3, 2)``.
+    residual_norm
+        Per-state maximum dimensionless log-fugacity mismatch.
+    iterations
+        Per-state damped-Newton iteration counts.
+    converged
+        Per-state residual-convergence flags.
+    """
+
+    temperature: Tensor
+    pressure: Tensor
+    phase_compositions: Tensor
+    residual_norm: Tensor
+    iterations: Tensor
+    converged: Tensor
+
+
+@dataclass(frozen=True)
 class GridEquilibrium:
     """Padded phase-equilibrium results over independent TP states.
 
@@ -298,6 +330,62 @@ class GridEquilibrium:
 
 
 @dataclass(frozen=True)
+class TrustRegionGridPolishResult:
+    """Batched NLVM Trust-Region audit of a phase-discovered grid.
+
+    Attributes
+    ----------
+    equilibrium
+        Copy of the supplied grid with every attempted multiphase state
+        replaced by the Trust-Region result. A one-phase state whose
+        Trust-Region TPD minimum is negative is promoted to a two-phase
+        Trust-Region flash when the instability supplies a physical seed.
+    attempted
+        Boolean tensor with shape ``(nstates,)`` selecting converged input
+        states. One-phase rows receive a Trust-Region stability audit; two-
+        and three-phase rows receive an NLVM Trust-Region flash.
+    converged
+        Per-state Trust-Region convergence flags. Unattempted states are
+        false. A true value requires the optimization, fugacity, material
+        balance, positive-fraction, and separated-phase gates.
+    iterations, accepted_steps, rejected_steps
+        Per-state outer iteration and step-decision counts. Unattempted rows
+        contain zero.
+    gradient_norm
+        Final infinity norm of the dimensionless Gibbs objective gradient.
+    minimum_hessian_eigenvalue
+        Smallest eigenvalue of the final symmetrized exact Hessian.
+    minimum_tpd
+        Final modified tangent-plane-distance minimum for audited one-phase
+        states. Multiphase rows contain NaN.
+    maximum_phase_composition_change
+        Largest absolute mole-fraction change from the independently
+        discovered seed, comparing the preserved phase rows.
+    elapsed_seconds
+        Wall-clock seconds spent in the Trust-Region audit.
+
+    Notes
+    -----
+    This result validates a local fixed-phase-count solver against phase
+    counts discovered independently. It is not itself a global phase-count
+    proof. Inspect ``attempted`` and ``converged`` before using the polished
+    equilibrium.
+    """
+
+    equilibrium: GridEquilibrium
+    attempted: Tensor
+    converged: Tensor
+    iterations: Tensor
+    accepted_steps: Tensor
+    rejected_steps: Tensor
+    gradient_norm: Tensor
+    minimum_hessian_eigenvalue: Tensor
+    minimum_tpd: Tensor
+    maximum_phase_composition_change: Tensor
+    elapsed_seconds: float
+
+
+@dataclass(frozen=True)
 class GridPhaseIdentification:
     """Physical identities evaluated at every equilibrium composition.
 
@@ -349,6 +437,67 @@ class GridPhaseIdentification:
     region_codes: Tensor
     elapsed_seconds: float
     method_elapsed_seconds: tuple[float, ...]
+
+
+@dataclass(frozen=True)
+class PhaseRegionBoundaryCurve:
+    """One adaptively localized boundary of a classified phase region.
+
+    Attributes
+    ----------
+    region_code
+        Index into :data:`GRID_PHASE_REGION_LABELS` for the region enclosed or
+        followed by this curve.
+    temperature, pressure
+        Ordered one-dimensional curve coordinates in K and Pa. Their lengths
+        match and are at least two.
+    closed
+        Whether graph traversal returned to the first refined grid edge.
+
+    Notes
+    -----
+    The curve connects equilibrium classifications and is not a coexistence
+    continuation solve. Its vertices are localized by re-flashing bisection
+    states on grid edges whose endpoint region codes differ.
+    """
+
+    region_code: int
+    temperature: Tensor
+    pressure: Tensor
+    closed: bool
+
+
+@dataclass(frozen=True)
+class PhaseRegionBoundarySet:
+    """Adaptively refined boundaries and localization diagnostics.
+
+    Attributes
+    ----------
+    curves
+        Connected phase-region boundary curves. Different region codes can
+        share a physical interface and therefore have coincident curves.
+    refined_edge_count
+        Number of unique coarse-grid edges whose endpoint classifications
+        differ.
+    refinement_state_count
+        Total midpoint states submitted to batched flashes.
+    failed_midpoint_count
+        Number of midpoint flashes that did not pass the flash convergence
+        gate. Such classifications remain explicit in the bisection audit.
+    ambiguous_cell_count
+        Number of checkerboard marching-squares cells resolved with the
+        deterministic isolated-corner convention.
+    maximum_temperature_bracket, maximum_pressure_bracket
+        Largest final edge-bracket widths in K and Pa.
+    """
+
+    curves: tuple[PhaseRegionBoundaryCurve, ...]
+    refined_edge_count: int
+    refinement_state_count: int
+    failed_midpoint_count: int
+    ambiguous_cell_count: int
+    maximum_temperature_bracket: float
+    maximum_pressure_bracket: float
 
 
 MAX_PHASES = 3
@@ -1625,8 +1774,9 @@ def solve_binary_three_phase_invariant(
     ),
     tolerance: float = 1.0e-11,
     max_iterations: int = 12,
+    method: Literal["newton", "trust-region"] = "newton",
 ) -> BinaryThreePhaseInvariant:
-    """Close a binary three-phase invariant with an autodiff Newton solve.
+    """Close a binary three-phase invariant with an autodiff nonlinear solve.
 
     The unknowns are the first-component mole fraction of each phase and the
     logarithm of pressure. Temperature is fixed. Equal component fugacities
@@ -1652,7 +1802,13 @@ def solve_binary_three_phase_invariant(
         Maximum absolute dimensionless log-fugacity mismatch required for
         convergence.
     max_iterations
-        Maximum damped Newton iterations.
+        Maximum damped-Newton or trust-region iterations.
+    method
+        ``"newton"`` uses the fast local equal-fugacity root solve.
+        ``"trust-region"`` minimizes one half of the squared equal-fugacity
+        residual with exact PyTorch gradients and Hessians. The latter is a
+        recovery path for difficult three-phase branches, not the preferred
+        cost for ordinary invariant states.
 
     Returns
     -------
@@ -1673,11 +1829,17 @@ def solve_binary_three_phase_invariant(
 
     Notes
     -----
-    :func:`torch.func.jacrev` differentiates all four fugacity residuals with
-    respect to three composition logits and log pressure. A backtracking line
-    search accepts only a decrease in squared residual norm. This is a local
-    branch solve: multiple invariants or a poor initial branch guess are not
-    discovered automatically.
+    Both methods solve the same four isofugacity equations with respect to
+    three composition logits and log pressure. The Newton method uses
+    :func:`torch.func.jacrev` and a residual-decreasing backtracking line
+    search. The trust-region method follows the exact-Hessian restricted-step
+    strategy of M. Petitfrere and D. V. Nichita, *Fluid Phase Equilibria* 362
+    (2014), 51-68, sections 3.1-3.4,
+    doi:10.1016/j.fluid.2013.08.039.
+
+    Both are local branch solves. A residual-converged result can still be the
+    algebraic solution in which two phases coincide; callers must retain a
+    phase-separation gate and use physically informed multiple starts.
     """
     if temperature.ndim != 0 or initial_pressure.ndim != 0:
         raise ValueError("binary invariant temperature and pressure must be scalar")
@@ -1685,6 +1847,8 @@ def solve_binary_three_phase_invariant(
         raise ValueError("binary invariant requires three two-component phase guesses")
     if tolerance <= 0.0 or max_iterations <= 0:
         raise ValueError("binary invariant tolerance and max_iterations must be positive")
+    if method not in ("newton", "trust-region"):
+        raise ValueError("binary invariant method must be 'newton' or 'trust-region'")
     first_fractions = initial_phase_compositions[:, 0]
     if bool(((first_fractions <= 0.0) | (first_fractions >= 1.0)).any()):
         raise ValueError("binary invariant phase guesses must be strictly interior")
@@ -1716,24 +1880,38 @@ def solve_binary_three_phase_invariant(
         )
 
     variables = torch.cat((torch.logit(first_fractions), torch.log(initial_pressure).reshape(1)))
-    converged = False
-    for _iteration in range(1, max_iterations + 1):
-        current_residual = residual(variables)
-        if float(current_residual.detach().abs().max()) <= tolerance:
-            converged = True
-            break
-        step = torch.linalg.solve(
-            torch.func.jacrev(residual)(variables),
-            -current_residual,
+    if method == "trust-region":
+
+        def objective(current: Tensor) -> Tensor:
+            return 0.5 * residual(current).square().sum()
+
+        trust_result = minimize_dense_trust_region(
+            objective,
+            variables,
+            initial_radius=0.5,
+            maximum_radius=5.0,
+            gradient_tolerance=max(1.0e-12, 0.01 * tolerance),
+            max_iterations=max_iterations,
         )
-        baseline = float(current_residual.detach().square().sum())
-        for line_search in range(14):
-            trial = variables + (0.5**line_search) * step
-            if float(residual(trial).detach().square().sum()) < baseline:
-                variables = trial
+        variables = trust_result.solution
+        _iteration = trust_result.iterations
+    else:
+        for _iteration in range(1, max_iterations + 1):
+            current_residual = residual(variables)
+            if float(current_residual.detach().abs().max()) <= tolerance:
                 break
-        else:
-            break
+            step = torch.linalg.solve(
+                torch.func.jacrev(residual)(variables),
+                -current_residual,
+            )
+            baseline = float(current_residual.detach().square().sum())
+            for line_search in range(14):
+                trial = variables + (0.5**line_search) * step
+                if float(residual(trial).detach().square().sum()) < baseline:
+                    variables = trial
+                    break
+            else:
+                break
 
     final_residual = residual(variables)
     converged = bool(final_residual.detach().abs().max() <= tolerance)
@@ -1750,6 +1928,173 @@ def solve_binary_three_phase_invariant(
         residual_norm=final_residual.abs().max(),
         iterations=_iteration,
         converged=converged,
+    )
+
+
+def solve_batched_binary_three_phase_invariants(
+    model: StateModel,
+    temperature: Tensor,
+    initial_pressure: Tensor,
+    initial_phase_compositions: Tensor,
+    *,
+    phase_roots: tuple[PhaseKind, PhaseKind, PhaseKind] = (
+        "liquid",
+        "liquid",
+        "vapor",
+    ),
+    tolerance: float = 1.0e-11,
+    max_iterations: int = 12,
+    method: Literal["newton", "trust-region"] = "newton",
+) -> BinaryThreePhaseInvariantBatch:
+    """Close independent binary three-phase invariants in one PyTorch batch.
+
+    Parameters
+    ----------
+    model
+        Two-component homogeneous-state model shared by every state.
+    temperature, initial_pressure
+        One-dimensional state temperatures in K and positive branch pressure
+        estimates in Pa.
+    initial_phase_compositions
+        Strictly interior normalized guesses with shape ``(batch, 3, 2)``.
+        Rows in the phase axis correspond to ``phase_roots``.
+    phase_roots
+        Common EoS roots used for the three phases.
+    tolerance
+        Maximum per-state dimensionless log-fugacity residual.
+    max_iterations
+        Maximum batched damped-Newton or trust-region iterations.
+    method
+        ``"newton"`` uses the fast batched equal-fugacity root solve.
+        ``"trust-region"`` minimizes the independent squared residuals with
+        vectorized exact PyTorch Hessians and per-state trust radii.
+
+    Returns
+    -------
+    BinaryThreePhaseInvariantBatch
+        Solved pressures, sorted compositions, and per-state diagnostics.
+
+    Raises
+    ------
+    ValueError
+        If shapes, guesses, roots, or numerical controls are invalid.
+
+    Notes
+    -----
+    This function solves the same four isofugacity equations as
+    :func:`solve_binary_three_phase_invariant`. States execute jointly as a
+    tensor batch but remain mathematically independent. Gradients through the
+    model parameters and converged local branches are preserved.
+    """
+    if (
+        temperature.ndim != 1
+        or temperature.numel() == 0
+        or initial_pressure.shape != temperature.shape
+    ):
+        raise ValueError("batched binary invariant states must have shape (batch,)")
+    if initial_phase_compositions.shape != (temperature.shape[0], MAX_PHASES, 2):
+        raise ValueError("batched binary invariant guesses must have shape (batch, 3, 2)")
+    if tolerance <= 0.0 or max_iterations <= 0:
+        raise ValueError("batched binary invariant controls must be positive")
+    if method not in ("newton", "trust-region"):
+        raise ValueError("batched binary invariant method must be 'newton' or 'trust-region'")
+    if any(root not in ("liquid", "vapor", "stable") for root in phase_roots):
+        raise ValueError("binary invariant phase roots are invalid")
+
+    compositions = initial_phase_compositions.to(
+        dtype=temperature.dtype,
+        device=temperature.device,
+    )
+    pressure = initial_pressure.to(dtype=temperature.dtype, device=temperature.device)
+    first_fractions = compositions[:, :, 0]
+    if not bool(
+        torch.isfinite(temperature).all()
+        & torch.isfinite(pressure).all()
+        & (temperature > 0.0).all()
+        & (pressure > 0.0).all()
+        & torch.isfinite(compositions).all()
+        & (first_fractions > 0.0).all()
+        & (first_fractions < 1.0).all()
+    ):
+        raise ValueError("batched binary invariant states must be finite and interior")
+
+    def residual(
+        variables: Tensor,
+        state_temperature: Tensor,
+    ) -> Tensor:
+        component_fractions = torch.sigmoid(variables[:, :MAX_PHASES])
+        phase_compositions = torch.stack(
+            (component_fractions, 1.0 - component_fractions),
+            dim=-1,
+        )
+        state_pressure = torch.exp(variables[:, MAX_PHASES])
+        chemical_potentials = torch.stack(
+            tuple(
+                torch.log(phase_compositions[:, index])
+                + model.log_fugacity_coefficients(
+                    state_temperature,
+                    state_pressure,
+                    phase_compositions[:, index],
+                    phase_roots[index],
+                )
+                for index in range(MAX_PHASES)
+            ),
+            dim=1,
+        )
+        return torch.cat(
+            (
+                chemical_potentials[:, 1] - chemical_potentials[:, 0],
+                chemical_potentials[:, 2] - chemical_potentials[:, 0],
+            ),
+            dim=-1,
+        )
+
+    variables = torch.cat(
+        (
+            torch.logit(first_fractions),
+            torch.log(pressure).unsqueeze(-1),
+        ),
+        dim=-1,
+    )
+    if method == "trust-region":
+
+        def objective(current: Tensor, state_temperature: Tensor) -> Tensor:
+            return 0.5 * residual(current, state_temperature).square().sum(dim=-1)
+
+        trust_result = minimize_batched_dense_trust_region(
+            objective,
+            variables,
+            temperature,
+            gradient_tolerance=max(1.0e-12, 0.01 * tolerance),
+            max_iterations=max_iterations,
+        )
+        solved_variables = trust_result.solution
+        solved_iterations = trust_result.iterations
+    else:
+        newton_result = batched_damped_newton(
+            residual,
+            variables,
+            temperature,
+            tolerance=tolerance,
+            max_iterations=max_iterations,
+        )
+        solved_variables = newton_result.solution
+        solved_iterations = newton_result.iterations
+    solved_first_fractions = torch.sigmoid(solved_variables[:, :MAX_PHASES])
+    order = torch.argsort(solved_first_fractions, dim=-1)
+    sorted_fractions = torch.gather(solved_first_fractions, 1, order)
+    solved_compositions = torch.stack(
+        (sorted_fractions, 1.0 - sorted_fractions),
+        dim=-1,
+    )
+    final_residual_norm = residual(solved_variables, temperature).abs().amax(dim=-1)
+    return BinaryThreePhaseInvariantBatch(
+        temperature,
+        torch.exp(solved_variables[:, MAX_PHASES]),
+        solved_compositions,
+        final_residual_norm,
+        solved_iterations,
+        torch.isfinite(final_residual_norm) & (final_residual_norm <= tolerance),
     )
 
 
@@ -2718,6 +3063,523 @@ def _gibbs_fallback_grid_states(
     return direct_results
 
 
+def polish_grid_equilibrium_with_trust_region(
+    model: StateModel,
+    equilibrium: GridEquilibrium,
+    *,
+    tolerance: float = 1.0e-8,
+    material_balance_tolerance: float = 5.0e-11,
+    phase_fraction_tolerance: float = 1.0e-10,
+    phase_composition_merge_tolerance: float = 2.0e-3,
+    max_iterations: int = 100,
+    chunk_size: int = 128,
+) -> TrustRegionGridPolishResult:
+    """Audit a phase-discovered grid with batched Trust-Region minimization.
+
+    The calculation implements the improved mole-number (NLVM) Gibbs
+    formulation of Petitfrere and Nichita with one dependent reference phase
+    per component. Independently screened one-phase states are audited with
+    the paper's modified-TPD Trust-Region objective. The phase count and
+    starting compositions come from a completed :func:`flash_grid` or
+    :func:`flash_grid_oracle` result. States sharing a phase count are
+    evaluated in PyTorch batches; their exact Hessian blocks remain
+    mathematically independent.
+
+    Parameters
+    ----------
+    model
+        Homogeneous-state model used to produce ``equilibrium``.
+    equilibrium
+        Phase-discovered grid containing temperatures in K, pressures in Pa,
+        normalized feeds, phase fractions, and phase compositions.
+    tolerance
+        Maximum dimensionless Gibbs-gradient and log-fugacity residual.
+    material_balance_tolerance
+        Maximum absolute component mole-fraction reconstruction residual.
+    phase_fraction_tolerance
+        Minimum positive molar fraction for every preserved phase.
+    phase_composition_merge_tolerance
+        Minimum maximum-component distance between every phase pair.
+    max_iterations
+        Maximum accepted-or-rejected Trust-Region iterations per state.
+    chunk_size
+        Maximum number of equal-phase-count states whose thermodynamic
+        objectives, gradients, and exact Hessians are evaluated together.
+
+    Returns
+    -------
+    TrustRegionGridPolishResult
+        Polished equilibrium plus per-state optimization, residual, curvature,
+        and seed-change diagnostics.
+
+    Raises
+    ------
+    ValueError
+        If controls are invalid, grid arrays are inconsistent, a discovered
+        phase count lies outside one through three, or an attempted feed is
+        not strictly positive.
+
+    Notes
+    -----
+    This operation follows M. Petitfrere and D. V. Nichita, "Robust and
+    efficient Trust-Region based stability analysis and multiphase flash
+    calculations", *Fluid Phase Equilibria* 362 (2014), 51-68, equations
+    (8)-(15) and sections 3.1-3.4,
+    doi:10.1016/j.fluid.2013.08.039.
+
+    Phase discovery and local minimization answer different questions. The
+    independent grid supplies the initial phase count and branch seeds. A
+    negative one-phase Trust-Region TPD minimum may correct that count from one
+    to two, but a local fixed-count minimum is still not a global stability
+    proof.
+    """
+    positive_controls = (
+        tolerance,
+        material_balance_tolerance,
+        phase_fraction_tolerance,
+        phase_composition_merge_tolerance,
+    )
+    if any(not math.isfinite(value) or value <= 0.0 for value in positive_controls):
+        raise ValueError("Trust-Region grid-polish tolerances must be finite and positive")
+    if max_iterations <= 0 or chunk_size <= 0:
+        raise ValueError("Trust-Region grid-polish iteration and chunk counts must be positive")
+
+    state_count, component_count = equilibrium.feeds.shape
+    expected_shapes = (
+        equilibrium.temperatures.shape == (state_count,),
+        equilibrium.pressures.shape == (state_count,),
+        equilibrium.phase_fractions.shape == (state_count, MAX_PHASES),
+        equilibrium.phase_compositions.shape == (state_count, MAX_PHASES, component_count),
+        equilibrium.phase_counts.shape == (state_count,),
+        equilibrium.converged.shape == (state_count,),
+    )
+    if not all(expected_shapes) or math.prod(equilibrium.grid_shape) != state_count:
+        raise ValueError("Trust-Region grid-polish arrays are inconsistent")
+    if bool(((equilibrium.phase_counts < 1) | (equilibrium.phase_counts > MAX_PHASES)).any()):
+        raise ValueError("Trust-Region grid-polish phase counts must lie between one and three")
+
+    started = time.perf_counter()
+    attempted = torch.zeros(
+        state_count,
+        dtype=torch.bool,
+        device=equilibrium.feeds.device,
+    )
+    trust_converged = torch.zeros_like(attempted)
+    iterations = torch.zeros(
+        state_count,
+        dtype=torch.int64,
+        device=equilibrium.feeds.device,
+    )
+    accepted_steps = torch.zeros_like(iterations)
+    rejected_steps = torch.zeros_like(iterations)
+    gradient_norm = equilibrium.temperatures.new_full((state_count,), torch.nan)
+    minimum_hessian_eigenvalue = equilibrium.temperatures.new_full(
+        (state_count,),
+        torch.nan,
+    )
+    minimum_tpd = equilibrium.temperatures.new_full((state_count,), torch.nan)
+    maximum_phase_composition_change = equilibrium.temperatures.new_full(
+        (state_count,),
+        torch.nan,
+    )
+    polished_fractions = equilibrium.phase_fractions.clone()
+    polished_compositions = equilibrium.phase_compositions.clone()
+    polished_fugacity_residual = equilibrium.fugacity_residual.clone()
+    polished_material_balance_residual = equilibrium.material_balance_residual.clone()
+    polished_gibbs_reduction = equilibrium.gibbs_reduction.clone()
+    polished_converged = equilibrium.converged.clone()
+    polished_phase_counts = equilibrium.phase_counts.clone()
+    seed_phase_counts = equilibrium.phase_counts.clone()
+    seed_fractions = equilibrium.phase_fractions.clone()
+    seed_compositions = equilibrium.phase_compositions.clone()
+
+    with torch.no_grad():
+        one_phase_log_phi = model.log_fugacity_coefficients(
+            equilibrium.temperatures,
+            equilibrium.pressures,
+            equilibrium.feeds,
+            "stable",
+        )
+        one_phase_gibbs = torch.sum(
+            equilibrium.feeds
+            * (
+                torch.log(
+                    torch.clamp_min(equilibrium.feeds, torch.finfo(equilibrium.feeds.dtype).tiny)
+                )
+                + one_phase_log_phi
+            ),
+            dim=-1,
+        )
+
+    one_phase_indices = torch.nonzero(
+        equilibrium.converged & (equilibrium.phase_counts == 1),
+    ).flatten()
+    for start in range(0, one_phase_indices.numel(), chunk_size):
+        selected = one_phase_indices[start : start + chunk_size]
+        temperature = equilibrium.temperatures[selected]
+        pressure = equilibrium.pressures[selected]
+        feed = equilibrium.feeds[selected]
+        if not bool(torch.isfinite(feed).all() & (feed > 0.0).all()):
+            raise ValueError(
+                "Trust-Region grid polish requires finite strictly positive attempted feeds"
+            )
+        state = ChemicalState(temperature, pressure, feed)
+        screening = batched_tangent_plane_stability(
+            model,
+            state,
+            tolerance=max(tolerance, 1.0e-10),
+            max_iterations=max_iterations,
+        )
+        reference = torch.log(feed) + model.log_fugacity_coefficients(
+            temperature,
+            pressure,
+            feed,
+            "stable",
+        )
+        formal_moles = screening.trial_composition * torch.exp(-screening.minimum_tpd)[:, None]
+        batch_size = selected.numel()
+
+        def stability_objective(
+            current_formal_moles: Tensor,
+            *,
+            current_temperature: Tensor = temperature,
+            current_pressure: Tensor = pressure,
+            current_reference: Tensor = reference,
+        ) -> Tensor:
+            total = current_formal_moles.sum(dim=-1)
+            trial_composition = current_formal_moles / total[:, None]
+            log_phi = model.log_fugacity_coefficients(
+                current_temperature,
+                current_pressure,
+                trial_composition,
+                "stable",
+            )
+            return (
+                1.0
+                - total
+                + torch.sum(
+                    current_formal_moles
+                    * (torch.log(current_formal_moles) + log_phi - current_reference),
+                    dim=-1,
+                )
+            )
+
+        def stability_feasible(
+            current_formal_moles: Tensor,
+            *,
+            current_batch_size: int = batch_size,
+        ) -> Tensor:
+            return (
+                (
+                    torch.isfinite(current_formal_moles)
+                    & (current_formal_moles > torch.finfo(current_formal_moles.dtype).tiny)
+                )
+                .all(dim=-1)
+                .reshape(current_batch_size)
+            )
+
+        initial_radius = torch.clamp(
+            torch.linalg.vector_norm(formal_moles.detach(), dim=-1) / 10.0,
+            min=1.0e-3,
+            max=0.1,
+        )
+        trust_result = minimize_batched_dense_trust_region(
+            stability_objective,
+            formal_moles,
+            is_feasible=stability_feasible,
+            initial_radius=initial_radius,
+            maximum_radius=torch.maximum(
+                10.0 * initial_radius,
+                initial_radius.new_ones(initial_radius.shape),
+            ),
+            gradient_tolerance=tolerance,
+            max_iterations=max_iterations,
+        )
+        current_converged = trust_result.converged & (trust_result.objective >= -10.0 * tolerance)
+        attempted[selected] = True
+        trust_converged[selected] = current_converged.detach()
+        iterations[selected] = trust_result.iterations.detach()
+        accepted_steps[selected] = trust_result.accepted_steps.detach()
+        rejected_steps[selected] = trust_result.rejected_steps.detach()
+        gradient_norm[selected] = trust_result.gradient_norm.detach()
+        minimum_hessian_eigenvalue[selected] = trust_result.minimum_hessian_eigenvalue.detach()
+        minimum_tpd[selected] = trust_result.objective.detach()
+        polished_converged[selected] = current_converged.detach()
+
+        unstable = trust_result.converged & (trust_result.objective < -10.0 * tolerance)
+        trial_composition = trust_result.solution / trust_result.solution.sum(
+            dim=-1,
+            keepdim=True,
+        )
+        initial_k = trial_composition / feed
+        straddles_unity = (initial_k.amin(dim=-1) < 1.0) & (initial_k.amax(dim=-1) > 1.0)
+        recovery_local = torch.nonzero(unstable & straddles_unity).flatten()
+        if recovery_local.numel():
+            recovery = batched_two_phase_flash(
+                model,
+                ChemicalState(
+                    temperature[recovery_local],
+                    pressure[recovery_local],
+                    feed[recovery_local],
+                ),
+                initial_k_values=initial_k[recovery_local],
+                phase_roots=("stable", "stable"),
+                tolerance=tolerance,
+                substitution_iterations=40,
+                newton_iterations=16,
+            )
+            recovery_fractions = torch.stack(
+                (
+                    recovery.liquid_fraction,
+                    recovery.vapor_fraction,
+                ),
+                dim=-1,
+            )
+            recovery_compositions = torch.stack(
+                (
+                    recovery.liquid_composition,
+                    recovery.vapor_composition,
+                ),
+                dim=1,
+            )
+            recovery_separation = (
+                (recovery_compositions[:, 0] - recovery_compositions[:, 1]).abs().amax(dim=-1)
+            )
+            recovered = (
+                recovery.converged
+                & (recovery_fractions.amin(dim=-1) > phase_fraction_tolerance)
+                & (recovery_separation > phase_composition_merge_tolerance)
+            )
+            recovered_indices = selected[recovery_local[recovered]]
+            seed_phase_counts[recovered_indices] = 2
+            seed_fractions[recovered_indices] = 0.0
+            seed_compositions[recovered_indices] = torch.nan
+            seed_fractions[recovered_indices, :2] = recovery_fractions[recovered]
+            seed_compositions[recovered_indices, :2] = recovery_compositions[recovered]
+            polished_phase_counts[recovered_indices] = 2
+
+    for phase_count in range(2, MAX_PHASES + 1):
+        phase_indices = torch.nonzero(
+            equilibrium.converged & (seed_phase_counts == phase_count),
+        ).flatten()
+        for start in range(0, phase_indices.numel(), chunk_size):
+            selected = phase_indices[start : start + chunk_size]
+            temperature = equilibrium.temperatures[selected]
+            pressure = equilibrium.pressures[selected]
+            feed = equilibrium.feeds[selected]
+            if not bool(torch.isfinite(feed).all() & (feed > 0.0).all()):
+                raise ValueError(
+                    "Trust-Region grid polish requires finite strictly positive attempted feeds"
+                )
+            initial_fractions = seed_fractions[selected, :phase_count]
+            initial_compositions = seed_compositions[
+                selected,
+                :phase_count,
+            ]
+            initial_phase_moles = initial_fractions[..., None] * initial_compositions
+            reference_phase = torch.argmax(initial_phase_moles, dim=1)
+            phase_axis = torch.arange(
+                phase_count,
+                dtype=torch.int64,
+                device=feed.device,
+            ).view(1, 1, phase_count)
+            phase_axis = phase_axis.expand(
+                selected.numel(),
+                component_count,
+                phase_count,
+            )
+            independent_phase = phase_axis[phase_axis != reference_phase[..., None]].reshape(
+                selected.numel(), component_count, phase_count - 1
+            )
+            independent_moles = torch.gather(
+                initial_phase_moles.mT,
+                2,
+                independent_phase,
+            )
+            mole_floor = 16.0 * torch.finfo(feed.dtype).eps * feed
+            independent_moles = torch.maximum(
+                independent_moles,
+                mole_floor[..., None],
+            )
+            independent_total = independent_moles.sum(dim=-1)
+            independent_scale = torch.minimum(
+                torch.ones_like(feed),
+                (feed - 2.0 * mole_floor) / independent_total,
+            )
+            independent_moles = independent_moles * independent_scale[..., None]
+            independent_selector = torch.nn.functional.one_hot(
+                independent_phase,
+                num_classes=phase_count,
+            ).to(dtype=feed.dtype)
+            reference_selector = torch.nn.functional.one_hot(
+                reference_phase,
+                num_classes=phase_count,
+            ).mT.to(dtype=feed.dtype)
+
+            batch_size = selected.numel()
+
+            def quantities(
+                flattened: Tensor,
+                *,
+                current_batch_size: int = batch_size,
+                current_phase_count: int = phase_count,
+                current_independent_selector: Tensor = independent_selector,
+                current_reference_selector: Tensor = reference_selector,
+                current_feed: Tensor = feed,
+                current_temperature: Tensor = temperature,
+                current_pressure: Tensor = pressure,
+            ) -> tuple[Tensor, Tensor, Tensor, Tensor]:
+                independent = flattened.reshape(
+                    current_batch_size,
+                    component_count,
+                    current_phase_count - 1,
+                )
+                independent_by_phase = torch.einsum(
+                    "bnq,bnqp->bpn",
+                    independent,
+                    current_independent_selector,
+                )
+                reference_moles = current_feed - independent.sum(dim=-1)
+                phase_moles = (
+                    independent_by_phase + current_reference_selector * reference_moles[:, None, :]
+                )
+                fractions = phase_moles.sum(dim=-1)
+                compositions = phase_moles / fractions[..., None]
+                chemical_potential = torch.log(compositions) + model.log_fugacity_coefficients(
+                    current_temperature[:, None],
+                    current_pressure[:, None],
+                    compositions,
+                    "stable",
+                )
+                gibbs = torch.sum(
+                    phase_moles * chemical_potential,
+                    dim=(-1, -2),
+                )
+                return gibbs, fractions, compositions, chemical_potential
+
+            flattened_initial = independent_moles.reshape(selected.numel(), -1)
+
+            def feasible(
+                flattened: Tensor,
+                *,
+                current_batch_size: int = batch_size,
+                current_phase_count: int = phase_count,
+                current_mole_floor: Tensor = mole_floor,
+                current_feed: Tensor = feed,
+            ) -> Tensor:
+                independent = flattened.reshape(
+                    current_batch_size,
+                    component_count,
+                    current_phase_count - 1,
+                )
+                return (
+                    torch.isfinite(independent).all(dim=(-1, -2))
+                    & (independent > current_mole_floor[..., None]).all(dim=(-1, -2))
+                    & (independent.sum(dim=-1) < current_feed - current_mole_floor).all(dim=-1)
+                )
+
+            initial_radius = torch.clamp_min(
+                torch.linalg.vector_norm(flattened_initial.detach(), dim=-1) / 10.0,
+                0.1,
+            )
+            trust_result = minimize_batched_dense_trust_region(
+                lambda flattened: quantities(flattened)[0],
+                flattened_initial,
+                is_feasible=feasible,
+                initial_radius=initial_radius,
+                maximum_radius=10.0 * initial_radius,
+                gradient_tolerance=tolerance,
+                max_iterations=max_iterations,
+            )
+            _, fractions, compositions, chemical_potential = quantities(trust_result.solution)
+            fugacity_residual = (
+                (chemical_potential[:, 1:] - chemical_potential[:, :1]).abs().amax(dim=(-1, -2))
+            )
+            reconstructed = torch.sum(fractions[..., None] * compositions, dim=1)
+            material_balance_residual = (reconstructed - feed).abs().amax(dim=-1)
+            pair_distance = (
+                (compositions[:, :, None, :] - compositions[:, None, :, :]).abs().amax(dim=-1)
+            )
+            pair_distance = pair_distance.masked_fill(
+                torch.eye(
+                    phase_count,
+                    dtype=torch.bool,
+                    device=feed.device,
+                )[None, ...],
+                torch.inf,
+            )
+            separated = pair_distance.amin(dim=(-1, -2)) > phase_composition_merge_tolerance
+            physical = fractions.amin(dim=-1) > phase_fraction_tolerance
+            current_converged = (
+                trust_result.converged
+                & torch.isfinite(fugacity_residual)
+                & (fugacity_residual <= tolerance)
+                & (material_balance_residual <= material_balance_tolerance)
+                & physical
+                & separated
+            )
+            split_gibbs = torch.sum(
+                fractions
+                * torch.sum(
+                    compositions * chemical_potential,
+                    dim=-1,
+                ),
+                dim=-1,
+            )
+
+            attempted[selected] = True
+            trust_converged[selected] = current_converged.detach()
+            iterations[selected] = trust_result.iterations.detach()
+            accepted_steps[selected] = trust_result.accepted_steps.detach()
+            rejected_steps[selected] = trust_result.rejected_steps.detach()
+            gradient_norm[selected] = trust_result.gradient_norm.detach()
+            minimum_hessian_eigenvalue[selected] = trust_result.minimum_hessian_eigenvalue.detach()
+            maximum_phase_composition_change[selected] = (
+                (compositions.detach() - initial_compositions).abs().amax(dim=(-1, -2))
+            )
+            polished_fractions[selected, :phase_count] = fractions.detach()
+            polished_compositions[selected, :phase_count] = compositions.detach()
+            polished_fugacity_residual[selected] = fugacity_residual.detach()
+            polished_material_balance_residual[selected] = material_balance_residual.detach()
+            polished_gibbs_reduction[selected] = one_phase_gibbs[selected] - split_gibbs.detach()
+            polished_converged[selected] = current_converged.detach()
+
+    elapsed_seconds = time.perf_counter() - started
+    polished = GridEquilibrium(
+        equilibrium.temperatures,
+        equilibrium.pressures,
+        equilibrium.feeds,
+        equilibrium.grid_shape,
+        polished_fractions,
+        polished_compositions,
+        polished_phase_counts,
+        polished_gibbs_reduction,
+        polished_fugacity_residual,
+        polished_material_balance_residual,
+        polished_converged,
+        equilibrium.elapsed_seconds + elapsed_seconds,
+        equilibrium.batched_search_seconds,
+        equilibrium.refinement_seconds + elapsed_seconds,
+        equilibrium.difficult_state_count,
+        equilibrium.topology_audit_count,
+        equilibrium.initial_fallback_replacements,
+        equilibrium.topology_audit_replacements,
+    )
+    return TrustRegionGridPolishResult(
+        polished,
+        attempted,
+        trust_converged,
+        iterations,
+        accepted_steps,
+        rejected_steps,
+        gradient_norm,
+        minimum_hessian_eigenvalue,
+        minimum_tpd,
+        maximum_phase_composition_change,
+        elapsed_seconds,
+    )
+
+
 def flash_grid(
     model: StateModel,
     state: ChemicalState,
@@ -3149,4 +4011,345 @@ def flash_grid(
         len(audited_indices),
         len(fallback_replacement_indices),
         audit_replacements,
+    )
+
+
+def refine_flash_grid_phase_boundaries(
+    model: StateModel,
+    temperature_axis: Tensor,
+    pressure_axis: Tensor,
+    composition: Tensor,
+    region_codes: Tensor,
+    converged: Tensor,
+    *,
+    identification_method: PhaseIdentificationCriterion = ("pedersen-volume-to-covolume"),
+    region_labels: tuple[str, ...] = ("LV", "LL", "three-phase"),
+    refinement_iterations: int = 8,
+    flash_options: GridFlashOptions | None = None,
+) -> PhaseRegionBoundarySet:
+    """Refine classified phase-region boundaries by batched edge bisection.
+
+    Parameters
+    ----------
+    model
+        Homogeneous-state model used for both the supplied grid and all
+        refinement flashes.
+    temperature_axis, pressure_axis
+        Strictly increasing one-dimensional grid coordinates in K and Pa.
+    composition
+        Fixed overall mole-fraction vector for the complete grid.
+    region_codes
+        Two-dimensional integer classification with shape
+        ``(pressure_points, temperature_points)``. Values index
+        :data:`GRID_PHASE_REGION_LABELS`.
+    converged
+        Boolean grid with the same shape. Edges touching a failed coarse state
+        are excluded rather than relabeled.
+    identification_method
+        One physical phase-identification criterion applied to every
+        refinement flash. It must match the criterion used to construct
+        ``region_codes``.
+    region_labels
+        Region labels to connect into curves. The default returns vapor-liquid,
+        liquid-liquid, and identity-neutral three-phase boundaries.
+    refinement_iterations
+        Batched bisection passes per unique crossing edge. Eight passes reduce
+        each coarse coordinate interval by a factor of 256.
+    flash_options
+        Optional :class:`GridFlashOptions` used for midpoint states. ``None``
+        uses the package defaults.
+
+    Returns
+    -------
+    PhaseRegionBoundarySet
+        Connected curves and explicit refinement diagnostics.
+
+    Raises
+    ------
+    ValueError
+        If axes, grid arrays, composition, labels, or numerical controls are
+        invalid.
+
+    Notes
+    -----
+    A coarse grid remains responsible for global topology. This operation
+    spends additional equilibrium solves only on edges whose endpoint region
+    codes differ, then connects the refined crossings with a marching-squares
+    graph. It removes half-cell contour quantization without pretending that
+    interpolation alone solves the phase-equilibrium equations.
+
+    Classification and graph connectivity are discrete and intentionally
+    non-differentiable. Midpoint flashes retain the convergence, fugacity, and
+    material-balance gates of :func:`flash_grid`. A failed midpoint leaves its
+    edge bracket unchanged for that pass; it is counted rather than silently
+    used as a phase classification.
+    """
+    if (
+        temperature_axis.ndim != 1
+        or pressure_axis.ndim != 1
+        or temperature_axis.numel() < 2
+        or pressure_axis.numel() < 2
+    ):
+        raise ValueError("phase-boundary axes must be one-dimensional with at least two points")
+    if (
+        not temperature_axis.is_floating_point()
+        or not pressure_axis.is_floating_point()
+        or temperature_axis.dtype != pressure_axis.dtype
+        or temperature_axis.device != pressure_axis.device
+        or not bool(
+            torch.isfinite(temperature_axis).all()
+            & torch.isfinite(pressure_axis).all()
+            & (temperature_axis > 0.0).all()
+            & (pressure_axis > 0.0).all()
+            & (torch.diff(temperature_axis) > 0.0).all()
+            & (torch.diff(pressure_axis) > 0.0).all()
+        )
+    ):
+        raise ValueError("phase-boundary axes must be matched, finite, positive, and increasing")
+    expected_shape = (pressure_axis.numel(), temperature_axis.numel())
+    if region_codes.shape != expected_shape or converged.shape != expected_shape:
+        raise ValueError("phase-boundary classifications must match the pressure-temperature grid")
+    if converged.dtype != torch.bool or region_codes.dtype == torch.bool:
+        raise ValueError("phase-boundary convergence and region-code dtypes are invalid")
+    composition = composition.to(
+        dtype=temperature_axis.dtype,
+        device=temperature_axis.device,
+    )
+    if (
+        composition.ndim != 1
+        or composition.numel() < 2
+        or not bool(
+            torch.isfinite(composition).all()
+            & (composition > 0.0).all()
+            & torch.isclose(
+                composition.sum(),
+                composition.new_tensor(1.0),
+                rtol=1.0e-8,
+                atol=1.0e-10,
+            )
+        )
+    ):
+        raise ValueError("phase-boundary composition must be one finite normalized vector")
+    if refinement_iterations < 1:
+        raise ValueError("phase-boundary refinement iterations must be positive")
+    if (
+        not region_labels
+        or len(set(region_labels)) != len(region_labels)
+        or any(label not in GRID_PHASE_REGION_LABELS for label in region_labels)
+    ):
+        raise ValueError("phase-boundary region labels must be unique known labels")
+    if identification_method not in DEFAULT_GRID_PHASE_IDENTIFICATION_METHODS:
+        raise ValueError("unknown phase-boundary identification method")
+
+    codes = region_codes.detach().to(device=temperature_axis.device)
+    valid = converged.detach().to(device=temperature_axis.device)
+    crossing_nodes: dict[
+        tuple[int, int, int],
+        tuple[Tensor, Tensor, Tensor, Tensor, int],
+    ] = {}
+    pressure_points, temperature_points = expected_shape
+    for pressure_index in range(pressure_points):
+        for temperature_index in range(temperature_points - 1):
+            if bool(
+                valid[pressure_index, temperature_index]
+                & valid[pressure_index, temperature_index + 1]
+                & (
+                    codes[pressure_index, temperature_index]
+                    != codes[pressure_index, temperature_index + 1]
+                )
+            ):
+                crossing_nodes[(0, pressure_index, temperature_index)] = (
+                    temperature_axis[temperature_index],
+                    pressure_axis[pressure_index],
+                    temperature_axis[temperature_index + 1],
+                    pressure_axis[pressure_index],
+                    int(codes[pressure_index, temperature_index]),
+                )
+    for pressure_index in range(pressure_points - 1):
+        for temperature_index in range(temperature_points):
+            if bool(
+                valid[pressure_index, temperature_index]
+                & valid[pressure_index + 1, temperature_index]
+                & (
+                    codes[pressure_index, temperature_index]
+                    != codes[pressure_index + 1, temperature_index]
+                )
+            ):
+                crossing_nodes[(1, pressure_index, temperature_index)] = (
+                    temperature_axis[temperature_index],
+                    pressure_axis[pressure_index],
+                    temperature_axis[temperature_index],
+                    pressure_axis[pressure_index + 1],
+                    int(codes[pressure_index, temperature_index]),
+                )
+
+    node_keys = tuple(crossing_nodes)
+    if not node_keys:
+        return PhaseRegionBoundarySet((), 0, 0, 0, 0, 0.0, 0.0)
+    lower_temperature = torch.stack(tuple(crossing_nodes[key][0] for key in node_keys))
+    lower_pressure = torch.stack(tuple(crossing_nodes[key][1] for key in node_keys))
+    upper_temperature = torch.stack(tuple(crossing_nodes[key][2] for key in node_keys))
+    upper_pressure = torch.stack(tuple(crossing_nodes[key][3] for key in node_keys))
+    lower_code = torch.tensor(
+        tuple(crossing_nodes[key][4] for key in node_keys),
+        dtype=codes.dtype,
+        device=codes.device,
+    )
+    failed_midpoints = 0
+    for _ in range(refinement_iterations):
+        midpoint_temperature = 0.5 * (lower_temperature + upper_temperature)
+        midpoint_pressure = 0.5 * (lower_pressure + upper_pressure)
+        midpoint_equilibrium = flash_grid(
+            model,
+            ChemicalState(
+                midpoint_temperature,
+                midpoint_pressure,
+                composition,
+            ),
+            options=flash_options,
+        )
+        midpoint_identification = identify_grid_phases(
+            model,
+            midpoint_equilibrium,
+            methods=(identification_method,),
+        )
+        midpoint_code = midpoint_identification.region_codes[0].reshape(-1)
+        midpoint_converged = midpoint_equilibrium.converged.reshape(-1)
+        failed_midpoints += int((~midpoint_converged).sum())
+        same_as_lower = midpoint_converged & (midpoint_code == lower_code)
+        different_from_lower = midpoint_converged & ~same_as_lower
+        lower_temperature = torch.where(
+            same_as_lower,
+            midpoint_temperature,
+            lower_temperature,
+        )
+        lower_pressure = torch.where(
+            same_as_lower,
+            midpoint_pressure,
+            lower_pressure,
+        )
+        upper_temperature = torch.where(
+            different_from_lower,
+            midpoint_temperature,
+            upper_temperature,
+        )
+        upper_pressure = torch.where(
+            different_from_lower,
+            midpoint_pressure,
+            upper_pressure,
+        )
+
+    node_points = {
+        key: (
+            0.5 * (lower_temperature[index] + upper_temperature[index]),
+            0.5 * (lower_pressure[index] + upper_pressure[index]),
+        )
+        for index, key in enumerate(node_keys)
+    }
+    target_codes = tuple(GRID_PHASE_REGION_LABELS.index(label) for label in region_labels)
+    connections: dict[int, list[tuple[tuple[int, int, int], tuple[int, int, int]]]] = {
+        target_code: [] for target_code in target_codes
+    }
+    ambiguous_cells = 0
+    for pressure_index in range(pressure_points - 1):
+        for temperature_index in range(temperature_points - 1):
+            cell_valid = valid[
+                pressure_index : pressure_index + 2,
+                temperature_index : temperature_index + 2,
+            ]
+            if not bool(cell_valid.all()):
+                continue
+            corner_codes = (
+                int(codes[pressure_index, temperature_index]),
+                int(codes[pressure_index, temperature_index + 1]),
+                int(codes[pressure_index + 1, temperature_index + 1]),
+                int(codes[pressure_index + 1, temperature_index]),
+            )
+            edge_nodes = (
+                (0, pressure_index, temperature_index),
+                (1, pressure_index, temperature_index + 1),
+                (0, pressure_index + 1, temperature_index),
+                (1, pressure_index, temperature_index),
+            )
+            for target_code in target_codes:
+                target_corners = tuple(code == target_code for code in corner_codes)
+                crossings = [
+                    edge_nodes[edge_index]
+                    for edge_index, (first, second) in enumerate(
+                        (
+                            (target_corners[0], target_corners[1]),
+                            (target_corners[1], target_corners[2]),
+                            (target_corners[3], target_corners[2]),
+                            (target_corners[0], target_corners[3]),
+                        )
+                    )
+                    if first != second and edge_nodes[edge_index] in node_points
+                ]
+                if len(crossings) == 2:
+                    connections[target_code].append((crossings[0], crossings[1]))
+                elif len(crossings) == 4:
+                    ambiguous_cells += 1
+                    if target_corners[0]:
+                        connections[target_code].extend(
+                            ((crossings[0], crossings[3]), (crossings[1], crossings[2]))
+                        )
+                    else:
+                        connections[target_code].extend(
+                            ((crossings[0], crossings[1]), (crossings[2], crossings[3]))
+                        )
+
+    curves = []
+    for target_code, target_connections in connections.items():
+        adjacency: dict[tuple[int, int, int], list[tuple[int, int, int]]] = {}
+        for first, second in target_connections:
+            adjacency.setdefault(first, []).append(second)
+            adjacency.setdefault(second, []).append(first)
+        unused_edges = {frozenset((first, second)) for first, second in target_connections}
+        starts = sorted(
+            adjacency,
+            key=lambda node: (len(adjacency[node]) == 2, node),
+        )
+        for start in starts:
+            while any(
+                frozenset((start, neighbor)) in unused_edges for neighbor in adjacency[start]
+            ):
+                path = [start]
+                previous: tuple[int, int, int] | None = None
+                current = start
+                closed = False
+                while True:
+                    candidates = [
+                        neighbor
+                        for neighbor in adjacency[current]
+                        if neighbor != previous and frozenset((current, neighbor)) in unused_edges
+                    ]
+                    if not candidates:
+                        break
+                    following = candidates[0]
+                    unused_edges.remove(frozenset((current, following)))
+                    previous, current = current, following
+                    if current == start:
+                        closed = True
+                        path.append(current)
+                        break
+                    path.append(current)
+                if len(path) < 2:
+                    continue
+                curves.append(
+                    PhaseRegionBoundaryCurve(
+                        target_code,
+                        torch.stack(tuple(node_points[node][0] for node in path)),
+                        torch.stack(tuple(node_points[node][1] for node in path)),
+                        closed,
+                    )
+                )
+
+    return PhaseRegionBoundarySet(
+        tuple(curves),
+        len(node_keys),
+        len(node_keys) * refinement_iterations,
+        failed_midpoints,
+        ambiguous_cells,
+        float(torch.max(torch.abs(upper_temperature - lower_temperature))),
+        float(torch.max(torch.abs(upper_pressure - lower_pressure))),
     )

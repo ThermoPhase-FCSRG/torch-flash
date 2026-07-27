@@ -34,9 +34,9 @@ redistribution status is unresolved live only under
 as excluded from package distributions. Keeping data out of a package does
 not by itself grant permission to publish it in a public Git repository.
 
-The machine-readable [`rights.yaml`](rights.yaml) ledger covers all 40
+The machine-readable [`rights.yaml`](rights.yaml) ledger covers all 41
 declared CSV artifacts: 5 have a verified open basis, 12 are project-generated
-software outputs, and 23 are marked `not-cleared`. The audit scans recursively,
+software outputs, and 24 are marked `not-cleared`. The audit scans recursively,
 fails if a CSV is added without an explicit rights decision, and enforces that
 locally present `not-cleared` files are confined to the ignored subdirectory.
 Tests that require those inputs skip when it is absent.
@@ -114,6 +114,18 @@ The source authors do not endorse `torch-flash`.
   percentage to fraction but do not invent the unreported liquid
   compositions.
   [doi:10.1021/ja01400a010](https://doi.org/10.1021/ja01400a010).
+- `simoncelli_2020_co2_presalt_phase_transitions.csv` transcribes all 157
+  phase-transition observations in Tables 7-9: 102 CO2/n-hexadecane states,
+  21 CO2/n-hexadecane/methane states, and 34
+  CO2/n-hexadecane/methane/phenanthrene states. Pressures remain in MPa and
+  temperatures in K. For three binary compositions, the modeled CO2 mole
+  fraction follows the system inventory in Table 2 and Figure 4
+  (0.9839, 0.9369, and 0.9098); the differing Table 7 labels
+  (0.9838, 0.9370, and 0.9090) are retained separately in `source_x_co2`.
+  The phase-transition study reports L-LL, LL-VLL, and L-VL branches without
+  treating the repeated LL-VLL invariant observations as independent phase
+  compositions.
+  [doi:10.1016/j.fluid.2020.112574](https://doi.org/10.1016/j.fluid.2020.112574).
 - `jaubert_ppr78_hydrocarbon_vle.csv` retains 103 phase-complete experimental
   VLE states used in notebook 28: methane/ethane at 199.93 and 230.00 K
   (38 states), and methane/n-decane at 410.93, 477.59, 510.93, and 563.25 K

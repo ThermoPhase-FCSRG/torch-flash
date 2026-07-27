@@ -28,8 +28,8 @@ The detailed per-file scientific provenance is in the repository's
 [`tests/data/README.md`](https://github.com/ThermoPhase-FCSRG/torch-flash/blob/main/tests/data/README.md).
 The machine-readable
 [`tests/data/rights.yaml`](https://github.com/ThermoPhase-FCSRG/torch-flash/blob/main/tests/data/rights.yaml)
-ledger covers all 40 declared CSV artifacts: 5 have a verified open basis, 12
-are project-generated, and 23 are marked `not-cleared`. CI rejects an
+ledger covers all 41 declared CSV artifacts: 5 have a verified open basis, 12
+are project-generated, and 24 are marked `not-cleared`. CI rejects an
 unclassified CSV and enforces that locally present `not-cleared` inputs are
 confined to the ignored `tests/data/not-cleared/` subdirectory. Tests that
 consume those inputs skip in a public checkout where the directory is absent.
@@ -98,15 +98,26 @@ permission or replace them with a compatibly licensed source first.
 This unresolved group currently includes the Segovia density table, Jaubert
 binary/PPR78/Huron-Vidal subsets, Yücelen N2/CO2, Ahmadi and Wang CO2/H2O,
 Portier brine, Verschoyle H2/CO, Folas and Yan CPA tables/digitizations,
-Gillespie-Wilson and Bartlett hydrogen/water tables, Pedersen and Whitson book
-tables, and the Gernert-Span Table 8 transcription.
+Gillespie-Wilson and Bartlett hydrogen/water tables, the Simoncelli pre-salt
+phase-transition tables, Pedersen and Whitson book tables, and the
+Gernert-Span Table 8 transcription.
 Their scientific use in a private checkout is distinct from permission to
 redistribute the normalized tables publicly.
 
-Executed notebook outputs that reproduce `not-cleared` values share the same
-unresolved publication risk. Excluding notebooks from PyPI prevents package
-redistribution but does not itself clear publication in a public Git
-repository.
+The Simoncelli CSV remains in that unresolved table-redistribution group.
+For independently generated rendered figures, Elsevier's
+[permissions guidance](https://www.elsevier.com/en-au/about/policies-and-standards/copyright/permissions)
+states that creating an original figure or table from numerical or factual
+data typically does not require permission when the source is properly
+acknowledged. The CO2 pre-salt report uses that figure-specific basis to show
+the experimental markers and records the dependency and acknowledgement in
+the figure manifest. It does not publish the source table or a
+machine-readable reconstruction.
+
+Other executed notebook outputs that reproduce `not-cleared` values retain
+unresolved publication risk unless a comparable figure-specific basis is
+recorded. Excluding notebooks from PyPI prevents package redistribution but
+does not itself clear publication in a public Git repository.
 
 The current documentation boundary publishes selected rendered plots,
 including observation markers, while withholding the paired local-only

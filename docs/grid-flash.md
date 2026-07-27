@@ -177,6 +177,51 @@ assert bool(oracle.converged.all())
 The oracle shares the same EoS and low-level equations, so agreement is
 verification of the algorithm, not independent model validation.
 
+## Trust-Region audit of a discovered grid
+
+Use `polish_grid_equilibrium_with_trust_region` when a phase map needs a
+second-order local-solver audit after phase-count discovery:
+
+```python
+from torch_flash import polish_grid_equilibrium_with_trust_region
+
+trust_region = polish_grid_equilibrium_with_trust_region(
+    model,
+    equilibrium,
+    tolerance=1.0e-8,
+    material_balance_tolerance=5.0e-11,
+    max_iterations=100,
+    chunk_size=128,
+)
+if not bool(
+    (
+        trust_region.attempted
+        & trust_region.converged
+    ).all()
+):
+    raise RuntimeError("at least one Trust-Region audit failed")
+
+equilibrium = trust_region.equilibrium
+```
+
+One-phase rows minimize the modified tangent-plane-distance objective.
+Two- and three-phase rows minimize the improved mole-number Gibbs objective
+with one dependent reference-phase amount per component. Equal-phase-count
+rows are evaluated together with exact PyTorch gradient and Hessian blocks;
+`chunk_size` bounds memory without coupling states.
+
+The result reports attempts, convergence, iterations, accepted and rejected
+steps, gradient norms, minimum Hessian eigenvalues, one-phase minimum TPD
+values, composition changes, and elapsed time. A negative converged
+one-phase TPD can seed and accept a physical two-phase correction. The
+operation does not otherwise infer a global phase count: keep the independent
+`flash_grid` result and the Trust-Region diagnostics distinct.
+
+This audit follows the modified-TPD and improved mole-number formulations of
+Petitfrere and Nichita, equations (8)-(15), with the dense Trust-Region solver
+described in sections 3.1-3.4. See [Scientific
+references](references.md#equilibrium-algorithms-and-classical-models).
+
 ## Binary three-phase invariants
 
 At fixed temperature, a binary three-phase state is an invariant pressure and
@@ -216,6 +261,7 @@ invariant = solve_binary_three_phase_invariant(
         ],
         **runtime.tensor_options,
     ),
+    method="trust-region",
 )
 if not invariant.converged:
     raise RuntimeError(
@@ -240,11 +286,27 @@ equilibrium = flash_grid(
 )
 ```
 
-The solver is local. Initial rows must correspond to the requested EoS roots
-and lie near the desired branch. A binary invariant does not uniquely fix all
-three phase fractions, so the grid API returns a positive centered
-lever-rule representative for feeds strictly inside the outer composition
-interval.
+The default `method="newton"` is the inexpensive local path.
+`method="trust-region"` minimizes half the squared equal-fugacity residual
+with exact PyTorch gradients and Hessians while limiting each step. It is
+intended for difficult separated branches where Newton merges phases or
+leaves the physical basin. Both methods report convergence against the
+original maximum equal-fugacity residual, not the scalar minimization
+objective.
+
+Use `solve_batched_binary_three_phase_invariants` when temperatures and starts
+form a compatible batch. Thermodynamic residuals, gradients, and exact Hessian
+blocks are evaluated together; only each tiny dense spectral trust-region
+subproblem remains per state. This batching is especially useful when several
+experimental temperatures share the same model and component set.
+
+Both solvers are local. Initial rows must correspond to the requested EoS
+roots and lie near the desired branch. In a CO2-rich system all three
+coexisting phases can also be CO2-rich, so a generic start with one
+near-solvent-pure phase may converge to a merged algebraic solution. A binary
+invariant does not uniquely fix all three phase fractions, so the grid API
+returns a positive centered lever-rule representative for feeds strictly
+inside the outer composition interval.
 
 ## Convergence and failure handling
 
@@ -318,7 +380,7 @@ Schmidt plus the Venkatarathnam-Oellrich phase-identification parameter:
 - Li volume-weighted pseudo-critical temperature;
 - Pedersen volume-to-covolume ratio;
 - Perschke negative flash;
-- temperature derivative of isothermal compressibility; and
+- temperature derivative of isothermal compressibility;
 - temperature derivative of thermal expansion; and
 - the dimensionless Venkatarathnam-Oellrich pressure-derivative parameter.
 

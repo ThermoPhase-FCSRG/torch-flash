@@ -18,8 +18,9 @@ figures:
     source_material:
     - https://doi.org/10.1201/9780429457418
     description: Measured and GERG-2008 compressibility factors for the Pedersen mixture.
-    executed_artifact_sha256: f1c3b1f1b5c3b483f61d98dfbd32f56205cf11655a9dae591000e242c1c18c0c
     publication_form: rendered-plot
+    observation_level_values: false
+    executed_artifact_sha256: f1c3b1f1b5c3b483f61d98dfbd32f56205cf11655a9dae591000e242c1c18c0c
     machine_readable_observation_values: false
     data_tables_distributed: false
   05_eoscg_table8_verification.png:
@@ -35,8 +36,9 @@ figures:
     - https://doi.org/10.1016/j.jct.2015.05.015
     description: EOS-CG parity and residual plots for the published Table 8 verification
       states.
-    executed_artifact_sha256: f1c3b1f1b5c3b483f61d98dfbd32f56205cf11655a9dae591000e242c1c18c0c
     publication_form: rendered-plot
+    observation_level_values: false
+    executed_artifact_sha256: f1c3b1f1b5c3b483f61d98dfbd32f56205cf11655a9dae591000e242c1c18c0c
     machine_readable_observation_values: false
     data_tables_distributed: false
   08_eoscg2021_co2_h2_verification.png:
@@ -52,8 +54,9 @@ figures:
     - https://doi.org/10.1007/s10765-023-03263-6
     description: Native EOS-CG-2021 parity against an independently generated teqp
       reference.
-    executed_artifact_sha256: db6deb657a330aa541566fbf40f13ca1764dbf31b783ddfc595c39bffd64116b
     publication_form: rendered-plot
+    observation_level_values: false
+    executed_artifact_sha256: db6deb657a330aa541566fbf40f13ca1764dbf31b783ddfc595c39bffd64116b
     machine_readable_observation_values: false
     data_tables_distributed: false
   08_eoscg2021_mdea_density.png:
@@ -68,8 +71,9 @@ figures:
     source_material:
     - https://doi.org/10.1007/s10765-021-02933-7
     description: Pure-MDEA liquid-density predictions against CC BY 4.0 measurements.
-    executed_artifact_sha256: db6deb657a330aa541566fbf40f13ca1764dbf31b783ddfc595c39bffd64116b
     publication_form: rendered-plot
+    observation_level_values: false
+    executed_artifact_sha256: db6deb657a330aa541566fbf40f13ca1764dbf31b783ddfc595c39bffd64116b
     machine_readable_observation_values: false
     data_tables_distributed: false
   08_eoscg2021_mdea_speed_of_sound.png:
@@ -84,8 +88,9 @@ figures:
     source_material:
     - https://doi.org/10.1007/s10765-021-02933-7
     description: Pure-MDEA speed-of-sound predictions against CC BY 4.0 measurements.
-    executed_artifact_sha256: db6deb657a330aa541566fbf40f13ca1764dbf31b783ddfc595c39bffd64116b
     publication_form: rendered-plot
+    observation_level_values: false
+    executed_artifact_sha256: db6deb657a330aa541566fbf40f13ca1764dbf31b783ddfc595c39bffd64116b
     machine_readable_observation_values: false
     data_tables_distributed: false
   09_gerg2008_h2_ch4_density.png:
@@ -102,8 +107,9 @@ figures:
     - https://doi.org/10.6084/m9.figshare.12063297
     description: Native GERG-2008 density reproduction over all 1,010 H2-CH4 reference
       states.
-    executed_artifact_sha256: c57aead66731efd73c3c899ca24e86e824d4f787bb370cf0eaebd37447226f96
     publication_form: rendered-plot
+    observation_level_values: false
+    executed_artifact_sha256: c57aead66731efd73c3c899ca24e86e824d4f787bb370cf0eaebd37447226f96
     machine_readable_observation_values: false
     data_tables_distributed: false
   09_gerg2008_h2_ch4_caloric.png:
@@ -120,8 +126,9 @@ figures:
     - https://doi.org/10.6084/m9.figshare.12063297
     description: Native GERG-2008 isobaric-heat-capacity reproduction over all 1,010
       H2-CH4 reference states.
-    executed_artifact_sha256: c57aead66731efd73c3c899ca24e86e824d4f787bb370cf0eaebd37447226f96
     publication_form: rendered-plot
+    observation_level_values: false
+    executed_artifact_sha256: c57aead66731efd73c3c899ca24e86e824d4f787bb370cf0eaebd37447226f96
     machine_readable_observation_values: false
     data_tables_distributed: false
   15_thermal_co2_comparison.png:
@@ -136,8 +143,9 @@ figures:
     - https://doi.org/10.1201/9780429457418
     - https://doi.org/10.1016/j.jcou.2017.04.007
     description: CO2 Joule-Thomson predictions against the complete reported comparison.
-    executed_artifact_sha256: c4618f21461317a84456f848f41e06fcc6495e47b2adfc215f0546aaa83b64b4
     publication_form: rendered-plot
+    observation_level_values: false
+    executed_artifact_sha256: c4618f21461317a84456f848f41e06fcc6495e47b2adfc215f0546aaa83b64b4
     machine_readable_observation_values: false
     data_tables_distributed: false
   15_thermal_co2_error.png:
@@ -152,8 +160,9 @@ figures:
     - https://doi.org/10.1201/9780429457418
     - https://doi.org/10.1016/j.jcou.2017.04.007
     description: CO2 Joule-Thomson parity and signed-error structure.
-    executed_artifact_sha256: c4618f21461317a84456f848f41e06fcc6495e47b2adfc215f0546aaa83b64b4
     publication_form: rendered-plot
+    observation_level_values: false
+    executed_artifact_sha256: c4618f21461317a84456f848f41e06fcc6495e47b2adfc215f0546aaa83b64b4
     machine_readable_observation_values: false
     data_tables_distributed: false
   15_thermal_propane_comparison.png:
@@ -168,8 +177,9 @@ figures:
     - https://doi.org/10.1201/9780429457418
     - https://doi.org/10.1021/ie50317a026
     description: Propane Joule-Thomson predictions over all reported vapor-state isotherms.
-    executed_artifact_sha256: c4618f21461317a84456f848f41e06fcc6495e47b2adfc215f0546aaa83b64b4
     publication_form: rendered-plot
+    observation_level_values: false
+    executed_artifact_sha256: c4618f21461317a84456f848f41e06fcc6495e47b2adfc215f0546aaa83b64b4
     machine_readable_observation_values: false
     data_tables_distributed: false
   15_thermal_property_profile.png:
@@ -184,8 +194,9 @@ figures:
     - https://doi.org/10.1201/9780429457418
     description: Autodifferentiated thermal-property profiles at supplied homogeneous
       states.
-    executed_artifact_sha256: c4618f21461317a84456f848f41e06fcc6495e47b2adfc215f0546aaa83b64b4
     publication_form: rendered-plot
+    observation_level_values: false
+    executed_artifact_sha256: c4618f21461317a84456f848f41e06fcc6495e47b2adfc215f0546aaa83b64b4
     machine_readable_observation_values: false
     data_tables_distributed: false
   22_hv_full_pxy.png:
@@ -201,8 +212,9 @@ figures:
     - https://doi.org/10.1021/acs.iecr.0c01734
     description: Full experimental and modeled P-x-y behavior for the twelve BAC-5
       isotherms.
-    executed_artifact_sha256: 9e7224ce344dae8ed6eac2f13a7b47648727319b5f0a88683be509b23c0cbd0e
     publication_form: rendered-plot
+    observation_level_values: false
+    executed_artifact_sha256: 9e7224ce344dae8ed6eac2f13a7b47648727319b5f0a88683be509b23c0cbd0e
     machine_readable_observation_values: false
     data_tables_distributed: false
   22_hv_parity_transfer.png:
@@ -217,8 +229,9 @@ figures:
     source_material:
     - https://doi.org/10.1021/acs.iecr.0c01734
     description: Pressure and vapor-composition parity with complete-temperature holdouts.
-    executed_artifact_sha256: 9e7224ce344dae8ed6eac2f13a7b47648727319b5f0a88683be509b23c0cbd0e
     publication_form: rendered-plot
+    observation_level_values: false
+    executed_artifact_sha256: 9e7224ce344dae8ed6eac2f13a7b47648727319b5f0a88683be509b23c0cbd0e
     machine_readable_observation_values: false
     data_tables_distributed: false
   22_hv_residuals.png:
@@ -233,8 +246,9 @@ figures:
     source_material:
     - https://doi.org/10.1021/acs.iecr.0c01734
     description: Temperature-resolved pressure and vapor-composition residuals.
-    executed_artifact_sha256: 9e7224ce344dae8ed6eac2f13a7b47648727319b5f0a88683be509b23c0cbd0e
     publication_form: rendered-plot
+    observation_level_values: false
+    executed_artifact_sha256: 9e7224ce344dae8ed6eac2f13a7b47648727319b5f0a88683be509b23c0cbd0e
     machine_readable_observation_values: false
     data_tables_distributed: false
   24_volume_translation_density_curves.png:
@@ -250,8 +264,9 @@ figures:
     - https://doi.org/10.1016/j.jct.2017.01.022
     description: Methane-n-decane density curves with untranslated and translated
       cubic models.
-    executed_artifact_sha256: 08d1cd9ee09ad8a4c113e145dad0201a232e28e89ce1d1e4bcff6f089131ea72
     publication_form: rendered-plot
+    observation_level_values: false
+    executed_artifact_sha256: 08d1cd9ee09ad8a4c113e145dad0201a232e28e89ce1d1e4bcff6f089131ea72
     machine_readable_observation_values: false
     data_tables_distributed: false
   24_volume_translation_isotherm.png:
@@ -267,8 +282,9 @@ figures:
     - https://doi.org/10.1016/j.jct.2017.01.022
     description: Translated-model comparison along the experimental methane-n-decane
       isotherm.
-    executed_artifact_sha256: 08d1cd9ee09ad8a4c113e145dad0201a232e28e89ce1d1e4bcff6f089131ea72
     publication_form: rendered-plot
+    observation_level_values: false
+    executed_artifact_sha256: 08d1cd9ee09ad8a4c113e145dad0201a232e28e89ce1d1e4bcff6f089131ea72
     machine_readable_observation_values: false
     data_tables_distributed: false
   24_volume_translation_parity.png:
@@ -283,8 +299,9 @@ figures:
     source_material:
     - https://doi.org/10.1016/j.jct.2017.01.022
     description: Density parity and signed residuals for the translated cubic models.
-    executed_artifact_sha256: 08d1cd9ee09ad8a4c113e145dad0201a232e28e89ce1d1e4bcff6f089131ea72
     publication_form: rendered-plot
+    observation_level_values: false
+    executed_artifact_sha256: 08d1cd9ee09ad8a4c113e145dad0201a232e28e89ce1d1e4bcff6f089131ea72
     machine_readable_observation_values: false
     data_tables_distributed: false
   25_covolume_density_curves.png:
@@ -300,8 +317,9 @@ figures:
     - https://doi.org/10.1016/j.jct.2017.01.022
     description: PR78 density curves before and after fitting the cross-co-volume
       interaction.
-    executed_artifact_sha256: d62bf0bfb077b7a5b673641a102faeea69026f95fb49a6767be0e01f11b9de9c
     publication_form: rendered-plot
+    observation_level_values: false
+    executed_artifact_sha256: d62bf0bfb077b7a5b673641a102faeea69026f95fb49a6767be0e01f11b9de9c
     machine_readable_observation_values: false
     data_tables_distributed: false
   25_covolume_density_parity.png:
@@ -317,8 +335,9 @@ figures:
     - https://doi.org/10.1016/j.jct.2017.01.022
     description: Density parity for the estimation isobar and disjoint validation
       isotherm.
-    executed_artifact_sha256: d62bf0bfb077b7a5b673641a102faeea69026f95fb49a6767be0e01f11b9de9c
     publication_form: rendered-plot
+    observation_level_values: false
+    executed_artifact_sha256: d62bf0bfb077b7a5b673641a102faeea69026f95fb49a6767be0e01f11b9de9c
     machine_readable_observation_values: false
     data_tables_distributed: false
   25_covolume_validation_residuals.png:
@@ -333,8 +352,9 @@ figures:
     source_material:
     - https://doi.org/10.1016/j.jct.2017.01.022
     description: Pressure-resolved density residuals on the disjoint validation isotherm.
-    executed_artifact_sha256: d62bf0bfb077b7a5b673641a102faeea69026f95fb49a6767be0e01f11b9de9c
     publication_form: rendered-plot
+    observation_level_values: false
+    executed_artifact_sha256: d62bf0bfb077b7a5b673641a102faeea69026f95fb49a6767be0e01f11b9de9c
     machine_readable_observation_values: false
     data_tables_distributed: false
   25_covolume_parameter_sensitivity.png:
@@ -348,8 +368,9 @@ figures:
     source_material:
     - https://doi.org/10.1016/j.fluid.2022.113697
     description: Training and validation sensitivity to the cross-co-volume parameter.
-    executed_artifact_sha256: d62bf0bfb077b7a5b673641a102faeea69026f95fb49a6767be0e01f11b9de9c
     publication_form: rendered-plot
+    observation_level_values: false
+    executed_artifact_sha256: d62bf0bfb077b7a5b673641a102faeea69026f95fb49a6767be0e01f11b9de9c
     machine_readable_observation_values: false
     data_tables_distributed: false
   26_unifac_ethanol_heptane_pxy.png:
@@ -364,8 +385,9 @@ figures:
     source_material:
     - https://doi.org/10.1021/acs.iecr.0c01734
     description: Predictive original-UNIFAC P-x-y curves for ethanol-n-heptane.
-    executed_artifact_sha256: 2a5b6f0de78205972674c3f6d3a2a9557dccc48d23fb154f62ac001ea6a096b0
     publication_form: rendered-plot
+    observation_level_values: false
+    executed_artifact_sha256: 2a5b6f0de78205972674c3f6d3a2a9557dccc48d23fb154f62ac001ea6a096b0
     machine_readable_observation_values: false
     data_tables_distributed: false
   26_unifac_methanol_benzene_pxy.png:
@@ -380,8 +402,9 @@ figures:
     source_material:
     - https://doi.org/10.1021/acs.iecr.0c01734
     description: Predictive original-UNIFAC P-x-y curves for methanol-benzene.
-    executed_artifact_sha256: 2a5b6f0de78205972674c3f6d3a2a9557dccc48d23fb154f62ac001ea6a096b0
     publication_form: rendered-plot
+    observation_level_values: false
+    executed_artifact_sha256: 2a5b6f0de78205972674c3f6d3a2a9557dccc48d23fb154f62ac001ea6a096b0
     machine_readable_observation_values: false
     data_tables_distributed: false
   26_unifac_parity_residuals.png:
@@ -397,8 +420,9 @@ figures:
     - https://doi.org/10.1021/acs.iecr.0c01734
     description: Original-UNIFAC parity and residual structure with extrapolative
       states marked.
-    executed_artifact_sha256: 2a5b6f0de78205972674c3f6d3a2a9557dccc48d23fb154f62ac001ea6a096b0
     publication_form: rendered-plot
+    observation_level_values: false
+    executed_artifact_sha256: 2a5b6f0de78205972674c3f6d3a2a9557dccc48d23fb154f62ac001ea6a096b0
     machine_readable_observation_values: false
     data_tables_distributed: false
   26_unifac_activity_surfaces.png:
@@ -413,8 +437,9 @@ figures:
     - https://doi.org/10.1002/aic.690210607
     - https://doi.org/10.1021/ie00058a017
     description: Predicted activity-coefficient surfaces over composition and temperature.
-    executed_artifact_sha256: 2a5b6f0de78205972674c3f6d3a2a9557dccc48d23fb154f62ac001ea6a096b0
     publication_form: rendered-plot
+    observation_level_values: false
+    executed_artifact_sha256: 2a5b6f0de78205972674c3f6d3a2a9557dccc48d23fb154f62ac001ea6a096b0
     machine_readable_observation_values: false
     data_tables_distributed: false
   28_ppr78_full_pxy.png:
@@ -429,8 +454,9 @@ figures:
     source_material:
     - https://doi.org/10.1021/acs.iecr.0c01734
     description: Experimental and predicted P-x-y behavior over six hydrocarbon isotherms.
-    executed_artifact_sha256: 32505b460bfc200bde8d1c232fbbf038b05c45c61486dd21640df291b87b0a83
     publication_form: rendered-plot
+    observation_level_values: false
+    executed_artifact_sha256: 32505b460bfc200bde8d1c232fbbf038b05c45c61486dd21640df291b87b0a83
     machine_readable_observation_values: false
     data_tables_distributed: false
   28_ppr78_parity.png:
@@ -446,8 +472,9 @@ figures:
     - https://doi.org/10.1021/acs.iecr.0c01734
     description: Pressure and vapor-composition parity for zero-BIP PR78 and predictive
       PPR78.
-    executed_artifact_sha256: 32505b460bfc200bde8d1c232fbbf038b05c45c61486dd21640df291b87b0a83
     publication_form: rendered-plot
+    observation_level_values: false
+    executed_artifact_sha256: 32505b460bfc200bde8d1c232fbbf038b05c45c61486dd21640df291b87b0a83
     machine_readable_observation_values: false
     data_tables_distributed: false
   28_ppr78_interactions.png:
@@ -461,8 +488,9 @@ figures:
     source_material:
     - https://doi.org/10.1016/j.fluid.2004.06.059
     description: Temperature-dependent PPR78 binary interactions from the group contribution.
-    executed_artifact_sha256: 32505b460bfc200bde8d1c232fbbf038b05c45c61486dd21640df291b87b0a83
     publication_form: rendered-plot
+    observation_level_values: false
+    executed_artifact_sha256: 32505b460bfc200bde8d1c232fbbf038b05c45c61486dd21640df291b87b0a83
     machine_readable_observation_values: false
     data_tables_distributed: false
   29_phase_identification_north_ward_estes.png:
@@ -479,8 +507,9 @@ figures:
     - https://doi.org/10.2118/129844-PA
     description: Six physical phase-identification diagnostics applied after equilibrium
       flashes on the North Ward Estes 500 by 500 injection grid.
-    executed_artifact_sha256: 572d0ce80fecfeb12c1d48e0a85cbdb1bf7010801866d45607ce1a044126b1e3
     publication_form: rendered-plot
+    observation_level_values: false
+    executed_artifact_sha256: 572d0ce80fecfeb12c1d48e0a85cbdb1bf7010801866d45607ce1a044126b1e3
     machine_readable_observation_values: false
     data_tables_distributed: false
   29_h2_gerg_table12_parity.png:
@@ -496,8 +525,9 @@ figures:
     - https://doi.org/10.1063/5.0040533
     description: Parity for all six properties and all 16 states in Beckmuller et
       al. Table 12.
-    executed_artifact_sha256: d33042a57e98c9675d64f9154591491921128406a7ced15659ead39d82cfcff9
     publication_form: rendered-plot
+    observation_level_values: false
+    executed_artifact_sha256: d33042a57e98c9675d64f9154591491921128406a7ced15659ead39d82cfcff9
     machine_readable_observation_values: false
     data_tables_distributed: false
   29_h2_gerg_figure4_density_difference.png:
@@ -512,8 +542,9 @@ figures:
     - https://doi.org/10.1063/5.0040533
     description: CH4-H2 density difference between GERG-2008 and the H2-tailored parameterization
       with calculated phase boundaries.
-    executed_artifact_sha256: d33042a57e98c9675d64f9154591491921128406a7ced15659ead39d82cfcff9
     publication_form: rendered-plot
+    observation_level_values: false
+    executed_artifact_sha256: d33042a57e98c9675d64f9154591491921128406a7ced15659ead39d82cfcff9
     machine_readable_observation_values: false
     data_tables_distributed: false
   29_h2_gerg_figure7_n2_h2_vle.png:
@@ -529,8 +560,9 @@ figures:
     - https://doi.org/10.1063/5.0040533
     description: Native N2-H2 phase-equilibrium traces for the three Figure 7 isotherms
       with digitized experimental markers.
-    executed_artifact_sha256: d33042a57e98c9675d64f9154591491921128406a7ced15659ead39d82cfcff9
     publication_form: rendered-plot
+    observation_level_values: false
+    executed_artifact_sha256: d33042a57e98c9675d64f9154591491921128406a7ced15659ead39d82cfcff9
     machine_readable_observation_values: false
     data_tables_distributed: false
   29_h2_gerg_figure16_co2_h2_vle.png:
@@ -546,8 +578,9 @@ figures:
     - https://doi.org/10.1063/5.0040533
     description: Native CO2-H2 phase-equilibrium traces for the three Figure 16 isotherms
       with digitized experimental markers.
-    executed_artifact_sha256: d33042a57e98c9675d64f9154591491921128406a7ced15659ead39d82cfcff9
     publication_form: rendered-plot
+    observation_level_values: false
+    executed_artifact_sha256: d33042a57e98c9675d64f9154591491921128406a7ced15659ead39d82cfcff9
     machine_readable_observation_values: false
     data_tables_distributed: false
   31_leachman_normal_hydrogen_table14_parity.png:
@@ -563,8 +596,9 @@ figures:
     - https://doi.org/10.1063/1.3160306
     description: Normal-hydrogen pressure, enthalpy, entropy, heat-capacity, and speed-of-sound
       parity against Leachman et al. Table 14.
-    executed_artifact_sha256: 4d6e6255a06f338cc5968d9ca19c75a50ad7d2ec435aedf54810192893ba3bb3
     publication_form: rendered-plot
+    observation_level_values: false
+    executed_artifact_sha256: 4d6e6255a06f338cc5968d9ca19c75a50ad7d2ec435aedf54810192893ba3bb3
     machine_readable_observation_values: false
     data_tables_distributed: false
   32_hydrogen_water_all_models_parity.png:
@@ -586,8 +620,9 @@ figures:
     - https://doi.org/10.1016/j.ijggc.2016.11.015
     description: Composition parity and common water-content error for every retrieved
       hydrogen-water observation and every applicable torch-flash model.
-    executed_artifact_sha256: d70784005d64cb9abce97aca161516ddcea142f8f23af1e7d842f58b46fab7c1
     publication_form: rendered-plot
+    observation_level_values: false
+    executed_artifact_sha256: d70784005d64cb9abce97aca161516ddcea142f8f23af1e7d842f58b46fab7c1
     machine_readable_observation_values: false
     data_tables_distributed: false
   32_hydrogen_water_all_models_curves.png:
@@ -609,8 +644,9 @@ figures:
     - https://doi.org/10.1016/j.ijggc.2016.11.015
     description: Water-content pressure curves for H2-H2O, H2-CO-H2O, and H2-N2-H2O,
       including global E-PPR78.
-    executed_artifact_sha256: d70784005d64cb9abce97aca161516ddcea142f8f23af1e7d842f58b46fab7c1
     publication_form: rendered-plot
+    observation_level_values: false
+    executed_artifact_sha256: d70784005d64cb9abce97aca161516ddcea142f8f23af1e7d842f58b46fab7c1
     machine_readable_observation_values: false
     data_tables_distributed: false
   33_eppr78_ccs_figure2_reproduction.png:
@@ -626,8 +662,9 @@ figures:
     - https://doi.org/10.1016/j.ijggc.2016.11.015
     description: All eight E-PPR78 panels from Xu et al. Figure 2, with model curves
       and visually digitized experimental markers.
-    executed_artifact_sha256: 6e966cdce89265a249d123249056356e0bf6a88183a351ea85fdedc90d26efb4
     publication_form: rendered-plot
+    observation_level_values: false
+    executed_artifact_sha256: 6e966cdce89265a249d123249056356e0bf6a88183a351ea85fdedc90d26efb4
     machine_readable_observation_values: false
     data_tables_distributed: false
   33_eppr78_ccs_figure2_parity.png:
@@ -643,7 +680,117 @@ figures:
     - https://doi.org/10.1016/j.ijggc.2016.11.015
     description: Temperature, pressure, and enthalpy-of-mixing parity for the visually
       recovered Xu et al. Figure 2 markers.
-    executed_artifact_sha256: 6e966cdce89265a249d123249056356e0bf6a88183a351ea85fdedc90d26efb4
     publication_form: rendered-plot
+    observation_level_values: false
+    executed_artifact_sha256: 6e966cdce89265a249d123249056356e0bf6a88183a351ea85fdedc90d26efb4
+    machine_readable_observation_values: false
+    data_tables_distributed: false
+  34_co2_presalt_unfitted_phase_envelopes.png:
+    study_id: 34_co2_presalt_all_models
+    notebook: notebooks/local-only/validation/34_co2_presalt_all_models.ipynb
+    cell_index: 12
+    image_index: 0
+    evidence_class: validation
+    observation_level_markers: true
+    data_artifacts:
+    - simoncelli_2020_co2_presalt_phase_transitions.csv
+    source_material:
+    - https://doi.org/10.1016/j.fluid.2020.112574
+    - https://doi.org/10.1016/j.fluid.2022.113456
+    description: Complete fixed-composition phase envelopes and all 157 Simoncelli
+      et al. transition markers before conventional-cubic calibration.
+    publication_form: rendered-plot
+    observation_level_values: false
+    executed_artifact_sha256: c5ae705193b5ed63858dded18983f1376e2bcb1471d7506500a9fd7f387be547
+    machine_readable_observation_values: false
+    data_tables_distributed: false
+  34_co2_presalt_fitted_phase_envelopes.png:
+    study_id: 34_co2_presalt_all_models
+    notebook: notebooks/local-only/validation/34_co2_presalt_all_models.ipynb
+    cell_index: 18
+    image_index: 0
+    evidence_class: validation
+    observation_level_markers: true
+    data_artifacts:
+    - simoncelli_2020_co2_presalt_phase_transitions.csv
+    source_material:
+    - https://doi.org/10.1016/j.fluid.2020.112574
+    - https://doi.org/10.1016/j.fluid.2022.113456
+    description: Complete fixed-composition phase envelopes and all 157 Simoncelli
+      et al. transition markers after joint conventional-cubic calibration.
+    publication_form: rendered-plot
+    observation_level_values: false
+    executed_artifact_sha256: c5ae705193b5ed63858dded18983f1376e2bcb1471d7506500a9fd7f387be547
+    machine_readable_observation_values: false
+    data_tables_distributed: false
+  34_co2_presalt_fit_summary.png:
+    study_id: 34_co2_presalt_all_models
+    notebook: notebooks/local-only/validation/34_co2_presalt_all_models.ipynb
+    cell_index: 22
+    image_index: 0
+    evidence_class: calibration
+    observation_level_markers: false
+    data_artifacts:
+    - simoncelli_2020_co2_presalt_phase_transitions.csv
+    source_material:
+    - https://doi.org/10.1016/j.fluid.2020.112574
+    description: Joint full-batch calibration histories and selected interaction parameters.
+    publication_form: non-reconstructive-aggregate
+    observation_level_values: false
+    executed_artifact_sha256: c5ae705193b5ed63858dded18983f1376e2bcb1471d7506500a9fd7f387be547
+    machine_readable_observation_values: false
+    data_tables_distributed: false
+  34_co2_presalt_aggregate_metrics.png:
+    study_id: 34_co2_presalt_all_models
+    notebook: notebooks/local-only/validation/34_co2_presalt_all_models.ipynb
+    cell_index: 24
+    image_index: 0
+    evidence_class: validation
+    observation_level_markers: false
+    data_artifacts:
+    - simoncelli_2020_co2_presalt_phase_transitions.csv
+    source_material:
+    - https://doi.org/10.1016/j.fluid.2020.112574
+    description: Non-reconstructive aggregate transition-pressure coverage and AARD
+      before and after calibration.
+    publication_form: non-reconstructive-aggregate
+    observation_level_values: false
+    executed_artifact_sha256: c5ae705193b5ed63858dded18983f1376e2bcb1471d7506500a9fd7f387be547
+    machine_readable_observation_values: false
+    data_tables_distributed: false
+  35_nichita_trust_region_phase_envelopes.png:
+    study_id: 35_nichita_trust_region_phase_envelopes
+    cell_index: 12
+    image_index: 0
+    evidence_class: verification
+    observation_level_markers: false
+    data_artifacts:
+    - nichita_2014_figures_3_4_digitized.csv
+    source_material:
+    - https://doi.org/10.1016/j.fluid.2013.08.039
+    - https://doi.org/10.2118/129844-PA
+    description: Trust-Region-polished phase-region maps and digitized published
+      calculation boundaries for Petitfrere-Nichita Figures 3 and 4.
+    publication_form: rendered-plot
+    observation_level_values: false
+    executed_artifact_sha256: c07a3c96b173e9544b81da976ed054a039baf1cab2e2852d9c900c7e32cdd29c
+    machine_readable_observation_values: false
+    data_tables_distributed: false
+  35_nichita_phase_identification_methods.png:
+    study_id: 35_nichita_trust_region_phase_envelopes
+    cell_index: 10
+    image_index: 0
+    evidence_class: verification
+    observation_level_markers: false
+    data_artifacts:
+    - nichita_2014_figures_3_4_digitized.csv
+    source_material:
+    - https://doi.org/10.1016/j.fluid.2013.08.039
+    - https://doi.org/10.2118/129844-PA
+    description: Comparison of all six physical phase-identification methods on
+      the same Trust-Region-polished equilibrium states.
+    publication_form: rendered-plot
+    observation_level_values: false
+    executed_artifact_sha256: c07a3c96b173e9544b81da976ed054a039baf1cab2e2852d9c900c7e32cdd29c
     machine_readable_observation_values: false
     data_tables_distributed: false

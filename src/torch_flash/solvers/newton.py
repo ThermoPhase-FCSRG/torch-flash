@@ -34,6 +34,217 @@ class NewtonResult:
     converged: bool
 
 
+@dataclass(frozen=True)
+class BatchedNewtonResult:
+    """Solutions and diagnostics from :func:`batched_damped_newton`.
+
+    Attributes
+    ----------
+    solution
+        Final variables with shape ``(batch, variables)``.
+    residual
+        Residual vectors evaluated at ``solution`` with the same shape.
+    residual_norm
+        Per-system infinity norms with shape ``(batch,)``.
+    iterations
+        Per-system outer iteration counts with shape ``(batch,)``.
+    converged
+        Per-system convergence flags with shape ``(batch,)``.
+    """
+
+    solution: Tensor
+    residual: Tensor
+    residual_norm: Tensor
+    iterations: Tensor
+    converged: Tensor
+
+
+def batched_damped_newton(
+    residual_function: Callable[..., Tensor],
+    initial: Tensor,
+    *residual_arguments: Tensor,
+    tolerance: float = 1.0e-8,
+    max_iterations: int = 50,
+    max_line_search: int = 16,
+    lower_bound: Tensor | None = None,
+    upper_bound: Tensor | None = None,
+) -> BatchedNewtonResult:
+    """Solve independent small nonlinear systems in one PyTorch batch.
+
+    Parameters
+    ----------
+    residual_function
+        Batched mapping. Its first argument is the complete variable tensor;
+        subsequent arguments are the complete tensors in
+        ``residual_arguments``. It must return a tensor matching the variable
+        shape and must not couple distinct leading-batch rows.
+    initial
+        Initial variables with shape ``(batch, variables)``.
+    *residual_arguments
+        Tensors whose leading dimension equals ``batch``. They are vectorized
+        together with the variables.
+    tolerance
+        Absolute per-system infinity-norm convergence threshold.
+    max_iterations
+        Maximum damped-Newton iterations.
+    max_line_search
+        Maximum residual-decreasing backtracking trials per iteration.
+    lower_bound, upper_bound
+        Optional bounds broadcastable to ``initial``.
+
+    Returns
+    -------
+    BatchedNewtonResult
+        Per-system solutions, residuals, iteration counts, and convergence.
+
+    Raises
+    ------
+    ValueError
+        If shapes or numerical controls are invalid.
+
+    Notes
+    -----
+    Exact per-system Jacobian blocks come from
+    :func:`torch.func.jacrev` of each residual component summed across the
+    independent batch. This evaluates only the block diagonal implied by
+    independent systems rather than constructing and discarding cross-batch
+    zero blocks. Gradients through model parameters and accepted Newton
+    iterates are preserved. A singular direct solve falls back to a batched
+    least-squares step. Failed systems remain explicit in the returned
+    diagnostics.
+    """
+    if initial.ndim != 2 or initial.shape[0] == 0 or initial.shape[1] == 0:
+        raise ValueError("batched Newton initial values must have shape (batch, variables)")
+    if tolerance <= 0.0 or max_iterations <= 0 or max_line_search <= 0:
+        raise ValueError("batched Newton controls must be positive")
+    if any(
+        argument.ndim == 0 or argument.shape[0] != initial.shape[0]
+        for argument in residual_arguments
+    ):
+        raise ValueError("batched Newton residual arguments must share the leading batch size")
+
+    variables = initial.clone()
+
+    def broadcast_bound(bound: Tensor | None, name: str) -> Tensor | None:
+        if bound is None:
+            return None
+        try:
+            return torch.broadcast_to(bound, initial.shape)
+        except RuntimeError as error:
+            raise ValueError(f"batched Newton {name} bound is not broadcastable") from error
+
+    lower = broadcast_bound(lower_bound, "lower")
+    upper = broadcast_bound(upper_bound, "upper")
+
+    def project(candidate: Tensor) -> Tensor:
+        if lower is not None:
+            candidate = torch.maximum(candidate, lower)
+        if upper is not None:
+            candidate = torch.minimum(candidate, upper)
+        return candidate
+
+    variables = project(variables)
+    value = residual_function(variables, *residual_arguments)
+    if value.shape != variables.shape:
+        raise ValueError("batched Newton residuals must match the initial variable shape")
+
+    batch_size = initial.shape[0]
+    iterations = torch.zeros(batch_size, dtype=torch.int64, device=initial.device)
+    residual_norm = value.abs().amax(dim=-1)
+    converged = torch.isfinite(residual_norm) & (residual_norm <= tolerance)
+    for iteration in range(1, max_iterations + 1):
+        active = ~converged
+        if bool(torch.all(~active).detach()):
+            break
+
+        jacobian = torch.stack(
+            tuple(
+                torch.func.jacrev(
+                    lambda current, index=residual_index: residual_function(
+                        current,
+                        *residual_arguments,
+                    )[:, index].sum()
+                )(variables)
+                for residual_index in range(initial.shape[1])
+            ),
+            dim=-2,
+        )
+        expected_jacobian_shape = (*initial.shape, initial.shape[1])
+        if jacobian.shape != expected_jacobian_shape:
+            raise ValueError("batched Newton Jacobian shape is inconsistent")
+        direct_step, information = torch.linalg.solve_ex(
+            jacobian,
+            -value.unsqueeze(-1),
+            check_errors=False,
+        )
+        direct_step = direct_step.squeeze(-1)
+        least_squares_step = torch.linalg.lstsq(
+            jacobian,
+            -value.unsqueeze(-1),
+        ).solution.squeeze(-1)
+        direct_is_finite = torch.isfinite(direct_step).all(dim=-1)
+        step = torch.where(
+            ((information == 0) & direct_is_finite).unsqueeze(-1),
+            direct_step,
+            least_squares_step,
+        )
+        step = torch.where(
+            torch.isfinite(step),
+            step,
+            -0.1 * torch.nan_to_num(value),
+        )
+        step = torch.where(active.unsqueeze(-1), step, torch.zeros_like(step))
+
+        accepted = torch.zeros(batch_size, dtype=torch.bool, device=initial.device)
+        accepted_variables = variables
+        factor = torch.ones(batch_size, dtype=initial.dtype, device=initial.device)
+        for _ in range(max_line_search):
+            candidate = project(variables + factor.unsqueeze(-1) * step)
+            candidate_value = residual_function(candidate, *residual_arguments)
+            candidate_norm = candidate_value.abs().amax(dim=-1)
+            improving = (
+                active
+                & ~accepted
+                & torch.isfinite(candidate_value).all(dim=-1)
+                & (candidate_norm < residual_norm)
+            )
+            accepted_variables = torch.where(
+                improving.unsqueeze(-1),
+                candidate,
+                accepted_variables,
+            )
+            accepted = accepted | improving
+            factor = torch.where(accepted, factor, 0.5 * factor)
+            if bool(torch.all(accepted | ~active).detach()):
+                break
+
+        fallback_variables = project(variables + factor.unsqueeze(-1) * step)
+        next_variables = torch.where(
+            accepted.unsqueeze(-1),
+            accepted_variables,
+            fallback_variables,
+        )
+        variables = torch.where(active.unsqueeze(-1), next_variables, variables)
+        value = residual_function(variables, *residual_arguments)
+        iterations = torch.where(
+            active,
+            iterations.new_full((), iteration),
+            iterations,
+        )
+        residual_norm = value.abs().amax(dim=-1)
+        converged = torch.isfinite(residual_norm) & (residual_norm <= tolerance)
+
+    residual_norm = value.abs().amax(dim=-1)
+    converged = torch.isfinite(residual_norm) & (residual_norm <= tolerance)
+    return BatchedNewtonResult(
+        variables,
+        value,
+        residual_norm,
+        iterations,
+        converged,
+    )
+
+
 def damped_newton(
     residual_function: Callable[[Tensor], Tensor],
     initial: Tensor,

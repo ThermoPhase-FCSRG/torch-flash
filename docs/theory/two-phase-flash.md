@@ -114,3 +114,38 @@ physical-identification diagnostic.
 For batched states already known to be two phase, use
 `batched_two_phase_flash`. It intentionally does not perform per-state phase
 discovery.
+
+## Trust-region alternative for difficult states
+
+`two_phase_trust_region_flash` minimizes the two-phase Gibbs energy in direct
+component mole amounts. The initially larger phase amount for each component
+is dependent, so every accepted iterate satisfies material balance exactly.
+The dense trust-region subproblem uses the exact PyTorch-autodifferentiated
+gradient and Hessian. `tangent_plane_stability(..., minimizer="trust-region")`
+selects the corresponding formal-mole-number TPD minimizer.
+
+```python
+from torch_flash import two_phase_trust_region_flash
+
+result = two_phase_trust_region_flash(
+    model,
+    state,
+    check_stability=True,
+    tolerance=1.0e-8,
+    raise_on_failure=True,
+)
+```
+
+The formulation follows Petitfrere and Nichita's restricted-step phase
+equilibrium method
+([doi:10.1016/j.fluid.2013.08.039](https://doi.org/10.1016/j.fluid.2013.08.039)).
+It is an opt-in path, not the default replacement for the \(\ln K\) flash:
+exact Hessians cost more than the small linear systems in ordinary
+well-conditioned two-phase states.
+
+For a fixed three-or-more-phase hypothesis,
+`multiphase_trust_region_flash` applies the paper's per-component reference
+phase and direct-mole Gibbs formulation. It returns explicit residual,
+material-balance, accepted/rejected-step, and Hessian-curvature diagnostics.
+The requested phase count and roots remain scientific inputs; convergence of
+this local minimum is not proof of global stability.

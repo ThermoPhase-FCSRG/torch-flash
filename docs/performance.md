@@ -197,6 +197,43 @@ kernels plateau quickly. Do not change the process-wide thread count inside a
 library call. The [runtime guide](runtime.md) also covers the stricter
 one-time inter-operation thread setting.
 
+### Dense trust-region scope
+
+The Nichita-style stability and flash path uses exact dense PyTorch Hessians
+and `torch.linalg.eigh`. This matches the small compositional systems for which
+the method was proposed. `torch-sla` is not selected automatically: its sparse
+adjoint solve is better aligned with large sparse implicit systems than with
+independent two-to-four-variable flash systems. A future coupled sparse
+transport/flash problem may justify that backend, but using it for the current
+dense subproblems would add conversion and dependency overhead without
+removing the thermodynamic Hessian evaluations.
+
+An Apple M4 Pro, float64 CPU, four-thread benchmark with PyTorch 2.12.1
+separated ordinary and higher-iteration methane/n-butane PR78 states. Each
+reported state timing is a warmed median of three repetitions. The complete
+matched runner is
+[`scripts/benchmark_trust_region_flash.py`](https://github.com/ThermoPhase-FCSRG/torch-flash/blob/main/scripts/benchmark_trust_region_flash.py).
+
+| Two-phase group | States | \(\ln K\) iterations | Trust-region iterations | \(\ln K\) median / ms | Trust-region median / ms |
+|---|---:|---:|---:|---:|---:|
+| Ordinary | 12 | 14.0 | 8.5 | 12.57 | 230.35 |
+| Higher-iteration | 12 | 15.0 | 7.0 | 16.40 | 191.32 |
+
+Both methods converged on all 24 states. The largest phase-fraction difference
+was \(6.5\times10^{-9}\), and the largest trust-region fugacity residual was
+\(8.5\times10^{-9}\). Fewer nonlinear iterations therefore do not imply lower
+latency when every iteration assembles an exact Hessian.
+
+The complementary three-phase test is where the method helps. At the
+methane/CO2 SRK three-phase invariant at 180 K and 2.737 MPa, from a deliberately
+offset but physical three-phase initialization, the generalized-substitution
+path did not converge in 100 iterations (3.95 s, residual 0.18). The
+direct-mole trust-region path recovered all three invariant compositions in 32
+iterations (1.20 s), with a \(5.1\times10^{-9}\) chemical-potential residual,
+a maximum phase-composition difference of \(2.2\times10^{-10}\) from the
+invariant solution, and exact component material balance. This supports an opt-in difficult
+multiphase path, not replacing the default ordinary two-phase flash.
+
 ## Executed benchmark scope
 
 [`16_performance_backends.ipynb`](https://github.com/ThermoPhase-FCSRG/torch-flash/blob/main/notebooks/performance/16_performance_backends.ipynb)
