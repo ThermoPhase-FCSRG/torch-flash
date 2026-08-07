@@ -11,6 +11,7 @@
 [![Supported OS](https://img.shields.io/badge/OS-Linux%20%7C%20macOS%20%7C%20Windows-blue)](https://github.com/ThermoPhase-FCSRG/torch-flash/actions/workflows/tests.yml)
 [![Docs](https://github.com/ThermoPhase-FCSRG/torch-flash/actions/workflows/docs.yml/badge.svg)](https://thermophase-fcsrg.github.io/torch-flash/)
 [![PyPI](https://img.shields.io/pypi/v/torch-flash.svg)](https://pypi.org/project/torch-flash/)
+[![Conda-Forge](https://img.shields.io/conda/vn/conda-forge/torch-flash.svg)](https://anaconda.org/conda-forge/torch-flash)
 [![DOI](https://zenodo.org/badge/1309653496.svg)](https://doi.org/10.5281/zenodo.21541547)
 [![Python](https://img.shields.io/pypi/pyversions/torch-flash.svg)](https://pypi.org/project/torch-flash/)
 [![License: LGPL-2.1](https://img.shields.io/badge/license-LGPL--2.1-blue.svg)](LICENSE)
