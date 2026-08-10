@@ -80,6 +80,12 @@ The `core` feature becomes the dependency set installed by
 | Intel sparse solver | `pip install "torch-flash[intel]"` | `intel` |
 | GPU linear algebra | `pip install "torch-flash[gpu]"` | `gpu` |
 
+The released default capability is also available from Conda-Forge:
+
+```bash
+conda install -c conda-forge torch-flash
+```
+
 `default` is the ordinary installation, not a pip extra. Test, development,
 notebook, documentation, external-comparison, and benchmark dependencies stay
 in Pixi. The `intel` and `gpu` extras currently apply to Linux and Windows, and

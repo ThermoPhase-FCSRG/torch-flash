@@ -26,11 +26,20 @@ The current model coverage, assumptions, and limitations are documented in [Mode
 
 ## Installation
 
+Install the default package from Conda-Forge:
+
+```bash
+conda install -c conda-forge torch-flash
+```
+
+The default package is also available from PyPI:
+
 ```bash
 python -m pip install torch-flash
 ```
 
-Optional package capabilities are available through the `groups`, `intel`,
+The Conda-Forge package currently provides the default capability. Optional
+package capabilities are available from PyPI through the `groups`, `intel`,
 and `gpu` extras:
 
 ```bash

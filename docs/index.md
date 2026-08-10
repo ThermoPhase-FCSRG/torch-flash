@@ -67,13 +67,20 @@
 
 ## Installation and package extras
 
-Install the default package capability from PyPI:
+Install the default package capability from Conda-Forge:
+
+```bash
+conda install -c conda-forge torch-flash
+```
+
+The default package is also available from PyPI:
 
 ```bash
 python -m pip install torch-flash
 ```
 
-Three optional pip extras expose package-level integrations:
+The Conda-Forge package currently provides the default capability. Three
+optional PyPI extras expose package-level integrations:
 
 ```bash
 python -m pip install "torch-flash[groups]"

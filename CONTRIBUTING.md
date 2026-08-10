@@ -65,6 +65,12 @@ python -m pip install "torch-flash[intel]"
 python -m pip install "torch-flash[gpu]"
 ```
 
+The released default capability is also available from Conda-Forge:
+
+```bash
+conda install -c conda-forge torch-flash
+```
+
 There is no `default` extra: the default capability is the package's normal
 dependency set. Test, development, notebook, documentation,
 external-comparison, and benchmark features remain Pixi-only. The Python

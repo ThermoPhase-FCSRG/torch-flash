@@ -14,15 +14,29 @@ All public thermodynamic inputs and outputs use SI units. The examples use
 
 ## Install torch-flash
 
-`torch-flash` requires Python 3.11 or newer. Install the normal package from
-PyPI:
+`torch-flash` requires Python 3.11 or newer. Create an isolated Conda
+environment and install the package from Conda-Forge:
+
+```bash
+conda create --name torch-flash -c conda-forge python=3.11 torch-flash
+conda activate torch-flash
+```
+
+To install into an existing Conda environment instead, use:
+
+```bash
+conda install -c conda-forge torch-flash
+```
+
+The default package is also available from PyPI:
 
 ```bash
 python -m pip install torch-flash
 ```
 
-The optional pip extras are intentionally narrower than the Pixi development
-environments:
+The Conda-Forge package currently provides the default capability. Optional
+package capabilities are available as PyPI extras; these remain intentionally
+narrower than the Pixi development environments:
 
 ```bash
 # Group-contribution helpers

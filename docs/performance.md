@@ -16,6 +16,12 @@ separate `torch-flash` backend switch.
 For CPU execution, the default installation is sufficient:
 
 ```bash
+conda install -c conda-forge torch-flash
+```
+
+The PyPI alternative is:
+
+```bash
 python -m pip install torch-flash
 ```
 
